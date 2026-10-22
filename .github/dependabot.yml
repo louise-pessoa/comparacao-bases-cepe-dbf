@@ -1,0 +1,10 @@
+# Propõe, por pull request, a atualização das dependências fixadas em
+# requirements*.txt. Os alertas de segurança do Dependabot são ativados à
+# parte, nas configurações do repositório no GitHub (Settings > Code security).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

@@ -1,0 +1,3 @@
+# PDFs são binários: impede que o Git converta quebras de linha (core.autocrlf
+# no Windows), o que corromperia as amostras de teste em tests/amostras/.
+*.pdf binary

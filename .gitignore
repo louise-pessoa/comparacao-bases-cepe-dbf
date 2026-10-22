@@ -1,0 +1,30 @@
+# Segredos e configuração local (nunca versionar)
+.env
+.env.*
+!.env.example
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Dados de trabalho: PDFs baixados da CEPE, pastas de saída e logs
+dados/
+logs/
+*.tmp
+
+# Editor / sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
