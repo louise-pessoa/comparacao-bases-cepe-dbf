@@ -43,6 +43,7 @@ import http.client
 import json
 import logging
 import os
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -63,8 +64,12 @@ HOSTS_PERMITIDOS = frozenset({"cepebr-prod.s3.amazonaws.com"})
 USER_AGENT = "comparacao-bases-CEPE-DBF (DBF/SEFAZ-PE)"
 NOME_MANIFESTO = "manifesto.json"
 
-TIMEOUT_SEGUNDOS = 60
+TIMEOUT_SEGUNDOS = 30
 TENTATIVAS = 3
+# Sem conexão (timeout, DNS, firewall): repetir muito só atrasa o aviso.
+TENTATIVAS_SEM_CONEXAO = 2
+# Cadernos seguidos sem conexão que fazem o lote desistir do resto do período.
+LIMITE_SEM_CONEXAO = 2
 ESPERA_ENTRE_TENTATIVAS = 2.0  # multiplicada pelo número da tentativa
 PAUSA_ENTRE_REQUISICOES = 0.5  # cortesia com o servidor da CEPE
 MAX_BYTES = 300 * 1024 * 1024  # limite por caderno (proteção de disco)
@@ -115,6 +120,7 @@ class StatusDownload(Enum):
     BAIXADO = "baixado"
     JA_BAIXADO = "já baixado (manifesto)"
     SEM_EDICAO = "sem edição nesse dia (403/404)"
+    SEM_CONEXAO = "sem conexão com o servidor"
     FALHA = "falha"
     SIMULADO = "seria baixado (simulação)"
 
@@ -147,8 +153,40 @@ class _SemRedirecionamento(urllib.request.HTTPRedirectHandler):
         )
 
 
-def criar_abridor(timeout: float = TIMEOUT_SEGUNDOS) -> Abridor:
-    opener = urllib.request.build_opener(_SemRedirecionamento)
+def _contexto_ssl(estrito: bool) -> ssl.SSLContext:
+    """Contexto TLS padrão (usa as autoridades de certificação do Windows).
+
+    A partir do Python 3.13 a verificação é "estrita" (RFC 5280) e recusa
+    certificados da cadeia sem Authority Key Identifier, como os emitidos por
+    alguns proxies de inspeção de HTTPS. Com `estrito=False` só essa checagem
+    de conformidade é desligada: a cadeia continua validada contra as
+    autoridades confiáveis e o nome do servidor continua conferido.
+    """
+    contexto = ssl.create_default_context()
+    if not estrito:
+        contexto.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    return contexto
+
+
+def _criar_opener(proxy: str | None, ssl_estrito: bool) -> urllib.request.OpenerDirector:
+    manipuladores: list[Any] = [
+        _SemRedirecionamento(),
+        urllib.request.HTTPSHandler(context=_contexto_ssl(ssl_estrito)),
+    ]
+    if proxy:
+        manipuladores.insert(0, urllib.request.ProxyHandler({"https": proxy, "http": proxy}))
+    return urllib.request.build_opener(*manipuladores)
+
+
+def criar_abridor(
+    timeout: float = TIMEOUT_SEGUNDOS,
+    proxy: str | None = None,
+    ssl_estrito: bool = True,
+) -> Abridor:
+    """Abridor de URLs. Sem `proxy`, o urllib usa os proxies do ambiente
+    (variáveis HTTPS_PROXY/NO_PROXY e configurações manuais do Windows). Não lê
+    proxy automático (PAC/WPAD): nesse caso informe o endereço em `proxy`."""
+    opener = _criar_opener(proxy, ssl_estrito)
 
     def abrir(url: str) -> AbstractContextManager[Any]:
         pedido = urllib.request.Request(
@@ -314,7 +352,18 @@ def _baixar_um(
                 esperar(ESPERA_ENTRE_TENTATIVAS * tentativa)
                 continue
             return resultado(StatusDownload.FALHA, str(falha))
-        except (OSError, http.client.HTTPException) as erro:  # rede, timeout, disco
+        except urllib.error.URLError as erro:  # não conectou: DNS, timeout, firewall, SSL
+            _remover(parcial)
+            if tentativa < min(tentativas, TENTATIVAS_SEM_CONEXAO):
+                esperar(ESPERA_ENTRE_TENTATIVAS * tentativa)
+                continue
+            return resultado(
+                StatusDownload.SEM_CONEXAO, f"{type(erro.reason).__name__}: {erro.reason}"
+            )
+        except KeyboardInterrupt:
+            _remover(parcial)  # Ctrl+C não deixa .part para trás
+            raise
+        except (OSError, http.client.HTTPException) as erro:  # queda no meio do download, disco
             _remover(parcial)
             if not ultima:
                 esperar(ESPERA_ENTRE_TENTATIVAS * tentativa)
@@ -359,11 +408,15 @@ def baixar_cadernos(
     tentativas: int = TENTATIVAS,
     max_bytes: int = MAX_BYTES,
     pausa: float = PAUSA_ENTRE_REQUISICOES,
+    proxy: str | None = None,
+    ssl_estrito: bool = True,
 ) -> list[ResultadoDownload]:
     """Baixa os cadernos do período (inclusive) para `pasta_cadernos`.
 
     Em simulação não há rede nem escrita: apenas indica o que seria baixado.
-    Falhas de um caderno não interrompem os demais.
+    Falhas de um caderno não interrompem os demais, exceto a falta de conexão:
+    depois de LIMITE_SEM_CONEXAO cadernos seguidos sem conexão, o restante do
+    período é cancelado (senão cada caderno custaria minutos de espera).
     """
     dias = dias_do_periodo(inicio, fim)
     tentativas = max(1, tentativas)
@@ -372,12 +425,26 @@ def baixar_cadernos(
     manifesto = _ler_manifesto(caminho_manifesto)
     if not simular:
         pasta_cadernos.mkdir(parents=True, exist_ok=True)
-        abrir = abrir or criar_abridor()
+        if abrir is None:
+            abrir = criar_abridor(proxy=proxy, ssl_estrito=ssl_estrito)
+            if not ssl_estrito:
+                log.warning(
+                    "SSL_ESTRITO desligado: certificados sem Authority Key Identifier "
+                    "são aceitos. A cadeia e o nome do servidor continuam verificados."
+                )
+            if proxy:
+                destino = urlsplit(proxy)
+                log.info("Usando o proxy %s:%s", destino.hostname, destino.port or "(porta padrão)")
 
     resultados: list[ResultadoDownload] = []
     houve_requisicao = False
+    sem_conexao_seguidos = 0
     for dia in dias:
+        if sem_conexao_seguidos >= LIMITE_SEM_CONEXAO:
+            break
         for caderno in cadernos:
+            if sem_conexao_seguidos >= LIMITE_SEM_CONEXAO:
+                break
             nome = caderno.nome_arquivo(dia)
             if nome in manifesto:
                 res = ResultadoDownload(caderno, dia, StatusDownload.JA_BAIXADO)
@@ -396,9 +463,22 @@ def baixar_cadernos(
                 )
                 if res.status is StatusDownload.BAIXADO:
                     _gravar_manifesto(caminho_manifesto, manifesto)
+                if res.status is StatusDownload.SEM_CONEXAO:
+                    sem_conexao_seguidos += 1
+                else:
+                    sem_conexao_seguidos = 0
             log.info("%s | %s | %s", nome, res.status.value, res.detalhe or caderno.url(dia))
             resultados.append(res)
 
+    if sem_conexao_seguidos >= LIMITE_SEM_CONEXAO:
+        log.error(
+            "Sem conexão com %s em %d cadernos seguidos: o restante do período foi "
+            "cancelado. Se o navegador abre o link, a rede provavelmente exige proxy "
+            "para o Python (informe-o em HTTPS_PROXY no .env) ou bloqueia o python.exe. "
+            "O que já foi baixado continua no manifesto.",
+            urlsplit(resultados[-1].caderno.url(resultados[-1].dia)).hostname,
+            sem_conexao_seguidos,
+        )
     _avisar_se_nada_encontrado(resultados)
     return resultados
 

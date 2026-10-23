@@ -200,7 +200,8 @@ def capturar(
     modo = " [SIMULAÇÃO: sem rede e sem gravar nada]" if simular else ""
     log.info("Captura iniciada%s: de %s a %s em %s.", modo, inicio, fim, cfg.pasta_cadernos)
     resultados = captura.baixar_cadernos(
-        inicio, fim, cfg.pasta_cadernos, simular=simular
+        inicio, fim, cfg.pasta_cadernos, simular=simular,
+        proxy=cfg.proxy_https, ssl_estrito=cfg.ssl_estrito,
     )
     resumo: Counter[captura.StatusDownload] = Counter(r.status for r in resultados)
     for status, quantidade in resumo.most_common():
@@ -268,15 +269,24 @@ def main(argv: list[str] | None = None) -> int:
         cfg = carregar_configuracao()
         _configurar_log(cfg.pasta_logs)
         if args.baixar:
-            capturar(cfg, args.de, args.ate or date.today(), args.simular)
-            return 0
+            resumo = capturar(cfg, args.de, args.ate or date.today(), args.simular)
+            problemas = resumo[captura.StatusDownload.FALHA] + resumo[
+                captura.StatusDownload.SEM_CONEXAO
+            ]
+            return 1 if problemas else 0
+        
         if not args.simular:
             for pasta in (cfg.pasta_temp, cfg.pasta_erros, cfg.pasta_ocr):
                 pasta.mkdir(parents=True, exist_ok=True)
         executar(cfg, args.simular, args.permitir_pasta_vazia)
+    
     except (ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura) as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2
+         
+    except KeyboardInterrupt:
+        print("Interrompido pelo usuário (Ctrl+C).", file=sys.stderr)
+        return 130
     return 0
 
 

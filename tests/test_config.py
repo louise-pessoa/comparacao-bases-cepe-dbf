@@ -25,6 +25,9 @@ def sem_variaveis_do_projeto(monkeypatch):
         "PASTA_OCR",
         "PASTA_NORMALIZADOS",
         "PASTA_LOGS",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_ESTRITO",
     ):
         monkeypatch.delenv(variavel, raising=False)
 
@@ -164,3 +167,69 @@ def test_pasta_de_cadernos_tem_padrao_e_aceita_o_env(tmp_path):
 def test_pasta_de_cadernos_nao_pode_ficar_dentro_da_dbf(tmp_path):
     with pytest.raises(ErroConfiguracao, match="PASTA_CADERNOS"):
         validar_configuracao(_cfg(tmp_path, pasta_cadernos=tmp_path / "dbf" / "cadernos"))
+
+
+# ----------------------------------------------------------------------------
+# Proxy da rede (HTTPS_PROXY)
+# ----------------------------------------------------------------------------
+
+
+def test_proxy_vem_vazio_por_padrao(tmp_path):
+    assert carregar_configuracao(tmp_path / "nao_existe.env").proxy_https is None
+
+
+def test_proxy_e_lido_do_env(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=http://127.0.0.1:9000\n", encoding="utf-8")
+    assert carregar_configuracao(env).proxy_https == "http://127.0.0.1:9000"
+
+
+def test_proxy_em_branco_no_env_conta_como_sem_proxy(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=\n", encoding="utf-8")
+    assert carregar_configuracao(env).proxy_https is None
+
+
+def test_variavel_de_ambiente_do_proxy_tem_precedencia(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=http://127.0.0.1:9000\n", encoding="utf-8")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:8888")
+    assert carregar_configuracao(env).proxy_https == "http://127.0.0.1:8888"
+
+
+@pytest.mark.parametrize("valor", ["127.0.0.1:9000", "ftp://127.0.0.1:21", "http://", "proxy"])
+def test_proxy_em_formato_invalido_e_recusado(tmp_path, valor):
+    env = tmp_path / ".env"
+    env.write_text(f"HTTPS_PROXY={valor}\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao, match="HTTPS_PROXY"):
+        carregar_configuracao(env)
+
+
+# ----------------------------------------------------------------------------
+# Verificação estrita de certificado (SSL_ESTRITO)
+# ----------------------------------------------------------------------------
+
+
+def test_ssl_estrito_por_padrao(tmp_path):
+    assert carregar_configuracao(tmp_path / "nao_existe.env").ssl_estrito is True
+
+
+@pytest.mark.parametrize("valor", ["nao", "não", "false", "0", "NAO", "False"])
+def test_ssl_estrito_pode_ser_desligado(tmp_path, valor):
+    env = tmp_path / ".env"
+    env.write_text(f"SSL_ESTRITO={valor}\n", encoding="utf-8")
+    assert carregar_configuracao(env).ssl_estrito is False
+
+
+@pytest.mark.parametrize("valor", ["sim", "true", "1", ""])
+def test_ssl_estrito_ligado_ou_em_branco(tmp_path, valor):
+    env = tmp_path / ".env"
+    env.write_text(f"SSL_ESTRITO={valor}\n", encoding="utf-8")
+    assert carregar_configuracao(env).ssl_estrito is True
+
+
+def test_ssl_estrito_em_formato_invalido_e_recusado(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("SSL_ESTRITO=talvez\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao, match="SSL_ESTRITO"):
+        carregar_configuracao(env)

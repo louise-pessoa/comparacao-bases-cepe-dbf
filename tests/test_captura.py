@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 import urllib.error
+import urllib.request
 from datetime import date
 
 import pymupdf
@@ -287,11 +288,65 @@ def test_outro_erro_4xx_nao_e_repetido(tmp_path):
     assert servidor.chamadas.count(URL_EXECUTIVO) == 1
 
 
-def test_falha_de_rede_e_repetida_e_depois_reportada(tmp_path):
-    servidor = ServidorFalso({URL_EXECUTIVO: [urllib.error.URLError("sem rede")]})
+def test_sem_conexao_e_repetida_so_uma_vez_e_depois_reportada(tmp_path):
+    servidor = ServidorFalso({URL_EXECUTIVO: [urllib.error.URLError(TimeoutError("sem rede"))]})
+    resultados = baixar(tmp_path / "cadernos", servidor, tentativas=3)
+    assert resultados[0].status is StatusDownload.SEM_CONEXAO
+    assert "TimeoutError" in resultados[0].detalhe
+    assert servidor.chamadas.count(URL_EXECUTIVO) == captura.TENTATIVAS_SEM_CONEXAO == 2
+
+
+def test_queda_no_meio_do_download_e_falha_comum_e_repetida(tmp_path):
+    servidor = ServidorFalso({URL_EXECUTIVO: [ConnectionResetError("caiu")]})
     resultados = baixar(tmp_path / "cadernos", servidor, tentativas=3)
     assert resultados[0].status is StatusDownload.FALHA
     assert servidor.chamadas.count(URL_EXECUTIVO) == 3
+
+
+def test_desiste_do_periodo_apos_cadernos_seguidos_sem_conexao(tmp_path, caplog):
+    sem_rede = urllib.error.URLError(TimeoutError("timed out"))
+    servidor = ServidorFalso({})
+    for dia in ("20260627", "20260628", "20260629"):
+        for pasta in ("1-PoderExecutivo/PoderExecutivo", "1-PoderExecutivoExtra/PoderExecutivoExtra", "6-PoderLegislativo/PoderLegislativo"):
+            url = f"https://cepebr-prod.s3.amazonaws.com/1/cadernos/2026/{dia}/{pasta}({dia}).pdf"
+            servidor.respostas[url] = [sem_rede]
+    with caplog.at_level(logging.ERROR, logger="pipeline"):
+        resultados = baixar(tmp_path / "cadernos", servidor, dia=DIA, fim=date(2026, 6, 29))
+
+    assert status(resultados) == [StatusDownload.SEM_CONEXAO] * captura.LIMITE_SEM_CONEXAO
+    assert len(servidor.chamadas) == captura.LIMITE_SEM_CONEXAO * captura.TENTATIVAS_SEM_CONEXAO
+    assert "restante do período foi cancelado" in caplog.text
+    assert "HTTPS_PROXY" in caplog.text
+
+
+def test_resposta_do_servidor_zera_a_contagem_de_falta_de_conexao(tmp_path):
+    # 404 prova que há conexão: não deve acumular com os timeouts vizinhos.
+    sem_rede = urllib.error.URLError(TimeoutError("timed out"))
+    servidor = ServidorFalso(
+        {
+            URL_EXECUTIVO: [sem_rede],
+            URL_EXTRA: [http_erro(URL_EXTRA, 404)],
+            URL_LEGISLATIVO: [sem_rede],
+        }
+    )
+    resultados = baixar(tmp_path / "cadernos", servidor)
+    assert status(resultados) == [
+        StatusDownload.SEM_CONEXAO,
+        StatusDownload.SEM_EDICAO,
+        StatusDownload.SEM_CONEXAO,
+    ]
+
+
+def test_ctrl_c_remove_o_arquivo_parcial_e_repassa_a_interrupcao(tmp_path):
+    class RespostaInterrompida(RespostaFalsa):
+        def read(self, n):
+            raise KeyboardInterrupt
+
+    pasta = tmp_path / "cadernos"
+    servidor = ServidorFalso({URL_EXECUTIVO: [RespostaInterrompida(pdf_valido())]})
+    with pytest.raises(KeyboardInterrupt):
+        baixar(pasta, servidor)
+    assert arquivos(pasta) == []  # sem .part
 
 
 def test_falha_de_um_caderno_nao_interrompe_os_demais(tmp_path):
@@ -556,3 +611,116 @@ def test_remover_nao_levanta_erro_se_o_arquivo_continua_preso(tmp_path, monkeypa
     with caplog.at_level(logging.WARNING, logger="pipeline"):
         captura._remover(parcial)  # não pode levantar
     assert "não foi possível apagar" in caplog.text
+
+
+def test_cli_sai_com_codigo_1_quando_ha_falta_de_conexao(cfg, monkeypatch):
+    import main as modulo_main
+
+    sem_rede = urllib.error.URLError(TimeoutError("timed out"))
+
+    def abridor_sem_rede(url):
+        raise sem_rede
+
+    monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
+    monkeypatch.setattr(captura, "criar_abridor", lambda *a, **k: abridor_sem_rede)
+    monkeypatch.setattr(captura.time, "sleep", lambda s: None)
+    assert main(["--baixar", "--de", "2026-06-27", "--ate", "2026-06-27"]) == 1
+
+
+def test_cli_ctrl_c_sai_com_codigo_130_sem_traceback(cfg, monkeypatch, capsys):
+    import main as modulo_main
+
+    def interrompe(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
+    monkeypatch.setattr(captura, "baixar_cadernos", interrompe)
+    assert main(["--baixar", "--de", "2026-06-27"]) == 130
+    assert "Interrompido" in capsys.readouterr().err
+
+
+# ----------------------------------------------------------------------------
+# Proxy
+# ----------------------------------------------------------------------------
+
+
+def test_abridor_com_proxy_envia_o_pedido_ao_proxy(monkeypatch):
+    # O "proxy" é um servidor local que recebe o pedido com a URL completa
+    # (como um proxy HTTP de verdade) e devolve um PDF.
+    conteudo = pdf_valido()
+    recebidos: list[str] = []
+
+    class FalsoProxy(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            recebidos.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(conteudo)))
+            self.end_headers()
+            self.wfile.write(conteudo)
+
+        def log_message(self, *args):
+            pass
+
+    servidor = http.server.HTTPServer(("127.0.0.1", 0), FalsoProxy)
+    threading.Thread(target=servidor.serve_forever, daemon=True).start()
+    for variavel in ("NO_PROXY", "no_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.delenv(variavel, raising=False)
+    try:
+        abridor = criar_abridor(timeout=5, proxy=f"http://127.0.0.1:{servidor.server_port}")
+        with abridor("http://destino.invalid/arquivo.pdf") as resposta:
+            assert resposta.read(10_000_000) == conteudo
+    finally:
+        servidor.shutdown()
+        servidor.server_close()
+    assert recebidos == ["http://destino.invalid/arquivo.pdf"]
+
+
+def test_capturar_repassa_o_proxy_da_configuracao(cfg, monkeypatch):
+    recebido = {}
+
+    def falso_criar_abridor(*args, **kwargs):
+        recebido.update(kwargs)
+        return ServidorFalso({})
+
+    monkeypatch.setattr(captura, "criar_abridor", falso_criar_abridor)
+    monkeypatch.setattr(captura.time, "sleep", lambda s: None)
+    com_proxy = Configuracao(**{**cfg.__dict__, "proxy_https": "http://127.0.0.1:9000"})
+    capturar(com_proxy, DIA, DIA)
+    assert recebido["proxy"] == "http://127.0.0.1:9000"
+    assert recebido["ssl_estrito"] is True
+
+
+def test_contexto_ssl_estrito_por_padrao_e_flexivel_so_se_pedido():
+    import ssl
+
+    estrito = captura._contexto_ssl(True)
+    flexivel = captura._contexto_ssl(False)
+    # A verificação do certificado e do nome do servidor nunca é desligada.
+    for contexto in (estrito, flexivel):
+        assert contexto.verify_mode is ssl.CERT_REQUIRED
+        assert contexto.check_hostname is True
+    assert not flexivel.verify_flags & ssl.VERIFY_X509_STRICT
+    assert estrito.verify_flags == ssl.create_default_context().verify_flags
+
+
+def test_opener_usa_o_contexto_ssl_pedido():
+    import ssl
+
+    opener = captura._criar_opener(None, ssl_estrito=False)
+    manipulador = next(
+        h for h in opener.handlers if isinstance(h, urllib.request.HTTPSHandler)
+    )
+    assert not manipulador._context.verify_flags & ssl.VERIFY_X509_STRICT
+
+
+def test_capturar_repassa_ssl_estrito_desligado(cfg, monkeypatch):
+    recebido = {}
+
+    def falso_criar_abridor(*args, **kwargs):
+        recebido.update(kwargs)
+        return ServidorFalso({})
+
+    monkeypatch.setattr(captura, "criar_abridor", falso_criar_abridor)
+    monkeypatch.setattr(captura.time, "sleep", lambda s: None)
+    capturar(Configuracao(**{**cfg.__dict__, "ssl_estrito": False}), DIA, DIA)
+    assert recebido["ssl_estrito"] is False

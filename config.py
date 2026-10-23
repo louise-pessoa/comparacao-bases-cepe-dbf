@@ -6,6 +6,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
@@ -27,6 +28,8 @@ class Configuracao:
     pasta_normalizados: Path  # saída local da etapa 4, antes de ir para a DBF
     pasta_logs: Path
     pasta_dbf: Path | None  # base oficial da DBF; obrigatória para executar
+    proxy_https: str | None = None  # proxy da rede, ex.: http://127.0.0.1:9000
+    ssl_estrito: bool = True  # False: aceita certificado de cadeia sem Authority Key Identifier
 
 
 def _resolver_caminho(variavel: str, valor: str) -> Path:
@@ -97,6 +100,36 @@ def validar_configuracao(cfg: Configuracao) -> None:
         )
 
 
+def _ler_proxy(valor: str) -> str | None:
+    valor = valor.strip()
+    if not valor:
+        return None
+    partes = urlsplit(valor)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        raise ErroConfiguracao(
+            f"HTTPS_PROXY={valor!r} é inválido. Use o formato "
+            "http://endereco:porta (por exemplo, http://127.0.0.1:9000)."
+        )
+    return valor
+
+
+_VERDADEIRO = {"1", "true", "sim", "s", "yes", "y"}
+_FALSO = {"0", "false", "nao", "não", "n", "no"}
+
+
+def _ler_booleano(variavel: str, valor: str, padrao: bool) -> bool:
+    texto = valor.strip().casefold()
+    if not texto:
+        return padrao
+    if texto in _VERDADEIRO:
+        return True
+    if texto in _FALSO:
+        return False
+    raise ErroConfiguracao(
+        f"{variavel}={valor!r} é inválido. Use sim ou não (também aceita true/false, 1/0)."
+    )
+
+
 def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
     """Lê o .env (variáveis de ambiente reais têm precedência sobre ele)."""
     valores = {**dotenv_values(arquivo_env or RAIZ / ".env"), **os.environ}
@@ -114,6 +147,8 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         pasta_normalizados=pasta("PASTA_NORMALIZADOS", "dados/normalizados"),
         pasta_logs=pasta("PASTA_LOGS", "logs"),
         pasta_dbf=_resolver_caminho("PASTA_DBF", bruto_dbf) if bruto_dbf else None,
+        proxy_https=_ler_proxy(valores.get("HTTPS_PROXY") or ""),
+        ssl_estrito=_ler_booleano("SSL_ESTRITO", valores.get("SSL_ESTRITO") or "", True),
     )
     validar_configuracao(cfg)
     return cfg
