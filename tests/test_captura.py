@@ -38,6 +38,11 @@ URL_LEGISLATIVO = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/2026/20260627/"
     "6-PoderLegislativo/PoderLegislativo(20260627).pdf"
 )
+URL_RESUMO = "https://diariooficial.cepe.com.br/1/arquivos/resumoDiario/2026-06-27/2026-06-27.pdf"
+URL_RESUMO_EXTRA = (
+    "https://diariooficial.cepe.com.br/1/arquivos/resumoDiario/2026-06-27/2026-06-27E.pdf"
+)
+S3 = captura.FONTES["s3"]  # os testes abaixo usam o padrão histórico do S3, salvo indicação
 
 
 def pdf_valido(paginas: int = 2) -> bytes:
@@ -92,7 +97,7 @@ def http_erro(url, codigo):
 
 
 def baixar(pasta, servidor, dia=DIA, fim=None, **extras):
-    opcoes = dict(abrir=servidor, esperar=lambda s: None, pausa=0)
+    opcoes = dict(abrir=servidor, esperar=lambda s: None, pausa=0, cadernos=S3)
     opcoes.update(extras)
     return baixar_cadernos(dia, fim or dia, pasta, **opcoes)
 
@@ -124,12 +129,42 @@ def test_nome_do_arquivo_vem_so_da_data_e_do_caderno():
     )
 
 
-def test_cadernos_ativos_incluem_executivo_extra_e_legislativo():
-    assert [c.nome for c in captura.CADERNOS_ATIVOS] == [
+def test_fonte_s3_inclui_executivo_extra_e_legislativo():
+    assert [c.nome for c in S3] == [
         "PoderExecutivo",
         "PoderExecutivoExtra",
         "PoderLegislativo",
     ]
+
+
+def test_urls_da_fonte_resumo_usam_a_data_com_hifens():
+    assert captura.RESUMO_DIARIO.url(DIA) == URL_RESUMO
+    assert captura.RESUMO_DIARIO_EXTRA.url(DIA) == URL_RESUMO_EXTRA
+    assert captura.RESUMO_DIARIO.nome_arquivo(DIA) == "20260627_ResumoDiario.pdf"
+    assert captura.RESUMO_DIARIO_EXTRA.nome_arquivo(DIA) == "20260627_ResumoDiarioExtra.pdf"
+
+
+def test_fonte_padrao_e_o_resumo_e_as_duas_fontes_existem():
+    assert captura.FONTE_PADRAO == "resumo"
+    assert captura.CADERNOS_ATIVOS == captura.FONTES["resumo"]
+    assert set(captura.FONTES) == {"resumo", "s3"}
+
+
+def test_baixa_da_fonte_resumo_e_registra_no_manifesto(tmp_path):
+    conteudo = pdf_valido()
+    servidor = ServidorFalso({URL_RESUMO: [RespostaFalsa(conteudo)]})
+    resultados = baixar(tmp_path / "cadernos", servidor, cadernos=captura.FONTES["resumo"])
+
+    assert status(resultados) == [StatusDownload.BAIXADO, StatusDownload.SEM_EDICAO]
+    assert (tmp_path / "cadernos" / "20260627_ResumoDiario.pdf").read_bytes() == conteudo
+    assert servidor.chamadas == [URL_RESUMO, URL_RESUMO_EXTRA]
+    registro = json.loads((tmp_path / "cadernos" / "manifesto.json").read_text("utf-8"))
+    assert registro["arquivos"]["20260627_ResumoDiario.pdf"]["url"] == URL_RESUMO
+
+
+def test_simulacao_padrao_usa_a_fonte_resumo(tmp_path):
+    resultados = baixar_cadernos(DIA, DIA, tmp_path / "cadernos", simular=True)
+    assert [r.detalhe for r in resultados] == [URL_RESUMO, URL_RESUMO_EXTRA]
 
 
 # ----------------------------------------------------------------------------
@@ -369,7 +404,7 @@ def test_pausa_entre_requisicoes_so_quando_ha_rede(tmp_path):
     servidor = ServidorFalso({})
     baixar_cadernos(
         DIA, date(2026, 6, 28), tmp_path / "cadernos",
-        abrir=servidor, esperar=pausas.append, pausa=0.5,
+        abrir=servidor, esperar=pausas.append, pausa=0.5, cadernos=S3,
     )
     assert len(servidor.chamadas) == 6
     assert pausas == [0.5] * 5  # entre as 6 requisições, não antes da primeira
@@ -385,7 +420,7 @@ def test_simulacao_nao_usa_rede_nem_cria_pasta(tmp_path):
         raise AssertionError("simulação não pode acessar a rede")
 
     pasta = tmp_path / "cadernos"
-    resultados = baixar_cadernos(DIA, DIA, pasta, simular=True, abrir=proibido)
+    resultados = baixar_cadernos(DIA, DIA, pasta, simular=True, abrir=proibido, cadernos=S3)
     assert status(resultados) == [StatusDownload.SIMULADO] * 3
     assert resultados[0].detalhe == URL_EXECUTIVO
     assert not pasta.exists()
@@ -394,7 +429,7 @@ def test_simulacao_nao_usa_rede_nem_cria_pasta(tmp_path):
 def test_simulacao_respeita_o_manifesto(tmp_path):
     pasta = tmp_path / "cadernos"
     baixar(pasta, ServidorFalso({URL_EXECUTIVO: [RespostaFalsa(pdf_valido())]}))
-    resultados = baixar_cadernos(DIA, DIA, pasta, simular=True)
+    resultados = baixar_cadernos(DIA, DIA, pasta, simular=True, cadernos=S3)
     assert status(resultados) == [StatusDownload.JA_BAIXADO] + [StatusDownload.SIMULADO] * 2
 
 
@@ -420,6 +455,8 @@ def test_periodo_longo_demais_e_recusado():
     [
         "http://cepebr-prod.s3.amazonaws.com/x.pdf",  # sem https
         "https://outro-site.example.com/x.pdf",  # host fora da lista
+        "https://diariooficial.cepe.com.br.evil.example/x.pdf",  # host parecido (resumo)
+        "http://diariooficial.cepe.com.br/x.pdf",  # host permitido, mas sem https
         "https://cepebr-prod.s3.amazonaws.com.evil.example/x.pdf",  # host parecido
         "file:///etc/passwd",
     ],
@@ -539,7 +576,7 @@ def cfg(tmp_path):
 
 
 def test_capturar_em_simulacao_conta_o_que_seria_baixado(cfg):
-    resumo = capturar(cfg, DIA, date(2026, 6, 28), simular=True)
+    resumo = capturar(cfg, DIA, date(2026, 6, 28), simular=True, fonte="s3")
     assert resumo == {StatusDownload.SIMULADO: 6}
     assert not cfg.pasta_cadernos.exists()
 
@@ -548,7 +585,7 @@ def test_capturar_nao_mexe_nas_pastas_do_lote(cfg, monkeypatch):
     servidor = ServidorFalso({URL_EXECUTIVO: [RespostaFalsa(pdf_valido())]})
     monkeypatch.setattr(captura, "criar_abridor", lambda *a, **k: servidor)
     monkeypatch.setattr(captura.time, "sleep", lambda s: None)
-    resumo = capturar(cfg, DIA, DIA)
+    resumo = capturar(cfg, DIA, DIA, fonte="s3")
     assert resumo[StatusDownload.BAIXADO] == 1
     assert not cfg.pasta_temp.exists() and not cfg.pasta_erros.exists()
 
@@ -564,6 +601,29 @@ def test_cli_de_sem_baixar_e_recusado(capsys):
     with pytest.raises(SystemExit) as saida:
         main(["--de", "2026-06-27"])
     assert saida.value.code == 2
+
+
+def test_cli_fonte_desconhecida_e_recusada(capsys):
+    with pytest.raises(SystemExit) as saida:
+        main(["--baixar", "--de", "2026-06-27", "--fonte", "outra"])
+    assert saida.value.code == 2
+
+
+def test_cli_fonte_e_repassada_ao_download(cfg, monkeypatch):
+    import main as modulo_main
+
+    recebido = {}
+
+    def falso_baixar(inicio, fim, pasta, **kwargs):
+        recebido.update(kwargs)
+        return []
+
+    monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
+    monkeypatch.setattr(captura, "baixar_cadernos", falso_baixar)
+    assert main(["--baixar", "--de", "2026-06-27", "--fonte", "s3"]) == 0
+    assert recebido["cadernos"] == captura.FONTES["s3"]
+    assert main(["--baixar", "--de", "2026-06-27"]) == 0
+    assert recebido["cadernos"] == captura.FONTES["resumo"]
 
 
 def test_cli_data_invalida_e_recusada(capsys):

@@ -5,17 +5,26 @@ portarias e erratas podem aparecer também como arquivos isolados por órgão.
 Por isso baixamos APENAS os cadernos completos, o que evita o mesmo decreto
 chegar duas vezes por caminhos diferentes.
 
-Os cadernos são arquivos públicos num bucket S3, com endereço previsível:
+Os cadernos são arquivos públicos com endereço previsível, em duas "fontes":
 
+  resumo (padrão; dias recentes, a confirmar na rede da DBF):
+    https://diariooficial.cepe.com.br/1/arquivos/resumoDiario/{aaaa-mm-dd}/
+        {aaaa-mm-dd}.pdf     (Poder Executivo do dia)
+        {aaaa-mm-dd}E.pdf    (edição extra)
+
+  s3 (histórico; respondeu 403 para 19 a 22/10/2026):
     https://cepebr-prod.s3.amazonaws.com/1/cadernos/{ano}/{aaaammdd}/
         1-PoderExecutivo/PoderExecutivo({aaaammdd}).pdf
         1-PoderExecutivoExtra/PoderExecutivoExtra({aaaammdd}).pdf
         6-PoderLegislativo/PoderLegislativo({aaaammdd}).pdf
 
-Padrão conferido em endereços publicados: Executivo em 2026 (janeiro a maio),
-Extra e Legislativo até 2025. Se `baixar_cadernos` não encontrar nenhuma edição
-num período com dias úteis, ele avisa no log: abra um caderno recente no site
-da CEPE, copie o endereço do PDF e compare com `Caderno.modelo_url`.
+Padrão do S3 conferido em endereços publicados: Executivo em 2026 (janeiro a
+maio), Extra e Legislativo até 2025. Padrão "resumo" visto em endereços
+publicados em julho, setembro e outubro de 2026. Se `baixar_cadernos` não
+encontrar nenhuma edição num período com dias úteis, ele avisa no log: abra um
+caderno recente no site da CEPE, copie o endereço do PDF e compare com
+`Caderno.modelo_url`. As fontes não devem ser misturadas no mesmo período: o
+mesmo dia existiria duas vezes (com nomes de arquivo diferentes).
 
 Cadernos NÃO são entregues à etapa 2 (que espera um ato por PDF). Ficam em
 `pasta_cadernos`, aguardando o passo de separação dos decretos (ainda não
@@ -60,7 +69,7 @@ import pymupdf
 
 log = logging.getLogger("pipeline")
 
-HOSTS_PERMITIDOS = frozenset({"cepebr-prod.s3.amazonaws.com"})
+HOSTS_PERMITIDOS = frozenset({"cepebr-prod.s3.amazonaws.com", "diariooficial.cepe.com.br"})
 USER_AGENT = "comparacao-bases-CEPE-DBF (DBF/SEFAZ-PE)"
 NOME_MANIFESTO = "manifesto.json"
 
@@ -86,10 +95,12 @@ class Caderno:
     """Um tipo de caderno publicado todos os dias (ou quando houver edição)."""
 
     nome: str  # usado no nome do arquivo salvo, ex.: "PoderExecutivo"
-    modelo_url: str  # aceita {ano} e {data} (aaaammdd)
+    modelo_url: str  # aceita {ano}, {data} (aaaammdd) e {data_iso} (aaaa-mm-dd)
 
     def url(self, dia: date) -> str:
-        return self.modelo_url.format(ano=dia.year, data=f"{dia:%Y%m%d}")
+        return self.modelo_url.format(
+            ano=dia.year, data=f"{dia:%Y%m%d}", data_iso=dia.isoformat()
+        )
 
     def nome_arquivo(self, dia: date) -> str:
         return f"{dia:%Y%m%d}_{self.nome}.pdf"
@@ -109,11 +120,17 @@ PODER_LEGISLATIVO = Caderno(
     "PoderLegislativo", _BASE + "/6-PoderLegislativo/PoderLegislativo({data}).pdf"
 )
 
-CADERNOS_ATIVOS: tuple[Caderno, ...] = (
-    PODER_EXECUTIVO,
-    PODER_EXECUTIVO_EXTRA,
-    PODER_LEGISLATIVO,
-)
+_BASE_RESUMO = "https://diariooficial.cepe.com.br/1/arquivos/resumoDiario/{data_iso}"
+
+RESUMO_DIARIO = Caderno("ResumoDiario", _BASE_RESUMO + "/{data_iso}.pdf")
+RESUMO_DIARIO_EXTRA = Caderno("ResumoDiarioExtra", _BASE_RESUMO + "/{data_iso}E.pdf")
+
+FONTES: dict[str, tuple[Caderno, ...]] = {
+    "resumo": (RESUMO_DIARIO, RESUMO_DIARIO_EXTRA),
+    "s3": (PODER_EXECUTIVO, PODER_EXECUTIVO_EXTRA, PODER_LEGISLATIVO),
+}
+FONTE_PADRAO = "resumo"
+CADERNOS_ATIVOS: tuple[Caderno, ...] = FONTES[FONTE_PADRAO]
 
 
 class StatusDownload(Enum):

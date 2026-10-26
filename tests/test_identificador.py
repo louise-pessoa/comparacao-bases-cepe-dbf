@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import AMOSTRAS, TIPO_ESPERADO, texto_decreto
+from conftest import AMOSTRAS, TIPO_ESPERADO_DECRETO, texto_decreto
 from identificador import StatusIdentificacao, identificar, normalizar_espacos
 from reader import ler_pdf
 
 
-@pytest.mark.parametrize("numero, tipo", sorted(TIPO_ESPERADO.items()))
+@pytest.mark.parametrize("numero, tipo", sorted(TIPO_ESPERADO_DECRETO.items()))
 def test_amostras_reais(numero, tipo):
     ident = identificar(ler_pdf(AMOSTRAS / f"Decreto {numero}.pdf").texto)
     assert ident.status is StatusIdentificacao.IDENTIFICADO
@@ -76,6 +76,11 @@ def test_cabecalho_fora_do_inicio_nao_e_aceito():
         ("Dispõe sobre a segunda renovação do prazo de fruição.", "SEGUNDA_RENOVACAO"),
         ("Dispõe sobre a transferência do estímulo do PRODEPE.", "TRANSFERENCIA"),
         ("Autoriza a terceirização da industrialização dos produtos.", "TERCEIRIZACAO"),
+        (
+            "Autoriza a utilização do incentivo fiscal previsto no Anexo 33 do Decreto "
+            "nº 44.650, de 30 de junho de 2017, que dispõe sobre o PROIND pelo contribuinte X.",
+            "AUTORIZACAO_PROIND",
+        ),
         # Armadilha: a ementa da revogação cita "prorrogação" no meio do texto.
         (
             "Revoga o Decreto nº 39.617, que dispõe sobre a prorrogação do "

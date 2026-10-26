@@ -9,7 +9,7 @@ import pymupdf
 AMOSTRAS = Path(__file__).parent / "amostras"
 
 # Amostras reais da CEPE: número -> tipo esperado
-TIPO_ESPERADO = {
+TIPO_ESPERADO_DECRETO = {
     "60929": "CONCESSAO",
     "60951": "ALTERACAO",
     "60950": "PRORROGACAO",

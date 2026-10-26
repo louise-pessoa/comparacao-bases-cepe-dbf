@@ -7,7 +7,7 @@ import pytest
 
 from conftest import (
     AMOSTRAS,
-    TIPO_ESPERADO,
+    TIPO_ESPERADO_DECRETO,
     criar_pdf_com_imagem_parcial,
     criar_pdf_imagem,
     criar_pdf_texto,
@@ -17,7 +17,7 @@ from reader import StatusLeitura, ler_pdf
 
 ##################################################################################
 
-@pytest.mark.parametrize("numero", sorted(TIPO_ESPERADO))
+@pytest.mark.parametrize("numero", sorted(TIPO_ESPERADO_DECRETO))
 def test_amostras_reais_sao_lidas_como_texto(numero):
     # Os PDFs da CEPE têm o brasão como imagem na página 1: isso NÃO pode fazê-los
     # parecer digitalizados.

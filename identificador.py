@@ -19,11 +19,8 @@ from enum import Enum
 from especies import ESPECIES_ATIVAS, NOMES_OUTRAS_ESPECIES, Especie, Tipo
 
 _ESPACOS = re.compile(r"\s+")
-_MARCADOR_GOVERNO = re.compile(r"\b(?:A GOVERNADORA|O GOVERNADOR)\b")
 _TAMANHO_EMENTA_PADRAO = 600
 
-
-##################################################################################
 
 class StatusIdentificacao(Enum):
     IDENTIFICADO = "identificado"
@@ -40,8 +37,6 @@ class Identificacao:
     tipo: Tipo | None = None  # None se a ementa não casar com nenhum
     detalhe: str = ""
 
-
-##################################################################################
 
 def normalizar_espacos(texto: str) -> str:
     """Unicode NFC e espaços colapsados.
@@ -62,9 +57,11 @@ def _regex_outras_especies(ativas: tuple[Especie, ...]) -> re.Pattern[str] | Non
     return re.compile(rf"(?:{alternativas})\b", re.IGNORECASE)
 
 
-def _extrair_ementa(texto: str, fim_cabecalho: int) -> str:
+def _extrair_ementa(texto: str, fim_cabecalho: int, especie: Especie) -> str:
+    """Ementa: do fim do cabeçalho até a abertura do corpo da espécie (no
+    decreto, "A GOVERNADORA..."); sem ela, os primeiros caracteres."""
     resto = texto[fim_cabecalho:]
-    marcador = _MARCADOR_GOVERNO.search(resto)
+    marcador = especie.abertura_do_corpo.search(resto) if especie.abertura_do_corpo else None
     ementa = resto[: marcador.start()] if marcador else resto[:_TAMANHO_EMENTA_PADRAO]
     return ementa.lstrip(" .")
 
@@ -101,7 +98,7 @@ def identificar(
             )
 
         numero = casamento["numero"].replace(".", "")
-        ementa = _extrair_ementa(texto, casamento.end())
+        ementa = _extrair_ementa(texto, casamento.end(), especie)
         return Identificacao(
             StatusIdentificacao.IDENTIFICADO,
             especie=especie,

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import AMOSTRAS, TIPO_ESPERADO
+from conftest import AMOSTRAS, TIPO_ESPERADO_DECRETO
 
 
-@pytest.mark.parametrize("numero", sorted(TIPO_ESPERADO))
+@pytest.mark.parametrize("numero", sorted(TIPO_ESPERADO_DECRETO))
 def test_amostra_existe_e_e_um_pdf(numero):
     arquivo = AMOSTRAS / f"Decreto {numero}.pdf"
     assert arquivo.is_file(), f"amostra ausente: {arquivo}"
