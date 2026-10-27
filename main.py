@@ -11,9 +11,11 @@ Três modos, independentes por enquanto:
      da DBF que a base não tem vira um PDF em PASTA_TEMP (pendentes), pronto
      para o lote (modo 3).
   3. Lote: processa os PDFs da pasta temporária (PASTA_TEMP), um ato por PDF:
-     etapa 2 (identificação) -> etapa 3 (duplicidade) -> etapas 4 e 5.
-     As etapas 4 e 5 ainda são esqueletos: um ato inédito permanece na
-     pasta temporária (nunca é descartado antes de a etapa 5 gravar o resultado).
+     etapa 2 (identificação) -> etapa 3 (duplicidade) -> etapa 4 (normalização:
+     gera o PDF limpo em PASTA_NORMALIZADOS) -> etapa 5.
+     A etapa 5 (gravar na base da DBF) ainda é esqueleto: um ato inédito
+     permanece na pasta temporária (nunca é descartado antes de a etapa 5
+     gravar o resultado) e o PDF normalizado fica em PASTA_NORMALIZADOS.
 
 Uso:
     python main.py --simular                              # lote, sem mexer em nada
@@ -48,6 +50,7 @@ from config import (
 from duplicidade import PastaDbfIndisponivel, carregar_indice, chave_nome, ja_existe
 from exportador import ErroExportacao, gravar_pdf_do_ato
 from identificador import StatusIdentificacao, identificar
+from normalizador import ErroNormalizacao
 from programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
 from reader import StatusLeitura, ler_pdf
 from separador import AtoSeparado, ErroSeparacao, separar_caderno
@@ -60,7 +63,7 @@ class Destino(Enum):
     DESCARTADO_DUPLICADO = "descartado (já existe na DBF)"
     ENVIADO_OCR = "enviado para leitura tesseract"
     ENVIADO_ERROS = "enviado para erros (revisão manual)"
-    AGUARDANDO_ETAPAS_4_5 = "mantido na pasta temporária (etapas 4 e 5 pendentes)"
+    AGUARDANDO_ETAPA_5 = "mantido na pasta temporária (etapa 5 pendente)"
     CONCLUIDO = "normalizado e armazenado na DBF"
 
 
@@ -127,22 +130,33 @@ def processar_arquivo(
         )
     vistos_no_lote.add(chave_nome(nome))
 
-    # --- Etapas 4 e 5: normalização e armazenamento -----------------------
+    # --- Etapa 4: normalização --------------------------------------------
     try:
         pdf_gerado = normalizador.gerar_pdf_normalizado(
-            pdf, ident, cfg.pasta_normalizados
+            pdf, ident, cfg.pasta_normalizados, simular
         )
+    except ErroNormalizacao as erro:
+        return _mover(
+            pdf,
+            cfg.pasta_erros,
+            Destino.ENVIADO_ERROS,
+            f"{nome}: normalização falhou ({erro})",
+            simular,
+        )
+
+    # --- Etapa 5: armazenamento -------------------------------------------
+    try:
         armazenamento.armazenar(pdf_gerado, nome, cfg.pasta_dbf, pdf, simular)
     except NotImplementedError as pendente:
         log.info(
             "%s | %s | %s (%s)",
             pdf.name,
-            Destino.AGUARDANDO_ETAPAS_4_5.value,
+            Destino.AGUARDANDO_ETAPA_5.value,
             nome,
             ident.tipo.nome,
         )
         log.debug("pendente: %s", pendente)
-        return Destino.AGUARDANDO_ETAPAS_4_5
+        return Destino.AGUARDANDO_ETAPA_5
 
     log.info("%s | %s | %s", pdf.name, Destino.CONCLUIDO.value, nome)
     return Destino.CONCLUIDO

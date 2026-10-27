@@ -1,4 +1,4 @@
-"""Integração do lote (etapas 2 e 3 reais; 4 e 5 ainda pendentes).
+"""Integração do lote (etapas 2, 3 e 4 reais; a 5 ainda pendente).
 
 Usa só PDFs sintéticos, então roda mesmo sem as amostras reais.
 """
@@ -10,7 +10,9 @@ import pytest
 from config import Configuracao, ErroConfiguracao
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
 from duplicidade import PastaDbfIndisponivel
+import normalizador
 from main import Destino, executar
+from normalizador import ErroNormalizacao
 
 
 @pytest.fixture
@@ -53,12 +55,12 @@ def test_destino_de_cada_arquivo(ambiente):
 
     assert resumo == {
         Destino.DESCARTADO_DUPLICADO: 1,
-        Destino.AGUARDANDO_ETAPAS_4_5: 1,
+        Destino.AGUARDANDO_ETAPA_5: 1,
         Destino.DESCARTADO_OUTRA_ESPECIE: 1,
         Destino.ENVIADO_OCR: 1,
         Destino.ENVIADO_ERROS: 3,  # sem_tipo, sem_cabecalho, quebrado
     }
-    # Duplicado e lei foram descartados; o inédito permanece (etapas 4 e 5 pendentes).
+    # Duplicado e lei foram descartados; o inédito permanece (etapa 5 pendente).
     assert _estado(cfg)["pendentes"] == ["inedito.pdf", "leia-me.txt"]
     # PDF de imagem mantém o nome original da CEPE.
     assert _estado(cfg)["leitura tesseract"] == ["CEPE_2026-06-26_0001.pdf"]
@@ -74,6 +76,31 @@ def test_simulacao_nao_altera_nada_e_preve_o_mesmo_resultado(ambiente):
     assert resumo_simulado == executar(cfg)
 
 
+def test_lote_gera_o_pdf_normalizado_so_do_inedito(ambiente):
+    cfg = ambiente
+    executar(cfg)
+    assert [p.name for p in cfg.pasta_normalizados.iterdir()] == ["Decreto 60951.pdf"]
+
+
+def test_simulacao_confere_a_normalizacao_mas_nao_grava(ambiente):
+    cfg = ambiente
+    executar(cfg, simular=True)
+    assert not cfg.pasta_normalizados.exists()
+
+
+def test_falha_de_normalizacao_envia_o_pdf_para_revisao(ambiente, monkeypatch):
+    cfg = ambiente
+
+    def falha(*args, **kwargs):
+        raise ErroNormalizacao("fonte quebrada")
+
+    monkeypatch.setattr(normalizador, "gerar_pdf_normalizado", falha)
+    resumo = executar(cfg)
+    assert resumo[Destino.AGUARDANDO_ETAPA_5] == 0
+    assert resumo[Destino.ENVIADO_ERROS] == 4
+    assert "inedito.pdf" in _estado(cfg)["erros"]
+
+
 def test_mesmo_numero_duas_vezes_no_lote_envia_o_segundo_para_revisao(ambiente):
     cfg = ambiente
     criar_pdf_texto(
@@ -81,7 +108,7 @@ def test_mesmo_numero_duas_vezes_no_lote_envia_o_segundo_para_revisao(ambiente):
         texto_decreto("60.951", "Introduz alterações no Decreto nº 50.135."),
     )
     resumo = executar(cfg)
-    assert resumo[Destino.AGUARDANDO_ETAPAS_4_5] == 1
+    assert resumo[Destino.AGUARDANDO_ETAPA_5] == 1
     assert resumo[Destino.ENVIADO_ERROS] == 4
     assert (cfg.pasta_erros / "inedito_b.pdf").exists()
 

@@ -62,6 +62,14 @@ class Especie:
     # Programas que definem o escopo da espécie. None = sem filtro: todo ato
     # da espécie entra no escopo.
     programas: tuple[Programa, ...] | None = None
+    # Estrutura do texto (etapa 4, normalizador). Cada linha do ato que casar
+    # com um destes padrões abre um parágrafo novo; as demais continuam o
+    # parágrafo anterior (o texto do Diário vem quebrado em linhas fixas).
+    # Parágrafos que abrem com `inicios_com_recuo` (artigos, incisos, fecho)
+    # saem com recuo na primeira linha; com `inicios_sem_recuo`
+    # (considerandos, "DECRETA:"), sem recuo.
+    inicios_com_recuo: re.Pattern[str] | None = None
+    inicios_sem_recuo: re.Pattern[str] | None = None
 
     def nome_arquivo(self, numero: str) -> str:
         """Nome de salvamento e de comparação, ex.: 'Decreto 60929.pdf'."""
@@ -230,6 +238,17 @@ DECRETO = Especie(
     fim_do_cabecalho=re.compile(r"\bDECRETA\s*:"),
     # Escopo: só os decretos dos programas de benefício fiscal da DBF.
     programas=PROGRAMAS_DBF,
+    # Dispositivos: "Art. 1º", "§ 1º", "Parágrafo único.", incisos romanos
+    # ("IV - ..."), alíneas ("a) ..."), itens numerados ("1.", "1.1.") e o
+    # fecho ("Palácio do Campo das Princesas..."). Aceitam aspas de abertura
+    # (trecho citado em decreto de alteração).
+    inicios_com_recuo=re.compile(
+        r"[“\"]?\s*(?:Art\.\s*\d|§\s*\d|Par[áa]grafo\s+[úu]nico\b"
+        r"|[IVXLCDM]+\s*[-–—]\s|[a-z]\)\s|\d+(?:\.\d+)*\.\s|Pal[áa]cio\b)"
+    ),
+    inicios_sem_recuo=re.compile(
+        r"(?:CONSIDERANDO\b|DECRETA\s*:|A GOVERNADORA\b|O GOVERNADOR\b)"
+    ),
 )
 
 # ----------------------------------------------------------------------------
