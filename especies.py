@@ -1,9 +1,15 @@
 """Regras de domínio por espécie de ato.
 
-Este é o ÚNICO arquivo a alterar para passar a tratar uma nova espécie (por
-exemplo, Edital, em fase futura): basta definir uma nova `Especie`, com seu
-cabeçalho, seu padrão de nomenclatura e seus tipos, e incluí-la em
-`ESPECIES_ATIVAS`. Nenhuma outra etapa do pipeline precisa ser reescrita.
+Este é o ÚNICO arquivo a alterar para passar a tratar uma nova espécie: basta
+definir uma nova `Especie`, com seu cabeçalho, seu padrão de nomenclatura e seus
+tipos, e incluí-la em `ESPECIES_ATIVAS`. Nenhuma outra etapa do pipeline precisa
+ser reescrita.
+
+As RegEx (cabeçalhos e tipos) NÃO ficam aqui: moram em `regras_atos.py`, arquivo
+só com a biblioteca padrão que também é enviado à equipe da CEPE. Este arquivo as
+importa e acrescenta o que é do pipeline (modelo de decreto, nome de arquivo,
+escopo por programa, estrutura do texto). EDITAL e PORTARIA estão definidos, mas
+NÃO ativos: só entram em `ESPECIES_ATIVAS` por decisão da DBF.
 """
 
 from __future__ import annotations
@@ -12,15 +18,27 @@ import re
 from dataclasses import dataclass
 
 from programas import PROGRAMAS_DBF, Programa
+from regras_atos import (
+    ABERTURA_DO_CORPO_DECRETO,
+    CABECALHO_DECRETO,
+    CABECALHO_EDITAL,
+    CABECALHO_PORTARIA,
+    EVIDENCIA_AMOSTRA,
+    EVIDENCIA_PRESUMIDO,
+    EVIDENCIA_PUBLICADO,
+    FECHO_DECRETO,
+    NOMES_OUTRAS_ESPECIES,
+    ORGAOS_EDITAL_SEFAZ,
+    ORGAOS_PORTARIA_SEFAZ,
+)
+from regras_atos import TIPOS_DECRETO as _REGRAS_TIPOS_DECRETO
+from regras_atos import TIPOS_EDITAL as _REGRAS_TIPOS_EDITAL
 
 # Origem do padrão de um tipo (documentação e testes; não altera o comportamento):
-#   amostra   - conferido em decreto real da DBF versionado em tests/amostras/ ou no
-#               caderno de 26/06/2026;
-#   publicado - conferido em decreto real publicado (Alepe/SEFAZ), sem amostra versionada;
-#   presumido - deduzido da legislação ou do texto dos demais; falta decreto real.
-EVIDENCIA_AMOSTRA = "amostra"
-EVIDENCIA_PUBLICADO = "publicado"
-EVIDENCIA_PRESUMIDO = "presumido"
+#   amostra   - conferido em ato real da DBF versionado em tests/amostras/ ou em caderno;
+#   publicado - conferido em ato real publicado (Alepe/SEFAZ), sem amostra versionada;
+#   presumido - deduzido da legislação ou do texto dos demais; falta ato real.
+# (As constantes EVIDENCIA_* vêm de regras_atos.py; continuam importáveis daqui.)
 
 
 @dataclass(frozen=True)
@@ -62,6 +80,9 @@ class Especie:
     # Programas que definem o escopo da espécie. None = sem filtro: todo ato
     # da espécie entra no escopo.
     programas: tuple[Programa, ...] | None = None
+    # Órgãos (sigla do cabeçalho) cujos atos entram no escopo. None = a espécie
+    # não se divide por órgão (decreto). Usado por edital e portaria.
+    orgaos_do_escopo: frozenset[str] | None = None
     # Estrutura do texto (etapa 4, normalizador). Cada linha do ato que casar
     # com um destes padrões abre um parágrafo novo; as demais continuam o
     # parágrafo anterior (o texto do Diário vem quebrado em linhas fixas).
@@ -80,160 +101,38 @@ class Especie:
 # Decreto
 # ----------------------------------------------------------------------------
 
-# Cabeçalho em MAIÚSCULAS, ex.: "DECRETO Nº 60.929, DE 25 DE JUNHO DE 2026".
-# É propositalmente sensível a maiúsculas: as citações no corpo do texto
-# ("Decreto nº 21.959, de 27 de dezembro de 1999") não podem ser confundidas
-# com o cabeçalho do ato. Tolera "N°", "N.º", "Nº", número sem ponto de milhar,
-# vírgula ausente antes de "DE" e dia "1º".
-_CABECALHO_DECRETO = re.compile(
-    r"(?<![A-Za-zÀ-ú])DECRETO\s+N\s*\.?\s*[º°o]\.?\s*"
-    r"(?P<numero>\d{1,3}(?:\.\d{3})+|\d+)\s*,?\s*"
-    r"DE\s+\d{1,2}\s*[º°o]?\s+DE\s+[A-ZÇÃÕÁÀÂÉÊÍÓÔÚ]+\s+DE\s+\d{4}"
-)
+# Decreto-modelo (template da etapa 4) de cada tipo; None = sem modelo. Os padrões
+# e a ORDEM dos tipos vêm de regras_atos.TIPOS_DECRETO (a ordem importa: "segunda
+# prorrogação" antes de "prorrogação"; ALTERACAO_NORMA antes de ALTERACAO).
+_MODELO_POR_TIPO: dict[str, str | None] = {
+    "CONCESSAO": "60929",
+    "ALTERACAO_NORMA": None,  # a DBF decide o tratamento (hoje o template de alteração é de empresa)
+    "ALTERACAO": "60951",
+    "SEGUNDA_PRORROGACAO": "60950",
+    "SEGUNDA_RENOVACAO": "60945",
+    "PRORROGACAO": "60950",
+    "RENOVACAO": "60945",
+    "TRANSFERENCIA": "60505",
+    "AUTORIZACAO_PROIND": None,  # ainda sem decreto-modelo: a DBF vai indicar um dia publicado
+    "REVOGACAO": None,  # sem modelo até a etapa 4 definir o tratamento
+    "TERCEIRIZACAO": "60233",
+}
 
-
-def _inicio(expressao: str) -> re.Pattern[str]:
-    return re.compile(expressao, re.IGNORECASE)
-
-
-# Peças reutilizadas nos padrões abaixo.
-#
-# O texto do Diário traz as ligaduras "ﬁ" seguidas de um espaço espúrio
-# ("modiﬁ cações", "ﬁ scal"). O separador as converte, mas um PDF avulso lido
-# direto pode chegar com elas; por isso as palavras com "fi" usam _FI.
-_FI = r"(?:fi|ﬁ\s?)"
-# "ção" ou "ções" (a, depois o plural), com ou sem acento.
-_CAO = r"(?:[çc][ãa]o|[çc][õo]es)"
-# "Dispõe sobre a(s) <assunto>": o Diário usa o plural quando o decreto trata
-# de mais de um ato (ex.: "Dispõe sobre as prorrogações dos prazos...").
-_DISPOE_SOBRE_A = r"Disp[õo]e\s+sobre\s+(?:a|as)\s+"
-# "Decreto nº" com as variantes de grafia do "nº".
-_DECRETO_N = r"Decreto\s+n\s*\.?\s*[ºo°]\.?\s*"
-# Decretos que regulamentam os programas da DBF: instituição do PRODEPE
-# (21.959/1999), do PEAP (34.560/2010) e o RICMS-PE (44.650/2017, com os anexos
-# dos programas). Alterar um deles é alterar a NORMA, não o ato de uma empresa.
-_DECRETOS_DE_PROGRAMA = rf"{_DECRETO_N}(?:21\.?959|34\.?560|44\.?650)\b"
-
-# A classificação olha só o INÍCIO da ementa. Buscar a palavra no texto todo
-# erraria: a ementa de uma revogação pode citar "prorrogação", e o corpo da
-# renovação (60945) cita "prorrogação" e "prorrogados".
-# A ordem importa: as variantes mais específicas vêm antes das gerais
-# (segunda prorrogação antes de prorrogação; alteração da norma antes da
-# alteração de empresa). O credenciamento no PEAP é feito por EDITAL, não por
-# decreto, e por isso não é um tipo de decreto (fica para a fase dos editais).
-TIPOS_DECRETO: tuple[Tipo, ...] = (
-    # --- Concessão do estímulo a uma empresa ---
-    # Amostra: 60929 e os 28 do caderno de 26/06/2026 ("Concede estímulo previsto...").
-    Tipo(
-        "CONCESSAO",
-        _inicio(r"(?:Concede\b|Disp[õo]e\s+sobre\s+a\s+concess[ãa]o\b)"),
-        "60929",
-        EVIDENCIA_AMOSTRA,
-    ),
-    # --- Alteração da NORMA do programa (não é ato de empresa) ---
-    # Publicado: "Introduz modificações no Decreto nº 21.959" (32.016/2008,
-    # 40.607/2014), "Altera o Decreto nº 21.959" (23.735/2001), "Modifica o
-    # Decreto nº 44.650 ... Atividade Portuária" (52.040/2021, 59.024/2025).
-    # O discriminador é o decreto citado: o de programa ou o RICMS-PE.
-    # Sem modelo: a DBF decide o tratamento (hoje o template de alteração é de empresa).
-    Tipo(
-        "ALTERACAO_NORMA",
-        _inicio(
-            rf"(?:Introduz\s+(?:altera[çc][õo]es|modi{_FI}ca[çc][õo]es)|"
-            rf"Altera|Modi{_FI}ca|D[áa]\s+nova\s+reda[çc][ãa]o)\b"
-            rf"(?=.{{0,400}}?{_DECRETOS_DE_PROGRAMA})"
-        ),
-        None,
-        EVIDENCIA_PUBLICADO,
-    ),
-    # --- Alteração do decreto de uma empresa ---
-    # Amostra: 60951 ("Introduz alterações nos Decretos nº ..., que concedem incentivo
-    # do PRODEPE à empresa X"). Publicado: 60.134/2025 usa o singular
-    # ("Introduz alterações no Decreto nº 41.447").
-    Tipo(
-        "ALTERACAO",
-        _inicio(r"Introduz\s+altera[çc][õo]es\b"),
-        "60951",
-        EVIDENCIA_AMOSTRA,
-    ),
-    # --- Segunda prorrogação / renovação ---
-    # Sem amostra real: padrão presumido a partir do texto dos demais. Usam o
-    # mesmo template da prorrogação e da renovação (decisão do projeto).
-    Tipo(
-        "SEGUNDA_PRORROGACAO",
-        _inicio(
-            rf"{_DISPOE_SOBRE_A}(?:segunda|2\s*[ªa°º]?)\s+prorroga{_CAO}\b"
-        ),
-        "60950",
-    ),
-    Tipo(
-        "SEGUNDA_RENOVACAO",
-        _inicio(rf"{_DISPOE_SOBRE_A}(?:segunda|2\s*[ªa°º]?)\s+renova{_CAO}\b"),
-        "60945",
-    ),
-    # --- Prorrogação e renovação ---
-    # Amostra: 60950 e 60945. Publicado: o plural em 58.817/2025 ("Dispõe sobre as
-    # prorrogações dos prazos de fruição de estímulos do PRODEPE").
-    Tipo(
-        "PRORROGACAO",
-        _inicio(rf"{_DISPOE_SOBRE_A}prorroga{_CAO}\b"),
-        "60950",
-        EVIDENCIA_AMOSTRA,
-    ),
-    Tipo(
-        "RENOVACAO",
-        _inicio(rf"{_DISPOE_SOBRE_A}renova{_CAO}\b"),
-        "60945",
-        EVIDENCIA_AMOSTRA,
-    ),
-    # --- Transferência do estímulo para outra empresa ---
-    # Amostra: 60505. "Transfere" é presumido.
-    Tipo(
-        "TRANSFERENCIA",
-        _inicio(rf"(?:{_DISPOE_SOBRE_A}transfer[êe]ncias?\b|Transfere\b)"),
-        "60505",
-        EVIDENCIA_AMOSTRA,
-    ),
-    # --- PROIND ---
-    # Amostra: 60.903 e 60.913 (caderno de 26/06/2026): "Autoriza a utilização do
-    # incentivo fiscal previsto no Anexo 33 ... que dispõe sobre o PROIND pelo
-    # contribuinte X". Ainda sem decreto-modelo: a DBF vai indicar um dia publicado.
-    Tipo(
-        "AUTORIZACAO_PROIND",
-        _inicio(r"Autoriza\s+a\s+utiliza[çc][ãa]o\s+do\s+(?:incentivo|benef[íi]cio)\b"),
-        None,
-        EVIDENCIA_AMOSTRA,
-    ),
-    # --- Revogação ---
-    # Publicado: 39.773/2013 ("Revoga o Decreto nº 39.617, de 22 de julho de 2013",
-    # que prorrogara um estímulo do PRODEPE). Sem modelo até a etapa 4 definir o
-    # tratamento. "Torna sem efeito" e "Dispõe sobre a revogação" são presumidos.
-    Tipo(
-        "REVOGACAO",
-        _inicio(r"(?:Revoga\b|Torna\s+sem\s+efeito\b|Disp[õo]e\s+sobre\s+a\s+revoga[çc][ãa]o\b)"),
-        None,
-        EVIDENCIA_PUBLICADO,
-    ),
-    # --- Terceirização da industrialização ---
-    # Amostra: 60233. A ementa não cita o programa (os considerandos citam a Lei 11.675).
-    Tipo(
-        "TERCEIRIZACAO",
-        _inicio(r"Autoriza\s+a\s+terceiriza[çc][ãa]o\b"),
-        "60233",
-        EVIDENCIA_AMOSTRA,
-    ),
+TIPOS_DECRETO: tuple[Tipo, ...] = tuple(
+    Tipo(nome, padrao, _MODELO_POR_TIPO[nome], evidencia)
+    for nome, padrao, evidencia in _REGRAS_TIPOS_DECRETO
 )
 
 DECRETO = Especie(
     nome="Decreto",
-    cabecalho=_CABECALHO_DECRETO,
+    cabecalho=CABECALHO_DECRETO,
     padrao_arquivo="{especie} {numero}.pdf",
     tipos=TIPOS_DECRETO,
     # "... e a Independência do Brasil." encerra o texto, antes das assinaturas.
-    fecho=re.compile(r"Independência\s+do\s+Brasil\.", re.IGNORECASE),
+    fecho=FECHO_DECRETO,
     cargo_assinante=re.compile(r"^Governador(?:a)? do Estado$"),
     # "A GOVERNADORA DO ESTADO, no uso das atribuições..." vem logo após a ementa.
-    abertura_do_corpo=re.compile(r"\b(?:A GOVERNADORA|O GOVERNADOR)\b"),
+    abertura_do_corpo=ABERTURA_DO_CORPO_DECRETO,
     # Ementa e considerandos terminam no "DECRETA:".
     fim_do_cabecalho=re.compile(r"\bDECRETA\s*:"),
     # Escopo: só os decretos dos programas de benefício fiscal da DBF.
@@ -252,28 +151,51 @@ DECRETO = Especie(
 )
 
 # ----------------------------------------------------------------------------
+# Edital (NÃO ATIVO)
+# ----------------------------------------------------------------------------
+
+# Reconhecimento de cabeçalho, número/ano, órgão e tipo a partir dos cadernos de 25/04,
+# 26/06, 15/07, 21/10 e 22/10/2026 (ver regras_atos.py). Fora de ESPECIES_ATIVAS:
+# falta a DBF definir o que fazer com o edital (nome do arquivo, escopo por programa,
+# template). Pendências:
+#   - `padrao_arquivo` é provisório: o número do edital só é único junto com o órgão
+#     e o ano ("EDITAL DBF Nº 063/2026"); a DBF define o nome;
+#   - o credenciamento do PEAP/PRODEAUTO/Lei do Esporte ainda não está ligado a
+#     `programas`;
+#   - DBM foi informado como outro nome da DBF, mas não aparece em nenhum caderno.
+EDITAL = Especie(
+    nome="Edital",
+    cabecalho=CABECALHO_EDITAL,
+    padrao_arquivo="{especie} {numero}.pdf",
+    tipos=tuple(Tipo(nome, padrao, None, evidencia) for nome, padrao, evidencia in _REGRAS_TIPOS_EDITAL),
+    orgaos_do_escopo=ORGAOS_EDITAL_SEFAZ,
+)
+
+# ----------------------------------------------------------------------------
+# Portaria (NÃO ATIVA)
+# ----------------------------------------------------------------------------
+
+# Portaria da SEFAZ = órgão "SF" no cabeçalho ("PORTARIA SF Nº 76, DE 24.04.2026").
+# O número só é único junto com o órgão e o ano. O tipo da portaria NÃO passa por
+# `tipos`: vem do primeiro verbo operativo do ato (regras_atos.TIPOS_PORTARIA,
+# procurado em qualquer ponto da janela, e não com .match() no início da ementa).
+PORTARIA = Especie(
+    nome="Portaria",
+    cabecalho=CABECALHO_PORTARIA,
+    padrao_arquivo="{especie} {numero}.pdf",
+    orgaos_do_escopo=ORGAOS_PORTARIA_SEFAZ,
+)
+
+# ----------------------------------------------------------------------------
 # Registro
 # ----------------------------------------------------------------------------
 
-# Espécies tratadas nesta fase. Para incluir editais no futuro, defina
-# EDITAL acima e acrescente-o aqui.
+# Espécies tratadas nesta fase. EDITAL e PORTARIA já estão definidos acima, mas
+# só entram aqui por decisão da DBF (ver as pendências em cada um).
 ESPECIES_ATIVAS: tuple[Especie, ...] = (DECRETO,)
 
 # Espécies que, quando o documento COMEÇA por elas, são reconhecidas como
-# "outra espécie" e descartadas. Nomes de espécies ativas são ignorados
-# automaticamente. Documentos que não começam por nenhuma espécie conhecida
-# NÃO são descartados: vão para revisão manual.
-NOMES_OUTRAS_ESPECIES: tuple[str, ...] = (
-    "LEI COMPLEMENTAR",
-    "LEI",
-    "PORTARIA",
-    "EDITAL",
-    "ERRATA",
-    "RESOLUÇÃO",
-    "INSTRUÇÃO NORMATIVA",
-    "COMUNICADO",
-    "DECISÃO",
-    "RETIFICAÇÃO",
-    "DELIBERAÇÃO",
-    "ORDEM DE SERVIÇO",
-)
+# "outra espécie" e descartadas (a lista mora em regras_atos.py, importada acima).
+# Nomes de espécies ativas são ignorados automaticamente. Documentos que não
+# começam por nenhuma espécie conhecida NÃO são descartados: vão para revisão manual.
+# (`NOMES_OUTRAS_ESPECIES` é importada de regras_atos no topo e continua importável daqui.)
