@@ -197,6 +197,13 @@ def test_variavel_de_ambiente_do_proxy_tem_precedencia(tmp_path, monkeypatch):
     assert carregar_configuracao(env).proxy_https == "http://127.0.0.1:8888"
 
 
+@pytest.mark.parametrize("valor", ["auto", "AUTO", " Auto "])
+def test_proxy_auto_e_aceito_e_normalizado(tmp_path, valor):
+    env = tmp_path / ".env"
+    env.write_text(f"HTTPS_PROXY={valor}\n", encoding="utf-8")
+    assert carregar_configuracao(env).proxy_https == "auto"
+
+
 @pytest.mark.parametrize("valor", ["127.0.0.1:9000", "ftp://127.0.0.1:21", "http://", "proxy"])
 def test_proxy_em_formato_invalido_e_recusado(tmp_path, valor):
     env = tmp_path / ".env"
@@ -233,3 +240,37 @@ def test_ssl_estrito_em_formato_invalido_e_recusado(tmp_path):
     env.write_text("SSL_ESTRITO=talvez\n", encoding="utf-8")
     with pytest.raises(ErroConfiguracao, match="SSL_ESTRITO"):
         carregar_configuracao(env)
+
+
+# ----------------------------------------------------------------------------
+# HTTPS_PROXY do ambiente sobrepondo o do .env
+# ----------------------------------------------------------------------------
+
+
+def test_ambiente_diferente_do_env_e_sinalizado_sem_credenciais(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=auto\n", encoding="utf-8")
+    monkeypatch.setenv("HTTPS_PROXY", "http://usuario:segredo@127.0.0.1:61843")
+    cfg = carregar_configuracao(env)
+    assert cfg.proxy_https is not None and cfg.proxy_https.endswith("127.0.0.1:61843")  # o ambiente vence
+    assert cfg.proxy_do_ambiente == "127.0.0.1:61843"
+
+
+def test_ambiente_igual_ao_env_nao_e_sinalizado(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=http://127.0.0.1:9000\n", encoding="utf-8")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9000")
+    assert carregar_configuracao(env).proxy_do_ambiente is None
+
+
+def test_ambiente_sem_proxy_no_env_nao_e_sinalizado(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=\n", encoding="utf-8")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9000")
+    assert carregar_configuracao(env).proxy_do_ambiente is None
+
+
+def test_sem_variavel_de_ambiente_nao_ha_sinalizacao(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("HTTPS_PROXY=auto\n", encoding="utf-8")
+    assert carregar_configuracao(env).proxy_do_ambiente is None

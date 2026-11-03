@@ -12,10 +12,10 @@ Três modos, independentes por enquanto:
      para o lote (modo 3).
   3. Lote: processa os PDFs da pasta temporária (PASTA_TEMP), um ato por PDF:
      etapa 2 (identificação) -> etapa 3 (duplicidade) -> etapa 4 (normalização:
-     gera o PDF limpo em PASTA_NORMALIZADOS) -> etapa 5.
-     A etapa 5 (gravar na base da DBF) ainda é esqueleto: um ato inédito
-     permanece na pasta temporária (nunca é descartado antes de a etapa 5
-     gravar o resultado) e o PDF normalizado fica em PASTA_NORMALIZADOS.
+     gera o PDF limpo em PASTA_NORMALIZADOS) -> etapa 5 (grava na base da
+     DBF e só então descarta o original e a cópia normalizada). Se a gravação
+     falhar por E/S, o original fica em pendentes e o programa termina com
+     código 1; se o conteúdo gravado não conferir, o original vai para erros.
 
 Uso:
     python main.py --simular                              # lote, sem mexer em nada
@@ -24,6 +24,7 @@ Uso:
     python main.py --baixar --de 2026-10-01 --ate 2026-10-20
     python main.py --separar "dados/cadernos/20260626_ResumoDiario.pdf"
     python main.py --separar dados/cadernos --gravar     # grava os inéditos em pendentes
+    python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
 """
 
 from __future__ import annotations
@@ -40,7 +41,10 @@ from pathlib import Path
 
 import armazenamento
 import captura
+import comparacao
 import normalizador
+import proxy
+from armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
 from config import (
     Configuracao,
     ErroConfiguracao,
@@ -63,7 +67,7 @@ class Destino(Enum):
     DESCARTADO_DUPLICADO = "descartado (já existe na DBF)"
     ENVIADO_OCR = "enviado para leitura tesseract"
     ENVIADO_ERROS = "enviado para erros (revisão manual)"
-    AGUARDANDO_ETAPA_5 = "mantido na pasta temporária (etapa 5 pendente)"
+    FALHA_AO_GRAVAR = "mantido na pasta temporária (falha ao gravar na DBF)"
     CONCLUIDO = "normalizado e armazenado na DBF"
 
 
@@ -147,18 +151,27 @@ def processar_arquivo(
     # --- Etapa 5: armazenamento -------------------------------------------
     try:
         armazenamento.armazenar(pdf_gerado, nome, cfg.pasta_dbf, pdf, simular)
-    except NotImplementedError as pendente:
-        log.info(
-            "%s | %s | %s (%s)",
-            pdf.name,
-            Destino.AGUARDANDO_ETAPA_5.value,
-            nome,
-            ident.tipo.nome,
+    except ArquivoJaExiste:
+        # Outra pessoa salvou o mesmo decreto depois da etapa 3.
+        armazenamento.descartar_se_existir(pdf_gerado)
+        return _descartar(
+            pdf, Destino.DESCARTADO_DUPLICADO, f"{nome} (surgiu na DBF durante o lote)", simular
         )
-        log.debug("pendente: %s", pendente)
-        return Destino.AGUARDANDO_ETAPA_5
+    except GravacaoDivergente as erro:
+        return _mover(
+            pdf,
+            cfg.pasta_erros,
+            Destino.ENVIADO_ERROS,
+            f"{nome}: gravação na DBF não confere ({erro})",
+            simular,
+        )
+    except ErroArmazenamento as erro:
+        # Falha de E/S (drive indisponível, sem permissão...): o original fica em
+        # pendentes e o próximo lote tenta de novo.
+        log.error("%s | %s | %s: %s", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome, erro)
+        return Destino.FALHA_AO_GRAVAR
 
-    log.info("%s | %s | %s", pdf.name, Destino.CONCLUIDO.value, nome)
+    log.info("%s | %s | %s (%s)", pdf.name, Destino.CONCLUIDO.value, nome, ident.tipo.nome)
     return Destino.CONCLUIDO
 
 
@@ -231,9 +244,24 @@ def capturar(
         "Captura iniciada%s: de %s a %s em %s (fonte: %s).",
         modo, inicio, fim, cfg.pasta_cadernos, fonte,
     )
+    cadernos = captura.FONTES[fonte]
+    if cfg.proxy_do_ambiente:
+        log.warning(
+            "A variável de ambiente HTTPS_PROXY (%s) vale mais que a linha HTTPS_PROXY do .env. "
+            "Se o endereço está velho, apague-a com Remove-Item Env:HTTPS_PROXY (PowerShell) "
+            "e rode de novo.",
+            cfg.proxy_do_ambiente,
+        )
+    endereco_proxy = cfg.proxy_https
+    if endereco_proxy == proxy.VALOR_AUTOMATICO:
+        # HTTPS_PROXY=auto: pergunta ao Windows uma vez por captura (a porta muda
+        # entre sessões). Na simulação não há rede, então nem se pergunta.
+        endereco_proxy = (
+            None if simular else proxy.resolver_proxy(endereco_proxy, cadernos[0].url(inicio))
+        )
     resultados = captura.baixar_cadernos(
-        inicio, fim, cfg.pasta_cadernos, cadernos=captura.FONTES[fonte], simular=simular,
-        proxy=cfg.proxy_https, ssl_estrito=cfg.ssl_estrito,
+        inicio, fim, cfg.pasta_cadernos, cadernos=cadernos, simular=simular,
+        proxy=endereco_proxy, ssl_estrito=cfg.ssl_estrito,
     )
     resumo: Counter[captura.StatusDownload] = Counter(r.status for r in resultados)
     for status, quantidade in resumo.most_common():
@@ -250,6 +278,7 @@ class ResumoRelatorio:
     avisos: int = 0  # pontos de atenção (cabeçalho suspeito, fecho ausente, repetido...)
     falhas: int = 0  # atos que não puderam ser gravados em dados/pendentes
     situacoes: Counter[str] = field(default_factory=Counter)
+    comparacoes: list[tuple[str, comparacao.Comparacao]] = field(default_factory=list)
 
 
 def _carregar_indice_do_relatorio(
@@ -280,6 +309,7 @@ def _relatar_caderno(
     indice: set[str] | None,
     gravar: bool,
     resumo: ResumoRelatorio,
+    comparar: bool = False,
 ) -> None:
     resultado = separar_caderno(caderno)
     log.info(
@@ -309,6 +339,8 @@ def _relatar_caderno(
                 resumo.avisos += 1
         elif indice is not None and ja_existe(indice, nome):
             situacao = "já existe na DBF"
+            if comparar and cfg.pasta_dbf is not None:
+                situacao += _comparar_com_a_base(cfg.pasta_dbf / nome, nome, ato, resumo)
         elif indice is None:
             situacao = "base da DBF não consultada"
         elif gravar:
@@ -324,6 +356,49 @@ def _relatar_caderno(
     for aviso in resultado.avisos:
         log.warning("AVISO: %s", aviso)
     resumo.avisos += len(resultado.avisos)
+
+
+def _descrever(comparado: comparacao.Comparacao) -> str:
+    if not comparado.lido:
+        return f" (PDF da base não lido: {comparado.detalhe})"
+    if comparado.identico:
+        return " (texto idêntico ao da base)"
+    return (
+        f" (texto difere da base: similaridade {comparado.similaridade:.2%}, "
+        f"{comparado.so_no_ato} elemento(s) só no caderno, {comparado.so_na_base} só na base)"
+    )
+
+
+def _comparar_com_a_base(
+    pdf_base: Path, nome: str, ato: AtoSeparado, resumo: ResumoRelatorio
+) -> str:
+    comparado = comparacao.comparar_com_base(ato.texto, pdf_base)
+    resumo.comparacoes.append((nome, comparado))
+    for trecho in comparado.trechos:
+        log.info("%s | diferença: %s", nome, trecho)
+    if comparado.total_trechos > len(comparado.trechos):
+        log.info(
+            "%s | ... e mais %d diferença(s)", nome, comparado.total_trechos - len(comparado.trechos)
+        )
+    return _descrever(comparado)
+
+
+def _resumir_comparacoes(resumo: ResumoRelatorio) -> None:
+    if not resumo.comparacoes:
+        return
+    lidas = [(n, c) for n, c in resumo.comparacoes if c.lido]
+    log.info("Comparação com a base (%d decreto(s) que já existem):", len(resumo.comparacoes))
+    log.info("  %3d  texto idêntico", sum(c.identico for _, c in lidas))
+    faixas = ((0.99, "similaridade de 99% a menos de 100%"), (0.95, "similaridade de 95% a menos de 99%"), (0.0, "similaridade abaixo de 95%"))
+    restantes = [(n, c) for n, c in lidas if not c.identico]
+    for piso, titulo in faixas:
+        da_faixa = [(n, c) for n, c in restantes if c.similaridade >= piso]
+        log.info("  %3d  %s", len(da_faixa), titulo)
+        restantes = [(n, c) for n, c in restantes if c.similaridade < piso]
+    log.info("  %3d  PDF da base não lido", len(resumo.comparacoes) - len(lidas))
+    diferentes = sorted((par for par in lidas if not par[1].identico), key=lambda par: par[1].similaridade)
+    for nome, comparado in diferentes[:20]:
+        log.info("  menos parecidos: %s (%.2f%%)", nome, comparado.similaridade * 100)
 
 
 def _gravar_inedito(
@@ -351,6 +426,7 @@ def relatorio_dos_cadernos(
     caminho: Path,
     gravar: bool = False,
     permitir_pasta_vazia: bool = False,
+    comparar: bool = False,
 ) -> ResumoRelatorio:
     """Lista os atos de um caderno (ou de todos os PDFs de uma pasta) e o
     que o pipeline faz com cada um.
@@ -368,10 +444,11 @@ def relatorio_dos_cadernos(
     indice = _carregar_indice_do_relatorio(cfg, gravar, permitir_pasta_vazia)
     resumo = ResumoRelatorio()
     for caderno in cadernos:
-        _relatar_caderno(cfg, caderno, indice, gravar, resumo)
+        _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar)
     log.info("Total: %d caderno(s), %d ato(s).", resumo.cadernos, resumo.atos)
     for situacao, quantidade in resumo.situacoes.most_common():
         log.info("  %3d  %s", quantidade, situacao)
+    _resumir_comparacoes(resumo)
     if resumo.falhas:
         log.error("%d ato(s) não puderam ser gravados em pendentes.", resumo.falhas)
     return resumo
@@ -444,11 +521,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="com --separar: grava em PASTA_TEMP um PDF por ato inédito da DBF",
     )
+    parser.add_argument(
+        "--comparar",
+        action="store_true",
+        help="com --separar: compara o texto de cada decreto que já existe na DBF com o "
+        "PDF da base (só leitura; serve para achar republicações)",
+    )
     args = parser.parse_args(argv)
     if args.separar and (args.baixar or args.de or args.ate or args.simular):
         parser.error("--separar não se combina com --baixar, --de, --ate nem --simular")
     if args.gravar and not args.separar:
         parser.error("--gravar só vale junto com --separar")
+    if args.comparar and not args.separar:
+        parser.error("--comparar só vale junto com --separar")
     if args.baixar and args.de is None:
         parser.error("--baixar exige --de AAAA-MM-DD")
     if not args.baixar and (args.de or args.ate):
@@ -459,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         _configurar_log(cfg.pasta_logs)
         if args.separar:
             resumo = relatorio_dos_cadernos(
-                cfg, args.separar, args.gravar, args.permitir_pasta_vazia
+                cfg, args.separar, args.gravar, args.permitir_pasta_vazia, args.comparar
             )
             return 1 if resumo.falhas else 0
         if args.baixar:
@@ -471,7 +556,9 @@ def main(argv: list[str] | None = None) -> int:
         if not args.simular:
             for pasta in (cfg.pasta_temp, cfg.pasta_erros, cfg.pasta_ocr):
                 pasta.mkdir(parents=True, exist_ok=True)
-        executar(cfg, args.simular, args.permitir_pasta_vazia)
+        resumo_lote = executar(cfg, args.simular, args.permitir_pasta_vazia)
+        if resumo_lote[Destino.FALHA_AO_GRAVAR]:
+            return 1  # decretos ficaram em pendentes; vale rodar de novo
     except (
         ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao
     ) as erro:

@@ -1,4 +1,4 @@
-"""Integração do lote (etapas 2, 3 e 4 reais; a 5 ainda pendente).
+"""Integração do lote (etapas 2 a 5 reais).
 
 Usa só PDFs sintéticos, então roda mesmo sem as amostras reais.
 """
@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import pytest
 
+import armazenamento
+import main as modulo_main
+from armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
 from config import Configuracao, ErroConfiguracao
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
 from duplicidade import PastaDbfIndisponivel
@@ -55,13 +58,13 @@ def test_destino_de_cada_arquivo(ambiente):
 
     assert resumo == {
         Destino.DESCARTADO_DUPLICADO: 1,
-        Destino.AGUARDANDO_ETAPA_5: 1,
+        Destino.CONCLUIDO: 1,
         Destino.DESCARTADO_OUTRA_ESPECIE: 1,
         Destino.ENVIADO_OCR: 1,
         Destino.ENVIADO_ERROS: 3,  # sem_tipo, sem_cabecalho, quebrado
     }
-    # Duplicado e lei foram descartados; o inédito permanece (etapa 5 pendente).
-    assert _estado(cfg)["pendentes"] == ["inedito.pdf", "leia-me.txt"]
+    # Duplicado, lei e inédito saíram de pendentes (o inédito foi gravado na DBF).
+    assert _estado(cfg)["pendentes"] == ["leia-me.txt"]
     # PDF de imagem mantém o nome original da CEPE.
     assert _estado(cfg)["leitura tesseract"] == ["CEPE_2026-06-26_0001.pdf"]
     assert _estado(cfg)["erros"] == ["quebrado.pdf", "sem_cabecalho.pdf", "sem_tipo.pdf"]
@@ -76,16 +79,83 @@ def test_simulacao_nao_altera_nada_e_preve_o_mesmo_resultado(ambiente):
     assert resumo_simulado == executar(cfg)
 
 
-def test_lote_gera_o_pdf_normalizado_so_do_inedito(ambiente):
+def test_lote_grava_so_o_inedito_na_dbf_e_limpa_as_pastas_de_trabalho(ambiente):
     cfg = ambiente
     executar(cfg)
-    assert [p.name for p in cfg.pasta_normalizados.iterdir()] == ["Decreto 60951.pdf"]
+    assert sorted(p.name for p in cfg.pasta_dbf.iterdir()) == ["Decreto 60929.pdf", "Decreto 60951.pdf"]
+    # O existente não foi tocado; o novo é o PDF normalizado (texto limpo e legível).
+    assert (cfg.pasta_dbf / "Decreto 60929.pdf").read_bytes() == b"ja existe"
+    assert (cfg.pasta_dbf / "Decreto 60951.pdf").read_bytes().startswith(b"%PDF")
+    assert list(cfg.pasta_normalizados.iterdir()) == []
+    assert not (cfg.pasta_temp / "inedito.pdf").exists()
+
+
+def test_segunda_execucao_nao_faz_mais_nada(ambiente):
+    cfg = ambiente
+    executar(cfg)
+    dbf = {p.name: p.stat().st_mtime_ns for p in cfg.pasta_dbf.iterdir()}
+    assert executar(cfg) == {}
+    assert {p.name: p.stat().st_mtime_ns for p in cfg.pasta_dbf.iterdir()} == dbf
+
+
+def test_falha_de_e_s_ao_gravar_mantem_o_original_em_pendentes(ambiente, monkeypatch):
+    cfg = ambiente
+
+    def falha(*args, **kwargs):
+        raise ErroArmazenamento("drive indisponível")
+
+    monkeypatch.setattr(armazenamento, "armazenar", falha)
+    resumo = executar(cfg)
+    assert resumo[Destino.FALHA_AO_GRAVAR] == 1
+    assert resumo[Destino.CONCLUIDO] == 0
+    assert "inedito.pdf" in _estado(cfg)["pendentes"]
+    assert "Decreto 60951.pdf" not in [p.name for p in cfg.pasta_dbf.iterdir()]
+
+
+def test_codigo_de_saida_1_quando_ha_falha_ao_gravar(ambiente, monkeypatch):
+    def falha(*args, **kwargs):
+        raise ErroArmazenamento("drive indisponível")
+
+    monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: ambiente)
+    monkeypatch.setattr(armazenamento, "armazenar", falha)
+    assert modulo_main.main([]) == 1
+
+
+def test_codigo_de_saida_0_quando_o_lote_termina_bem(ambiente, monkeypatch):
+    monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: ambiente)
+    assert modulo_main.main([]) == 0
+
+
+def test_decreto_que_surgiu_na_dbf_durante_o_lote_e_descartado_como_duplicado(ambiente, monkeypatch):
+    cfg = ambiente
+
+    def alguem_salvou_antes(*args, **kwargs):
+        raise ArquivoJaExiste("Decreto 60951.pdf já existe")
+
+    monkeypatch.setattr(armazenamento, "armazenar", alguem_salvou_antes)
+    resumo = executar(cfg)
+    assert resumo[Destino.DESCARTADO_DUPLICADO] == 2
+    assert "inedito.pdf" not in _estado(cfg)["pendentes"]
+    assert list(cfg.pasta_normalizados.iterdir()) == []
+
+
+def test_gravacao_que_nao_confere_envia_o_original_para_revisao(ambiente, monkeypatch):
+    cfg = ambiente
+
+    def diverge(*args, **kwargs):
+        raise GravacaoDivergente("hash diferente")
+
+    monkeypatch.setattr(armazenamento, "armazenar", diverge)
+    resumo = executar(cfg)
+    assert resumo[Destino.ENVIADO_ERROS] == 4
+    assert "inedito.pdf" in _estado(cfg)["erros"]
 
 
 def test_simulacao_confere_a_normalizacao_mas_nao_grava(ambiente):
     cfg = ambiente
     executar(cfg, simular=True)
     assert not cfg.pasta_normalizados.exists()
+    assert [p.name for p in cfg.pasta_dbf.iterdir()] == ["Decreto 60929.pdf"]
 
 
 def test_falha_de_normalizacao_envia_o_pdf_para_revisao(ambiente, monkeypatch):
@@ -96,7 +166,7 @@ def test_falha_de_normalizacao_envia_o_pdf_para_revisao(ambiente, monkeypatch):
 
     monkeypatch.setattr(normalizador, "gerar_pdf_normalizado", falha)
     resumo = executar(cfg)
-    assert resumo[Destino.AGUARDANDO_ETAPA_5] == 0
+    assert resumo[Destino.CONCLUIDO] == 0
     assert resumo[Destino.ENVIADO_ERROS] == 4
     assert "inedito.pdf" in _estado(cfg)["erros"]
 
@@ -108,7 +178,7 @@ def test_mesmo_numero_duas_vezes_no_lote_envia_o_segundo_para_revisao(ambiente):
         texto_decreto("60.951", "Introduz alterações no Decreto nº 50.135."),
     )
     resumo = executar(cfg)
-    assert resumo[Destino.AGUARDANDO_ETAPA_5] == 1
+    assert resumo[Destino.CONCLUIDO] == 1
     assert resumo[Destino.ENVIADO_ERROS] == 4
     assert (cfg.pasta_erros / "inedito_b.pdf").exists()
 

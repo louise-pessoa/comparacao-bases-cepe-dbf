@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
+from proxy import VALOR_AUTOMATICO
+
 RAIZ = Path(__file__).resolve().parent
 
 _UNIDADE_WINDOWS = re.compile(r"^[A-Za-z]:[\\/]")
@@ -28,8 +30,11 @@ class Configuracao:
     pasta_normalizados: Path  # saída local da etapa 4, antes de ir para a DBF
     pasta_logs: Path
     pasta_dbf: Path | None  # base oficial da DBF; obrigatória para executar
-    proxy_https: str | None = None  # proxy da rede, ex.: http://127.0.0.1:9000
+    proxy_https: str | None = None  # proxy da rede: http://127.0.0.1:9000 ou "auto"
     ssl_estrito: bool = True  # False: aceita certificado de cadeia sem Authority Key Identifier
+    # Endereço de HTTPS_PROXY vindo do ambiente quando ele sobrepõe um valor diferente do
+    # .env (a captura avisa; senha, se houver, não é guardada aqui).
+    proxy_do_ambiente: str | None = None
 
 
 def _resolver_caminho(variavel: str, valor: str) -> Path:
@@ -104,11 +109,13 @@ def _ler_proxy(valor: str) -> str | None:
     valor = valor.strip()
     if not valor:
         return None
+    if valor.casefold() == VALOR_AUTOMATICO:  # o proxy é descoberto no Windows a cada captura
+        return VALOR_AUTOMATICO
     partes = urlsplit(valor)
     if partes.scheme not in ("http", "https") or not partes.hostname:
         raise ErroConfiguracao(
-            f"HTTPS_PROXY={valor!r} é inválido. Use o formato "
-            "http://endereco:porta (por exemplo, http://127.0.0.1:9000)."
+            f"HTTPS_PROXY={valor!r} é inválido. Use auto (descobre o proxy do Windows) "
+            "ou o formato http://endereco:porta (por exemplo, http://127.0.0.1:9000)."
         )
     return valor
 
@@ -130,6 +137,18 @@ def _ler_booleano(variavel: str, valor: str, padrao: bool) -> bool:
     )
 
 
+def _ler_proxy_do_arquivo(arquivo_env: Path | None) -> str:
+    return (dotenv_values(arquivo_env or RAIZ / ".env").get("HTTPS_PROXY") or "").strip()
+
+
+def _sem_credenciais(proxy: str) -> str:
+    """host:porta de um endereço de proxy, sem usuário nem senha."""
+    partes = urlsplit(proxy)
+    if not partes.hostname:
+        return "(endereço inválido)"
+    return f"{partes.hostname}:{partes.port}" if partes.port else partes.hostname
+
+
 def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
     """Lê o .env (variáveis de ambiente reais têm precedência sobre ele)."""
     valores = {**dotenv_values(arquivo_env or RAIZ / ".env"), **os.environ}
@@ -139,6 +158,8 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         return _resolver_caminho(variavel, valor)
 
     bruto_dbf = (valores.get("PASTA_DBF") or "").strip()
+    do_arquivo = _ler_proxy_do_arquivo(arquivo_env)
+    do_ambiente = (os.environ.get("HTTPS_PROXY") or "").strip()
     cfg = Configuracao(
         pasta_temp=pasta("PASTA_TEMP", "dados/pendentes"),
         pasta_cadernos=pasta("PASTA_CADERNOS", "dados/cadernos"),
@@ -149,6 +170,11 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         pasta_dbf=_resolver_caminho("PASTA_DBF", bruto_dbf) if bruto_dbf else None,
         proxy_https=_ler_proxy(valores.get("HTTPS_PROXY") or ""),
         ssl_estrito=_ler_booleano("SSL_ESTRITO", valores.get("SSL_ESTRITO") or "", True),
+        proxy_do_ambiente=(
+            _sem_credenciais(do_ambiente)
+            if do_ambiente and do_arquivo and do_ambiente.casefold() != do_arquivo.casefold()
+            else None
+        ),
     )
     validar_configuracao(cfg)
     return cfg
