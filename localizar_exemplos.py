@@ -42,28 +42,14 @@ from pathlib import Path
 
 import pymupdf
 
+from atos_acessorios import ERRATA_LINHA as _ERRATA
+from atos_acessorios import REPUBLICACAO_MARCADOR as _REPUBLICACAO
+from atos_acessorios import RETIFICACAO_LINHA as _RETIFICACAO
+from atos_acessorios import ato_referido as _ato_referido
+
 PASTA_CADERNOS_PADRAO = Path("dados/cadernos")
 PASTA_EXEMPLOS_PADRAO = Path("dados/exemplos")
 
-_ERRATA = re.compile(r"^[ \t]*(?:ERRATA|Errata)\b", re.M)
-_REPUBLICACAO = re.compile(
-    r"republicad[oa]s?\s+por\s+haver(?:em)?\s+sa[ií]d[oa]s?"
-    r"|republicad[oa]s?\s+por\s+(?:haver\s+)?(?:incorre[çc][ãa]o|inconsist[êe]ncia)"
-    r"|\d[ªº]\s*republica[çc][ãa]o"
-    r"|aviso\s+de\s+republica[çc][ãa]o"
-    r"|republica[çc][ãa]o\s+d[oe]s?\s+edital",
-    re.I,
-)
-_RETIFICACAO = re.compile(r"^[ \t]*(?:AVISO DE )?RETIFICA[ÇC][ÃA]O\b", re.M)
-_ESPECIES_REFERIDAS = (
-    "Decreto", "Portaria", "Edital", "Despacho", "Resolução", "Lei Complementar", "Lei",
-    "Instrução Normativa", "Termo de Fomento", "Contrato", "Aviso", "Ato",
-)
-_ATO_REFERIDO = re.compile(
-    r"\b(" + "|".join(sorted(map(re.escape, _ESPECIES_REFERIDAS), key=len, reverse=True)) + r")\b"
-    r"(?:[^\n.;:]{0,80}?\bn[ºo°]\.?\s*(\d[\d./-]*))?",
-    re.I,
-)
 ESPECIES_CABECALHO_PADRAO = ("EDITAL", "PORTARIA")
 _TAMANHO_DO_FORMATO = 70
 _DECRETO = re.compile(r"^[ \t]*DECRETO\s+N[ºo°]\s*(\d[\d.]*)", re.M)
@@ -92,14 +78,8 @@ def _compactar(texto: str, limite: int) -> str:
 
 def ato_referido(trecho: str) -> str:
     """O ato que a errata corrige, lido do começo do trecho: "Decreto 61.560", "Despacho" (sem
-    número) ou "?" se não achou nenhuma espécie conhecida."""
-    resto = re.sub(r"^\s*errata\b", "", trecho, flags=re.I)
-    achado = _ATO_REFERIDO.search(resto)
-    if not achado:
-        return "?"
-    especie = achado.group(1)
-    especie = especie[0].upper() + especie[1:].lower()
-    return f"{especie} {achado.group(2).rstrip('.,;-')}" if achado.group(2) else especie
+    número) ou "?" se não achou nenhuma espécie conhecida. A RegEx mora em atos_acessorios."""
+    return _ato_referido(trecho)
 
 
 def formato_do_cabecalho(trecho: str) -> str:

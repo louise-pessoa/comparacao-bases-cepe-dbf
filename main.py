@@ -1,6 +1,6 @@
 """Orquestração do pipeline de normalização na fonte (DBF/SEFAZ).
 
-Três modos, independentes por enquanto:
+Quatro modos, independentes por enquanto:
 
   1. Captura (etapa 1): `--baixar --de AAAA-MM-DD [--ate AAAA-MM-DD]` baixa os
      cadernos (PDF completo do dia) para PASTA_CADERNOS e termina. Os cadernos
@@ -16,6 +16,10 @@ Três modos, independentes por enquanto:
      DBF e só então descarta o original e a cópia normalizada). Se a gravação
      falhar por E/S, o original fica em pendentes e o programa termina com
      código 1; se o conteúdo gravado não conferir, o original vai para erros.
+  4. Catálogo: `--catalogar PASTA` reconhece decretos, editais, portarias, erratas
+     e republicações dos cadernos e grava um CSV, um ato por linha (ver
+     catalogo.py). Só lê os cadernos; não usa a configuração (.env), a base da DBF
+     nem as pastas de saída do pipeline.
 
 Uso:
     python main.py --simular                              # lote, sem mexer em nada
@@ -25,6 +29,7 @@ Uso:
     python main.py --separar "dados/cadernos/20260626_ResumoDiario.pdf"
     python main.py --separar dados/cadernos --gravar     # grava os inéditos em pendentes
     python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
+    python main.py --catalogar dados/cadernos             # grava dados/catalogo_atos.csv
 """
 
 from __future__ import annotations
@@ -41,6 +46,7 @@ from pathlib import Path
 
 import armazenamento
 import captura
+import catalogo
 import comparacao
 import normalizador
 import proxy
@@ -474,6 +480,20 @@ def _data_iso(texto: str) -> date:
         raise argparse.ArgumentTypeError(f"data inválida: {texto!r} (use AAAA-MM-DD)")
 
 
+def catalogar_cadernos(caminho: Path, saida: Path | None = None) -> int:
+    """Modo `--catalogar`: grava o CSV e imprime o resumo. Só lê os cadernos e não toca em
+    configuração, base da DBF, logs nem pastas do pipeline (só no CSV de saída)."""
+    destino = saida or catalogo.PASTA_PADRAO_DO_CSV / catalogo.NOME_PADRAO_DO_CSV
+    try:
+        resultado = catalogo.catalogar(caminho)
+    except ErroSeparacao as erro:
+        print(f"Erro: {erro}", file=sys.stderr)
+        return 2
+    catalogo.gravar_csv(resultado.linhas, destino)
+    print(catalogo.resumo_em_texto(resultado, destino))
+    return 1 if resultado.cadernos_com_falha else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Normalização na Fonte dos atos da CEPE (DBF/SEFAZ); hoje, decretos."
@@ -527,7 +547,27 @@ def main(argv: list[str] | None = None) -> int:
         help="com --separar: compara o texto de cada decreto que já existe na DBF com o "
         "PDF da base (só leitura; serve para achar republicações)",
     )
+    parser.add_argument(
+        "--catalogar",
+        type=Path,
+        metavar="PASTA",
+        help="cataloga os atos (decreto, edital, portaria, errata, republicação) de um caderno "
+        "ou de todos os PDFs de uma pasta, em CSV (só lê; não usa .env nem a base da DBF)",
+    )
+    parser.add_argument(
+        "--saida",
+        type=Path,
+        metavar="ARQUIVO.csv",
+        help=f"com --catalogar: onde gravar o CSV (padrão: {catalogo.PASTA_PADRAO_DO_CSV / catalogo.NOME_PADRAO_DO_CSV})",
+    )
     args = parser.parse_args(argv)
+    if args.catalogar and (
+        args.separar or args.baixar or args.de or args.ate or args.simular
+        or args.gravar or args.comparar
+    ):
+        parser.error("--catalogar não se combina com outros modos nem com suas opções")
+    if args.saida and not args.catalogar:
+        parser.error("--saida só vale junto com --catalogar")
     if args.separar and (args.baixar or args.de or args.ate or args.simular):
         parser.error("--separar não se combina com --baixar, --de, --ate nem --simular")
     if args.gravar and not args.separar:
@@ -538,6 +578,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--baixar exige --de AAAA-MM-DD")
     if not args.baixar and (args.de or args.ate):
         parser.error("--de e --ate só valem junto com --baixar")
+
+    if args.catalogar:
+        return catalogar_cadernos(args.catalogar, args.saida)
 
     try:
         cfg = carregar_configuracao()

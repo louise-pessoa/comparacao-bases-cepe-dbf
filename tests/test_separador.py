@@ -13,6 +13,7 @@ from especies import DECRETO, Especie
 from identificador import StatusIdentificacao, identificar, normalizar_espacos
 from separador import (
     ErroSeparacao,
+    ler_caderno,
     limpar_ligaduras,
     separar_caderno,
     separar_texto,
@@ -235,6 +236,42 @@ def test_arquivo_inexistente_ou_nao_pdf(tmp_path):
     falso.write_bytes(b"isto nao e pdf")
     with pytest.raises(ErroSeparacao):
         separar_caderno(falso)
+
+
+def _pdf_protegido(caminho):
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "DECRETO Nº 60.929, DE 25 DE JUNHO DE 2026.")
+    doc.save(caminho, encryption=pymupdf.PDF_ENCRYPT_AES_256, owner_pw="dono", user_pw="usuario")
+    doc.close()
+    return caminho
+
+
+def _pdf_sem_paginas(caminho):
+    caminho.write_bytes(
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R/Size 3>>\n%%EOF\n"
+    )
+    return caminho
+
+
+@pytest.mark.parametrize("ler", [separar_caderno, ler_caderno])
+def test_pdf_com_senha_e_recusado(tmp_path, ler):
+    with pytest.raises(ErroSeparacao, match="senha"):
+        ler(_pdf_protegido(tmp_path / "senha.pdf"))
+
+
+@pytest.mark.parametrize("ler", [separar_caderno, ler_caderno])
+def test_pdf_sem_paginas_e_recusado(tmp_path, ler):
+    with pytest.raises(ErroSeparacao, match="sem páginas"):
+        ler(_pdf_sem_paginas(tmp_path / "vazio.pdf"))
+
+
+def test_ler_caderno_devolve_texto_paginas_e_digitalizadas(tmp_path):
+    caminho = criar_pdf_texto(tmp_path / "c.pdf", "primeira página", "segunda página")
+    texto, inicios, digitalizadas, paginas = ler_caderno(caminho)
+    assert paginas == 2 and len(inicios) == 2 and inicios[0] == 0
+    assert digitalizadas == ()
+    assert "primeira página" in texto[: inicios[1]] and "segunda página" in texto[inicios[1] :]
 
 
 def test_caderno_digitalizado_nao_gera_atos_e_avisa(tmp_path):

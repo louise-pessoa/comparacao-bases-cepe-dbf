@@ -279,10 +279,10 @@ def separar_texto(
     return atos, avisos_gerais
 
 
-def separar_caderno(
-    caminho: Path, especies: tuple[Especie, ...] = ESPECIES_ATIVAS
-) -> ResultadoSeparacao:
-    """Lê o caderno e devolve um `AtoSeparado` por ato das espécies pedidas."""
+def ler_caderno(caminho: Path) -> tuple[str, list[int], tuple[int, ...], int]:
+    """Abre o caderno e devolve (texto limpo, início de cada página, páginas
+    digitalizadas, total de páginas). Só lê; levanta `ErroSeparacao` se o PDF não
+    puder ser aberto. É o mesmo texto que `separar_caderno` usa."""
     try:
         with pymupdf.open(caminho) as doc:
             if doc.needs_pass:
@@ -295,6 +295,14 @@ def separar_caderno(
         raise
     except Exception as erro:  # inexistente, não-PDF, estrutura quebrada
         raise ErroSeparacao(f"{type(erro).__name__}: {erro}") from erro
+    return texto, inicios, digitalizadas, paginas
+
+
+def separar_caderno(
+    caminho: Path, especies: tuple[Especie, ...] = ESPECIES_ATIVAS
+) -> ResultadoSeparacao:
+    """Lê o caderno e devolve um `AtoSeparado` por ato das espécies pedidas."""
+    texto, inicios, digitalizadas, paginas = ler_caderno(caminho)
 
     atos, avisos = separar_texto(texto, inicios, especies)
     if digitalizadas:
