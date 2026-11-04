@@ -1,6 +1,6 @@
 # regras_atos.py — reconhecimento de atos no texto do Diário Oficial
 
-Um único arquivo Python, **só com a biblioteca padrão** (Python 3.10 ou mais novo, nenhuma instalação).
+Um único arquivo Python, **só com a biblioteca padrão** (Python 3.11 ou mais novo, nenhuma instalação; conferido em 3.11, 3.12, 3.13 e 3.14).
 Reconhece, no texto de um caderno do Diário Oficial de Pernambuco, **decretos, editais, portarias,
 erratas e republicações**. Cada ato sai com espécie, número, ano, órgão, tipo, data do ato e página.
 
