@@ -37,7 +37,9 @@ for a in identificar(texto_do_caderno, inicios_de_pagina):   # inicios_de_pagina
 
 Nada some em silêncio: cabeçalho sem número, órgão ausente, data que não está no cabeçalho, possível citação quebrada em
 duas linhas e marcador de republicação sem ato aparecem em `avisos`. `sefaz` é `True`/`False` pela sigla do órgão
-(edital `DBF`/`DBM`, portaria `SF`) e `None` quando o cabeçalho não diz o órgão.
+(edital `DBF`/`DBM`, portaria `SF`) e `None` quando o cabeçalho não diz o órgão. Nesse caso, o título em maiúsculas
+logo acima (ex.: `SECRETARIA DE ADMINISTRAÇÃO`) é lido como `orgao_do_titulo`: pista de baixa confiança, que só
+decide `sefaz`; o campo `orgao` continua vazio.
 
 ## O que ainda falta (pendências conhecidas)
 
@@ -45,7 +47,8 @@ duas linhas e marcador de republicação sem ato aparecem em `avisos`. `sefaz` �
   **descredenciamento** da DBF também não (tipo marcado como `presumido`).
 - **Portaria:** só os tipos vistos nos cadernos (designação, dispensa, exoneração, concessão, prorrogação, substituição,
   alteração, perda de incentivo); os demais saem com `tipo = None` ("a confirmar").
-- **Órgão pelo título da seção** (linha acima do cabeçalho) não é lido; edital `Nº 43/2026` sem sigla fica "a confirmar".
+- **Órgão pelo título da seção** só é lido até 8 linhas acima do cabeçalho: portarias em sequência sem título próprio (a
+  segunda, a terceira...) continuam com `sefaz = None` ("a confirmar").
 - **Páginas digitalizadas** (imagem, sem texto) não são cobertas: precisam de OCR antes.
 - A ligação de republicação só alcança decreto, edital e portaria; rodapés de outras espécies (instrução normativa, lista de
   atos do Governador, resolução) voltam como achados `Republicação` com aviso.
