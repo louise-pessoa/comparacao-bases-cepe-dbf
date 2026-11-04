@@ -480,12 +480,24 @@ def _data_iso(texto: str) -> date:
         raise argparse.ArgumentTypeError(f"data inválida: {texto!r} (use AAAA-MM-DD)")
 
 
-def catalogar_cadernos(caminho: Path, saida: Path | None = None) -> int:
-    """Modo `--catalogar`: grava o CSV e imprime o resumo. Só lê os cadernos e não toca em
-    configuração, base da DBF, logs nem pastas do pipeline (só no CSV de saída)."""
-    destino = saida or catalogo.PASTA_PADRAO_DO_CSV / catalogo.NOME_PADRAO_DO_CSV
+def _indice_para_o_catalogo() -> set[str] | None:
+    """Só com --com-base: lê o .env e lista a base da DBF (só leitura). Falha vira aviso."""
     try:
-        resultado = catalogo.catalogar(caminho)
+        return carregar_indice(carregar_configuracao().pasta_dbf)
+    except (ErroConfiguracao, PastaDbfIndisponivel) as erro:
+        print(f"Aviso: base da DBF não consultada ({erro}); erratas sem outro sinal ficam a confirmar.",
+              file=sys.stderr)
+        return None
+
+
+def catalogar_cadernos(caminho: Path, saida: Path | None = None, com_base: bool = False) -> int:
+    """Modo `--catalogar`: grava o CSV e imprime o resumo. Só lê os cadernos. Sem `com_base` não
+    toca em configuração nem na base da DBF; com ele, só LÊ a lista de arquivos da base (para o
+    escopo das erratas). Nunca grava fora do CSV de saída."""
+    destino = saida or catalogo.PASTA_PADRAO_DO_CSV / catalogo.NOME_PADRAO_DO_CSV
+    indice = _indice_para_o_catalogo() if com_base else None
+    try:
+        resultado = catalogo.catalogar(caminho, indice)
     except ErroSeparacao as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2
@@ -560,7 +572,15 @@ def main(argv: list[str] | None = None) -> int:
         metavar="ARQUIVO.csv",
         help=f"com --catalogar: onde gravar o CSV (padrão: {catalogo.PASTA_PADRAO_DO_CSV / catalogo.NOME_PADRAO_DO_CSV})",
     )
+    parser.add_argument(
+        "--com-base",
+        action="store_true",
+        help="com --catalogar: lê a lista de arquivos da base da DBF (.env) para decidir o escopo "
+        "das erratas; só leitura",
+    )
     args = parser.parse_args(argv)
+    if args.com_base and not args.catalogar:
+        parser.error("--com-base só vale junto com --catalogar")
     if args.catalogar and (
         args.separar or args.baixar or args.de or args.ate or args.simular
         or args.gravar or args.comparar
@@ -580,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--de e --ate só valem junto com --baixar")
 
     if args.catalogar:
-        return catalogar_cadernos(args.catalogar, args.saida)
+        return catalogar_cadernos(args.catalogar, args.saida, args.com_base)
 
     try:
         cfg = carregar_configuracao()

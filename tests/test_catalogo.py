@@ -81,7 +81,7 @@ def test_linhas_do_catalogo_por_especie(caderno: Path, tmp_path: Path):
 
     edital = linhas[("Edital", "063")]
     assert (edital["orgao"], edital["tipo"], edital["data_do_ato"]) == ("DBF", "CREDENCIAMENTO", "2026-10-21")
-    assert edital["situacao"] == "no_escopo: órgão DBF"
+    assert edital["situacao"] == "no_escopo: órgão DBF; PRODEAUTO"
 
     sf = linhas[("Portaria", "76")]
     # SF sem programa da DBF (a designação de um servidor não é de estímulo fiscal): fora do escopo
@@ -291,9 +291,28 @@ def test_portaria_sf_com_programa_so_no_corpo_fica_a_confirmar():
     assert _situacao_de(texto, "Portaria").startswith("a_confirmar: órgão SF: programa da DBF citado só no corpo")
 
 
-def test_edital_da_dbf_continua_no_escopo_sem_exigir_programa_no_texto():
-    texto = "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO PRODEAUTO\nA Diretoria de Benefícios Fiscais, resolve credenciar.\n"
-    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF"
+def test_edital_da_dbf_liga_o_credenciamento_ao_programa_pelo_texto():
+    texto = "EDITAL DBF Nº 017/2026\nCREDENCIAMENTO PRODEAUTO\nA Diretoria de Benefícios Fiscais, resolve credenciar.\n"
+    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF; PRODEAUTO"
+
+
+def test_edital_da_dbf_da_lei_do_esporte():
+    texto = (
+        "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO RELATIVO À CONCESSÃO DE BENEFÍCIO FISCAL DO ICMS PARA FOMENTAR "
+        "ATIVIDADES DE CARÁTER DESPORTIVO\nA Diretoria de Benefícios Fiscais - DBF, considerando a Lei nº 15.706, "
+        "de 30.12.2015, resolve credenciar.\n"
+    )
+    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF; LEI_ESPORTE"
+
+
+def test_edital_da_dbf_sem_programa_reconhecido_fica_a_confirmar():
+    texto = "EDITAL DBF Nº 5/2026\nCREDENCIAMENTO\nA Diretoria de Benefícios Fiscais resolve credenciar.\n"
+    assert _situacao_de(texto, "Edital") == "a_confirmar: órgão DBF: nenhum programa reconhecido no texto do edital"
+
+
+def test_lei_do_esporte_nao_muda_o_escopo_dos_decretos():
+    from programas import PROGRAMAS_DBF
+    assert "LEI_ESPORTE" not in {p.sigla for p in PROGRAMAS_DBF}
 
 
 def test_edital_de_outro_orgao_lido_do_titulo_fica_fora_do_escopo():
@@ -337,8 +356,8 @@ def test_edital_sem_numero_que_cita_programa_da_dbf_guarda_as_duas_razoes():
 
 
 def test_cabecalho_com_orgao_prevalece_sobre_o_titulo():
-    texto = "SECRETARIA DE ADMINISTRAÇÃO\nEDITAL DBF Nº 5/2026\nCREDENCIAMENTO\n"
-    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF"
+    texto = "SECRETARIA DE ADMINISTRAÇÃO\nEDITAL DBF Nº 5/2026\nCREDENCIAMENTO PRODEAUTO\n"
+    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF; PRODEAUTO"
 
 
 def test_titulo_da_dpc_fica_fora_e_da_regiao_fiscal_fica_a_confirmar():
@@ -350,3 +369,114 @@ def test_titulo_da_dpc_fica_fora_e_da_regiao_fiscal_fica_a_confirmar():
 
 def test_sem_titulo_o_edital_sem_orgao_continua_a_confirmar():
     assert _situacao_de("EDITAL Nº 43/2026\nCREDENCIAMENTO\n", "Edital") == "a_confirmar: órgão não consta no cabeçalho"
+
+
+def test_errata_de_ato_nao_identificado_fica_a_confirmar(tmp_path: Path):
+    criar_pdf_texto(tmp_path / "20261022_x.pdf", "ERRATA Na publicação referente ao CANCELAMENTO DA ARPC\nOnde se lê: X")
+    (linha,) = catalogo.catalogar(tmp_path / "20261022_x.pdf").linhas
+    assert (linha.tipo, linha.situacao) == ("outro", "a_confirmar: errata de ato não identificado")
+    assert linha.motivo  # continua na lista "a conferir"
+
+
+# ---------------------------------------------------------------------------
+# Errata segue o ato referido: base (--com-base), lote e texto da errata
+# ---------------------------------------------------------------------------
+
+ERRATA_60929 = "ERRATA\nNo art. 2º do Decreto nº 60.929, de 25 de junho de 2026\nOnde se lê: X\nLeia-se: Y"
+
+
+def _errata(linhas):
+    (errata,) = [l for l in linhas if l.especie == "Errata"]
+    return errata
+
+
+def test_errata_entra_no_escopo_quando_o_ato_esta_no_lote(tmp_path: Path):
+    pasta = tmp_path / "cadernos"
+    pasta.mkdir()
+    criar_pdf_texto(pasta / "20260626_a.pdf", texto_decreto("60.929", "Concede estímulo previsto na Lei nº 11.675."))
+    criar_pdf_texto(pasta / "20260710_b.pdf", ERRATA_60929)  # lote em ordem cronológica
+    errata = _errata(catalogo.catalogar(pasta).linhas)
+    assert errata.situacao == "no_escopo: errata de Decreto 60.929 (ato no escopo nos cadernos lidos)"
+
+
+def test_errata_entra_no_escopo_quando_o_ato_esta_na_base(tmp_path: Path):
+    criar_pdf_texto(tmp_path / "20260710_b.pdf", "ERRATA\nNo Decreto nº 58.509, de 3 de março de 2025\nOnde se lê: X")
+    indice = {"decreto 58509.pdf", "decreto 58509 errata.pdf"}
+    errata = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf", indice).linhas)
+    assert errata.situacao == (
+        "no_escopo: errata de Decreto 58.509 (Decreto 58509 está na base); a errata já está arquivada na base"
+    )
+
+
+def test_errata_de_edital_procura_numero_e_ano_na_base(tmp_path: Path):
+    criar_pdf_texto(tmp_path / "20260710_b.pdf", "Errata ao Edital DBF nº 064/2025, onde se lê X")
+    errata = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf", {"edital 064-2025.pdf"}).linhas)
+    assert errata.situacao.startswith("no_escopo: errata de Edital 064/2025 (Edital 064-2025 está na base)")
+
+
+def test_errata_que_cita_programa_da_dbf_entra_no_escopo(tmp_path: Path):
+    criar_pdf_texto(
+        tmp_path / "20260710_b.pdf",
+        "ERRATA\nNo Decreto nº 60.100, de 1 de junho de 2026, que concede estímulo do PRODEPE\nOnde se lê: X",
+    )
+    errata = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf").linhas)
+    assert errata.situacao == "no_escopo: errata de Decreto 60.100 (a errata cita PRODEPE)"
+
+
+def test_errata_sem_sinal_fica_a_confirmar_e_avisa_quando_a_base_nao_foi_lida(tmp_path: Path):
+    criar_pdf_texto(tmp_path / "20260710_b.pdf", ERRATA_60929)
+    sem_base = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf").linhas)
+    assert sem_base.situacao.endswith("não achado na base nem nos cadernos lidos (base não consultada: use --com-base)")
+    com_base = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf", {"decreto 1.pdf"}).linhas)
+    assert com_base.situacao.endswith("não achado na base nem nos cadernos lidos")
+
+
+def test_errata_de_portaria_nao_procura_na_base(tmp_path: Path):
+    # Não há portaria na base local: só o lote e o texto contam.
+    criar_pdf_texto(tmp_path / "20260710_b.pdf", "ERRATA\nNa Portaria SF nº 200, de 20.10.2026, onde se lê X")
+    errata = _errata(catalogo.catalogar(tmp_path / "20260710_b.pdf", {"portaria 200-2026.pdf"}).linhas)
+    assert errata.situacao.startswith("a_confirmar") and "base não consultada" not in errata.situacao
+
+
+def test_nome_na_base():
+    assert catalogo.nome_na_base("decreto", "58509", "2025") == "Decreto 58509.pdf"
+    assert catalogo.nome_na_base("edital", "064", "2025") == "Edital 064-2025.pdf"
+    assert catalogo.nome_na_base("edital", "064", "") is None
+    assert catalogo.nome_na_base("portaria", "200", "2026") is None
+
+
+class _Cfg:
+    def __init__(self, pasta):
+        self.pasta_dbf = pasta
+
+
+def test_com_base_le_a_base_e_so_le(tmp_path: Path, monkeypatch, capsys):
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "Decreto 60929.pdf").write_bytes(b"%PDF")
+    antes = sorted(p.name for p in base.iterdir())
+    pasta = tmp_path / "cadernos"
+    pasta.mkdir()
+    criar_pdf_texto(pasta / "20260710_b.pdf", ERRATA_60929)
+    monkeypatch.setattr(main, "carregar_configuracao", lambda *a, **k: _Cfg(base))
+    saida = tmp_path / "c.csv"
+    assert main.main(["--catalogar", str(pasta), "--saida", str(saida), "--com-base"]) == 0
+    (errata,) = [l for l in _linhas(saida) if l["especie"] == "Errata"]
+    assert errata["situacao"].startswith("no_escopo: errata de Decreto 60.929 (Decreto 60929 está na base)")
+    assert sorted(p.name for p in base.iterdir()) == antes  # a base só foi lida
+    capsys.readouterr()
+
+
+def test_com_base_com_base_indisponivel_avisa_e_segue(tmp_path: Path, monkeypatch, capsys):
+    pasta = tmp_path / "cadernos"
+    pasta.mkdir()
+    criar_pdf_texto(pasta / "20260710_b.pdf", ERRATA_60929)
+    monkeypatch.setattr(main, "carregar_configuracao", lambda *a, **k: _Cfg(tmp_path / "nao_existe"))
+    assert main.main(["--catalogar", str(pasta), "--saida", str(tmp_path / "c.csv"), "--com-base"]) == 0
+    assert "base da DBF não consultada" in capsys.readouterr().err
+
+
+def test_com_base_sem_catalogar_e_erro():
+    with pytest.raises(SystemExit) as saida:
+        main.main(["--com-base"])
+    assert saida.value.code == 2

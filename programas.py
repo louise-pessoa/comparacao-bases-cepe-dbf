@@ -208,6 +208,24 @@ PROGRAMAS_OPCIONAIS: tuple[Programa, ...] = (
     ),
 )
 
+
+# Credenciamento por EDITAL da DBF: os programas acima mais a Lei de Incentivo ao Esporte
+# (Lei nº 15.706/2015, Decreto nº 42.765/2016), vista nos editais DBF 063 a 075/2026. Fica fora
+# de PROGRAMAS_DBF de propósito: nenhum decreto da amostra a cita, e o escopo dos decretos
+# não deve mudar por causa dos editais.
+LEI_DO_ESPORTE = Programa(
+    "LEI_ESPORTE",
+    "Benefício fiscal do ICMS para fomentar atividades de caráter desportivo",
+    "Lei nº 15.706/2015; Decreto nº 42.765/2016",
+    _p(
+        _lei("15.706"),
+        r"Lei\s+de\s+Incentivo\s+ao\s+Esporte",
+        r"atividades\s+de\s+car[áa]ter\s+desportivo",
+    ),
+    EVIDENCIA_AMOSTRA,
+)
+PROGRAMAS_DE_CREDENCIAMENTO: tuple[Programa, ...] = PROGRAMAS_DBF + (LEI_DO_ESPORTE,)
+
 _LIMITE_CABECALHO = 4000  # sem marcador de fim, o cabeçalho são os primeiros caracteres
 
 
