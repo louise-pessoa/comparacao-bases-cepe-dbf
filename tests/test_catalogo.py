@@ -11,6 +11,7 @@ import pytest
 import catalogo
 import main
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
+from regras_atos import identificar
 
 ASSINATURAS = "Independência do Brasil.\nRAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado\n"
 
@@ -83,8 +84,9 @@ def test_linhas_do_catalogo_por_especie(caderno: Path, tmp_path: Path):
     assert edital["situacao"] == "no_escopo: órgão DBF"
 
     sf = linhas[("Portaria", "76")]
+    # SF sem programa da DBF (a designação de um servidor não é de estímulo fiscal): fora do escopo
     assert (sf["orgao"], sf["tipo"], sf["data_do_ato"], sf["situacao"]) == (
-        "SF", "DESIGNACAO", "2026-04-24", "no_escopo: órgão SF"
+        "SF", "DESIGNACAO", "2026-04-24", "fora_do_escopo: órgão SF sem programa da DBF"
     )
     assert linhas[("Portaria", "609")]["situacao"] == "fora_do_escopo: órgão SES/PE"
 
@@ -253,3 +255,98 @@ def test_saida_sem_catalogar_e_erro():
     with pytest.raises(SystemExit) as saida:
         main.main(["--saida", "x.csv"])
     assert saida.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Escopo: portaria da SF só com programa da DBF (A) e órgão lido do título (B)
+# ---------------------------------------------------------------------------
+
+
+def _situacao_de(texto: str, especie: str) -> str:
+    achado = next(a for a in identificar(texto) if a.especie == especie)
+    return catalogo._situacao(achado, texto[achado.posicao : achado.fim], catalogo._motivo_de_conferencia(achado))
+
+
+SF_COM_PROGRAMA = (
+    "PORTARIA SF Nº 200, DE 20.10.2026\nO SECRETÁRIO DA FAZENDA, tendo em vista o inciso XI do art. 17 da "
+    "Lei nº 11.675, de 11.10.1999, RESOLVE:\nArt. 1° Declarar a perda por renúncia ao incentivo do PRODEPE\n"
+)
+SF_SEM_PROGRAMA = (
+    "PORTARIA SF Nº 76, DE 24.04.2026\nO SECRETÁRIO DA FAZENDA, RESOLVE:\n"
+    "Art. 1º Dispensar o servidor da função de Gestor de Telemática.\n"
+)
+
+
+def test_portaria_sf_que_cita_programa_da_dbf_esta_no_escopo():
+    assert _situacao_de(SF_COM_PROGRAMA, "Portaria") == "no_escopo: órgão SF; PRODEPE"
+
+
+def test_portaria_sf_sem_programa_da_dbf_fica_fora_do_escopo():
+    assert _situacao_de(SF_SEM_PROGRAMA, "Portaria") == "fora_do_escopo: órgão SF sem programa da DBF"
+
+
+def test_portaria_sf_com_programa_so_no_corpo_fica_a_confirmar():
+    enchimento = "Art. 2º Este artigo não cita nada de especial e serve só para encher o texto.\n" * 60
+    texto = SF_SEM_PROGRAMA + enchimento + "Anexo: incentivos do PRODEPE.\n"
+    assert _situacao_de(texto, "Portaria").startswith("a_confirmar: órgão SF: programa da DBF citado só no corpo")
+
+
+def test_edital_da_dbf_continua_no_escopo_sem_exigir_programa_no_texto():
+    texto = "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO PRODEAUTO\nA Diretoria de Benefícios Fiscais, resolve credenciar.\n"
+    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF"
+
+
+def test_edital_de_outro_orgao_lido_do_titulo_fica_fora_do_escopo():
+    texto = (
+        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\n"
+        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n"
+    )
+    assert _situacao_de(texto, "Edital") == "fora_do_escopo: órgão SECRETARIA DE ADMINISTRAÇÃO (lido do título da seção)"
+
+
+def test_orgao_lido_do_titulo_aparece_na_coluna_orgao_do_csv(tmp_path: Path):
+    criar_pdf_texto(
+        tmp_path / "20260626_x.pdf",
+        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA\nEDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO",
+    )
+    (linha,) = catalogo.catalogar(tmp_path / "20260626_x.pdf").linhas
+    assert linha.orgao == "SECRETARIA DE ADMINISTRAÇÃO"
+    assert linha.situacao.startswith("fora_do_escopo") and "lido do título" in linha.situacao
+    assert linha.motivo == ""  # a pista do título não vai para a lista "a conferir"
+
+
+def test_titulo_de_outro_orgao_nao_esconde_ato_que_cita_programa_da_dbf():
+    texto = (
+        "SECRETARIA DE ADMINISTRAÇÃO\nEDITAL Nº 7/2026\n"
+        "A empresa X, beneficiária do PRODEPE (Lei nº 11.675), torna público\n"
+    )
+    situacao = _situacao_de(texto, "Edital")
+    assert situacao.startswith("a_confirmar: cita programa da DBF (PRODEPE)")
+    assert "SECRETARIA DE ADMINISTRAÇÃO" in situacao
+
+
+def test_edital_sem_numero_que_cita_programa_da_dbf_guarda_as_duas_razoes():
+    # É o "EDITAL DE NÃO CONCORRÊNCIA" real (publicação particular sobre o PRODEPE).
+    texto = (
+        "SECRETARIA DE ADMINISTRAÇÃO\nEDITAL DE NÃO CONCORRÊNCIA\n"
+        "A empresa X, beneficiária do PRODEPE (Lei nº 11.675), torna público\n"
+    )
+    situacao = _situacao_de(texto, "Edital")
+    assert "cabeçalho de edital sem número identificável" in situacao
+    assert "cita programa da DBF (PRODEPE)" in situacao
+
+
+def test_cabecalho_com_orgao_prevalece_sobre_o_titulo():
+    texto = "SECRETARIA DE ADMINISTRAÇÃO\nEDITAL DBF Nº 5/2026\nCREDENCIAMENTO\n"
+    assert _situacao_de(texto, "Edital") == "no_escopo: órgão DBF"
+
+
+def test_titulo_da_dpc_fica_fora_e_da_regiao_fiscal_fica_a_confirmar():
+    dpc = "DIRETORIA GERAL DE PLANEJAMENTO E CONTROLE DA AÇÃO FISCAL – DPC\nEDITAL Nº 43/2026\nCREDENCIAMENTO\n"
+    assert _situacao_de(dpc, "Edital").startswith("fora_do_escopo: órgão DIRETORIA GERAL DE PLANEJAMENTO")
+    regiao = "DIRETORIA GERAL DA II REGIÃO FISCAL\nEDITAL DE INTIMAÇÃO Nº 005/2026\nCIÊNCIA DO LANÇAMENTO\n"
+    assert _situacao_de(regiao, "Edital").startswith("a_confirmar: órgão lido do título da seção")
+
+
+def test_sem_titulo_o_edital_sem_orgao_continua_a_confirmar():
+    assert _situacao_de("EDITAL Nº 43/2026\nCREDENCIAMENTO\n", "Edital") == "a_confirmar: órgão não consta no cabeçalho"

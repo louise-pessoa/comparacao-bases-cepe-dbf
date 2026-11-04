@@ -220,6 +220,85 @@ def test_edital_em_minusculas_ou_no_meio_da_linha_nao_conta():
 
 
 # ---------------------------------------------------------------------------
+# Órgão lido do título da seção (quando o cabeçalho não o traz)
+# ---------------------------------------------------------------------------
+
+
+def test_orgao_do_titulo_acima_do_edital_sem_sigla():
+    texto = (
+        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\n"
+        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO\n"
+    )
+    a = _unico(texto, "Edital")
+    assert a.orgao is None  # o cabeçalho não traz órgão: `orgao` nunca recebe a pista do título
+    assert a.orgao_do_titulo == "SECRETARIA DE ADMINISTRAÇÃO"
+    assert a.sefaz is False
+    assert any("lido do título da seção acima" in aviso for aviso in a.avisos)
+
+
+@pytest.mark.parametrize(
+    ("acima", "titulo"),
+    [
+        ("FUND DO PATRIMÔNIO HISTÓRICO E\nARTÍSTICO DE PE-FUNDARPE\nCREDENCIAMENTO DE PARECERISTAS – FUNCULTURA 2025",
+         "FUND DO PATRIMÔNIO HISTÓRICO E ARTÍSTICO DE PE-FUNDARPE"),
+        ("AGÊNCIA ESTADUAL DE MEIO AMBIENTE -\nCPRH", "AGÊNCIA ESTADUAL DE MEIO AMBIENTE - CPRH"),
+        ("AGÊNCIA DE DEFESA E FISCALIZAÇÃO\nAGROPECUÁRIA DE PERNAMBUCO-\nADAGRO",
+         "AGÊNCIA DE DEFESA E FISCALIZAÇÃO AGROPECUÁRIA DE PERNAMBUCO- ADAGRO"),
+        ("UNIVERSIDADE DE PERNAMBUCO - UPE /\nREITORIA\nA Reitora assinou a\nseguinte Portaria:",
+         "UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA"),
+        ("GOVERNO DO ESTADO DE PERNAMBUCO\nSECRETARIA DE ADMINISTRAÇÃO – SAD/PE\nUNIVERSIDADE DE PERNAMBUCO - UPE",
+         "UNIVERSIDADE DE PERNAMBUCO - UPE"),  # vale o título mais próximo do cabeçalho
+    ],
+)
+def test_titulo_da_secao_quebrado_em_varias_linhas(acima, titulo):
+    a = _unico(f"{acima}\nPORTARIA Nº 937/2026 de 22.04.2026\nI - Exonerar\n", "Portaria")
+    assert a.orgao_do_titulo == titulo
+
+
+def test_titulo_que_so_tem_a_palavra_fiscalizacao_nao_e_orgao_da_fazenda():
+    a = _unico("AGÊNCIA DE DEFESA E FISCALIZAÇÃO AGROPECUÁRIA - ADAGRO\nPORTARIA Nº 73, DE 14/07/2026.\n", "Portaria")
+    assert a.sefaz is False  # "FISCALIZAÇÃO" não é a palavra "FISCAL"
+
+
+def test_titulo_da_dbf_entra_no_escopo_e_o_da_dpc_nao():
+    dbf = _unico("DIRETORIA DE BENEFÍCIOS FISCAIS - DBF\nEDITAL Nº 5/2026\nCREDENCIAMENTO\n", "Edital")
+    assert dbf.sefaz is True
+    dpc = _unico("DIRETORIA GERAL DE PLANEJAMENTO E CONTROLE DA AÇÃO FISCAL – DPC\nEDITAL Nº 43/2026\n", "Edital")
+    assert dpc.sefaz is False
+
+
+def test_titulo_da_fazenda_sem_sigla_do_escopo_fica_a_confirmar():
+    a = _unico("DIRETORIA GERAL DA II REGIÃO FISCAL\nEDITAL DE INTIMAÇÃO Nº 005/2026\n", "Edital")
+    assert (a.sefaz, a.orgao_do_titulo) == (None, "DIRETORIA GERAL DA II REGIÃO FISCAL")
+
+
+def test_cabecalho_com_orgao_nao_usa_o_titulo():
+    a = _unico("SECRETARIA DE ADMINISTRAÇÃO\nEDITAL DBF Nº 5/2026\nCREDENCIAMENTO\n", "Edital")
+    assert (a.orgao, a.orgao_do_titulo, a.sefaz) == ("DBF", None, True)
+
+
+def test_sem_titulo_por_perto_nao_inventa_orgao():
+    assert _unico("texto solto de outra publicação\nEDITAL Nº 43/2026\nCREDENCIAMENTO\n", "Edital").orgao_do_titulo is None
+    longe = "SECRETARIA DE ADMINISTRAÇÃO\n" + "linha de texto comum, sem título\n" * 12 + "EDITAL Nº 43/2026\nCREDENCIAMENTO\n"
+    assert _unico(longe, "Edital").orgao_do_titulo is None  # mais de 8 linhas acima
+
+
+def test_titulo_nao_vira_orgao_de_decreto_nem_de_errata():
+    for texto, especie in (
+        ("SECRETARIA DE ADMINISTRAÇÃO\nDECRETO Nº 60.929, DE 25 DE JUNHO DE 2026.\nA GOVERNADORA\n", "Decreto"),
+        ("SECRETARIA DE ADMINISTRAÇÃO\nERRATA\nNa Portaria nº 5\n", "Errata"),
+    ):
+        assert _unico(texto, especie).orgao_do_titulo is None
+
+
+def test_titulo_com_assunto_em_maiusculas_nao_engole_o_assunto():
+    # "PROGRAMA DE DESENVOLVIMENTO ... PRODEPE" não é órgão: não abre título
+    texto = "PROGRAMA DE DESENVOLVIMENTO DE\nPERNAMBUCO - PRODEPE\nEDITAL DE NÃO CONCORRÊNCIA\nA empresa X\n"
+    a = _unico(texto, "Edital")
+    assert a.orgao_do_titulo is None and a.sefaz is None
+
+
+# ---------------------------------------------------------------------------
 # Portaria
 # ---------------------------------------------------------------------------
 

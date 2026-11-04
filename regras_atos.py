@@ -30,6 +30,9 @@ Casos de borda tratados (viram `avisos` do achado, nunca descarte em silêncio):
     meio da" + "PORTARIA Nº 2224/2026, de 29 de julho de 2026, para compor ...");
   - data do ato que não está no cabeçalho (lida da linha "Recife, 22 de abril de
     2026." do fecho) ou que não existe;
+  - órgão que não está no cabeçalho ("EDITAL Nº 43/2026"): o título em MAIÚSCULAS logo
+    acima ("SECRETARIA DE ADMINISTRAÇÃO") vira `orgao_do_titulo`, uma pista de baixa
+    confiança que só entra em `sefaz`, nunca em `orgao`;
   - marcador de republicação que não se liga a nenhum ato conhecido.
 
 Evidência de cada padrão (mesma convenção do projeto): "amostra" = conferido em
@@ -246,6 +249,9 @@ TIPOS_EDITAL: tuple[tuple[str, re.Pattern[str], str], ...] = (
 # responsável do projeto como outro nome válido da DBF; não aparece em nenhum dos
 # cadernos de amostra (evidência presumida).
 ORGAOS_EDITAL_SEFAZ = frozenset({"DBF", "DBM"})
+# Órgãos da própria Fazenda que o responsável pelo projeto EXCLUIU da demanda (a DPC não
+# faz parte): reconhecidos, mas sempre fora do escopo.
+ORGAOS_FORA_DA_DEMANDA = frozenset({"DPC"})
 
 # ----------------------------------------------------------------------------
 # 5. Portaria
@@ -415,6 +421,27 @@ _FECHO_POR_ESPECIE = {
 
 _LIMITE_DATA_DO_FECHO = 3000  # caracteres do ato em que se procura "Recife, <data>"
 
+# Título da seção: quando o cabeçalho do edital/portaria não traz o órgão ("EDITAL Nº
+# 43/2026"), o Diário costuma trazê-lo numa linha em MAIÚSCULAS logo acima ("DIRETORIA
+# GERAL DE PLANEJAMENTO E CONTROLE DA AÇÃO FISCAL – DPC"; "SECRETARIA DE ADMINISTRAÇÃO").
+# É uma pista de BAIXA confiança: só serve ao escopo e nunca esconde um ato que cite programa
+# da DBF (isso é checado em catalogo.py). Fica em `Achado.orgao_do_titulo`, nunca em `orgao`.
+_LINHAS_PARA_TRAS_DO_TITULO = 8  # linhas não vazias olhadas antes do cabeçalho
+_INICIO_DE_TITULO = re.compile(
+    r"^(?:SECRETARIA|DIRETORIA|UNIVERSIDADE|AG[ÊE]NCIA|FUNDA[ÇC][ÃA]O|FUND\b|PROCURADORIA|"
+    r"DEPARTAMENTO|COMPANHIA|INSTITUTO|POL[ÍI]CIA|CORPO DE BOMBEIROS|TRIBUNAL|CONTROLADORIA|"
+    r"JUNTA|SUPERINTEND[ÊE]NCIA|GABINETE|HOSPITAL|EMPRESA|AUTARQUIA|CASA CIVIL|CASA MILITAR)\b"
+)
+# Linhas em maiúsculas que NÃO continuam o nome do órgão: são o assunto da publicação.
+_NAO_CONTINUA_O_TITULO = re.compile(
+    r"^(?:AVISO|ATO\b|EXTRATO|EDITAL|PORTARIA|DECRETO|ERRATA|RETIFICA|RESULTADO|RESOLU|DESPACHO|COORDENA)"
+)
+# O nome do órgão já está completo quando termina em "- SIGLA" ("... DE PE-FUNDARPE"): a linha
+# seguinte em maiúsculas é o assunto, não parte do nome.
+_TITULO_COMPLETO = re.compile(r"[-–—]\s*[A-ZÀ-Ú/]{2,12}\s*$")
+# Órgão da Fazenda, por PALAVRA inteira ("FISCALIZAÇÃO" da ADAGRO não é "FISCAL").
+_ORGAO_DA_FAZENDA = re.compile(r"\bFAZENDA\b|\bFISCAL\b|\bSEFAZ\b|BENEF[ÍI]CIOS\s+FISCAIS")
+
 
 # ----------------------------------------------------------------------------
 # 9. Resultado
@@ -441,6 +468,9 @@ class Achado:
     ref_numero: str | None = None  # errata: número do ato referido, sem milhar
     ref_ano: str | None = None  # errata: ano do ato referido, quando consta
     pagina: int | None = None  # base 1, se `inicios_de_pagina` foi passado
+    # Órgão lido do título em maiúsculas acima do cabeçalho, quando o cabeçalho não o traz.
+    # Pista de baixa confiança: só entra em `sefaz`, nunca em `orgao`.
+    orgao_do_titulo: str | None = None
     avisos: tuple[str, ...] = field(default=())
 
 
@@ -501,6 +531,40 @@ def _linha_anterior(texto: str, posicao: int) -> str:
         if linha.strip():
             return linha.strip()
     return ""
+
+
+def _e_maiuscula(linha: str) -> bool:
+    """Linha em maiúsculas (sem nenhuma letra minúscula) e com pelo menos 3 letras."""
+    return sum(c.isalpha() for c in linha) >= 3 and not any(c.islower() for c in linha)
+
+
+def titulo_da_secao(texto: str, posicao: int) -> str | None:
+    """Título de órgão em MAIÚSCULAS nas últimas linhas antes de `posicao` (o mais próximo),
+    com as linhas seguintes que continuam o nome (títulos quebrados em 2 ou 3 linhas)."""
+    linhas = [l.strip() for l in texto[:posicao].splitlines()[-60:] if l.strip()]
+    linhas = linhas[-_LINHAS_PARA_TRAS_DO_TITULO:]
+    for i in range(len(linhas) - 1, -1, -1):
+        if _e_maiuscula(linhas[i]) and _INICIO_DE_TITULO.match(linhas[i]):
+            grupo = [linhas[i]]
+            for seguinte in linhas[i + 1 :]:
+                if _TITULO_COMPLETO.search(" ".join(grupo)):
+                    break
+                if not _e_maiuscula(seguinte) or _NAO_CONTINUA_O_TITULO.match(seguinte):
+                    break
+                grupo.append(seguinte)
+            return juntar_linhas(" ".join(grupo))
+    return None
+
+
+def _sefaz_pelo_titulo(titulo: str, orgaos_sefaz: frozenset[str]) -> bool | None:
+    """Escopo a partir do TÍTULO da seção: True se ele traz a sigla do escopo; False se é outro
+    órgão (ou um da Fazenda que a demanda exclui); None se é da Fazenda, mas não da DBF."""
+    siglas = set(re.findall(r"[A-ZÀ-Ú0-9]+", titulo))
+    if siglas & orgaos_sefaz:
+        return True
+    if siglas & ORGAOS_FORA_DA_DEMANDA:
+        return False
+    return None if _ORGAO_DA_FAZENDA.search(titulo) else False
 
 
 def _parece_citacao(texto: str, posicao: int) -> bool:
@@ -795,13 +859,22 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
                 tipo = _tipo_da_portaria(texto, fim_cabecalho)
             orgao_norm = orgao.upper() if orgao else None
             sefaz = (orgao_norm in orgaos_sefaz) if orgao_norm else None
+            orgao_do_titulo = None
             if orgao_norm is None:
-                avisos.append("órgão não consta no cabeçalho")
+                titulo = titulo_da_secao(texto, posicao)
+                if titulo:
+                    orgao_do_titulo = titulo[:80]
+                    sefaz = _sefaz_pelo_titulo(titulo, orgaos_sefaz)
+                avisos.append(
+                    "órgão não consta no cabeçalho"
+                    + (f"; lido do título da seção acima: {orgao_do_titulo!r}" if titulo else "")
+                )
             atos.append(
                 Achado(
                     especie, numero, ano, orgao_norm, tipo, data, posicao, fim,
                     _compactar(texto[posicao : posicao + 200]),
-                    sefaz=sefaz, pagina=pagina_de(posicao), avisos=tuple(avisos),
+                    sefaz=sefaz, pagina=pagina_de(posicao), orgao_do_titulo=orgao_do_titulo,
+                    avisos=tuple(avisos),
                 )
             )
 
@@ -884,6 +957,16 @@ EXEMPLOS: tuple[tuple[str, tuple[dict[str, object], ...]], ...] = (
     (
         "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
         ({"especie": "Edital", "numero": "0014.2026.PNE", "ano": "2026", "tipo": "CREDENCIAMENTO"},),
+    ),
+    # Edital sem órgão no cabeçalho: o órgão vem do título em maiúsculas acima (pista de baixa
+    # confiança, em `orgao_do_titulo`; `orgao` continua vazio). Outro órgão = fora do escopo.
+    (
+        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\n"
+        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
+        (
+            {"especie": "Edital", "numero": "0014.2026.PNE", "orgao": None,
+             "orgao_do_titulo": "SECRETARIA DE ADMINISTRAÇÃO", "sefaz": False, "republicacao": "sim"},
+        ),
     ),
     # Edital sem número: não some, sai com aviso.
     (

@@ -18,9 +18,12 @@ Colunas do CSV (nesta ordem):
   - `republicacao`: "sim" (logo após o fecho ou em título acima do edital), "provavel"
     ou "nao"; marcador sem ato associado vira uma linha "Republicação" (a confirmar);
   - `situacao`: "no_escopo", "fora_do_escopo" ou "a_confirmar", seguida de ": <motivo>".
-    Escopo = decreto que cita programa da DBF no cabeçalho, edital de órgão DBF/DBM,
-    portaria de órgão SF. O que depende de decisão da DBF (errata entra no catálogo?)
-    fica "a_confirmar" em vez de ser decidido aqui.
+    Escopo = decreto que cita programa da DBF no cabeçalho; edital de órgão DBF/DBM;
+    portaria de órgão SF QUE CITE programa da DBF (a SF que só designa ou dispensa servidor
+    fica fora). Se o cabeçalho não traz o órgão, vale o título em maiúsculas acima dele
+    ("lido do título da seção"), sem nunca esconder ato que cite programa da DBF: esse fica
+    "a_confirmar". O que depende de decisão da DBF (errata entra no catálogo?) fica
+    "a_confirmar" em vez de ser decidido aqui.
 
 O CSV usa ";" como separador e UTF-8 com BOM, que o Excel em português abre sem
 ajustes. Um arquivo existente no mesmo caminho é substituído.
@@ -35,8 +38,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from especies import DECRETO
-from programas import cita_programa_so_no_corpo, programas_do_ato
+from especies import DECRETO, PORTARIA
+from programas import PROGRAMAS_DBF, cita_programa_so_no_corpo, programas_do_ato
 from regras_atos import Achado, identificar
 from separador import ErroSeparacao, ler_caderno
 
@@ -114,6 +117,44 @@ def _motivo_de_conferencia(achado: Achado) -> str:
     return "; ".join(motivos)
 
 
+def _programas_da_dbf(texto_do_ato: str) -> tuple[str, ...]:
+    """Siglas dos programas da DBF citados no começo do ato (edital e portaria não têm
+    'DECRETA:'; vale o limite padrão de caracteres do cabeçalho)."""
+    return tuple(p.sigla for p in programas_do_ato(texto_do_ato, PORTARIA, PROGRAMAS_DBF))
+
+
+def _escopo_por_orgao(achado: Achado, texto_do_ato: str) -> tuple[str, str]:
+    """(situação, detalhe) de edital e portaria.
+
+    - Órgão do escopo (edital DBF/DBM, portaria SF): edital entra; PORTARIA só entra se citar
+      programa da DBF (a portaria SF 76, que dispensa e designa um servidor, não é de
+      estímulo fiscal). Sem programa, fica fora; programa só no corpo, a confirmar.
+    - Órgão lido só do TÍTULO da seção (o cabeçalho não o traz) é pista de baixa confiança:
+      se aponta outro órgão mas o ato cita programa da DBF, fica a confirmar em vez de
+      sumir como fora do escopo."""
+    do_titulo = achado.orgao is None and achado.orgao_do_titulo is not None
+    orgao = achado.orgao or achado.orgao_do_titulo
+    origem = " (lido do título da seção)" if do_titulo else ""
+
+    if achado.sefaz is True:
+        if achado.especie != "Portaria":
+            return NO_ESCOPO, f"órgão {orgao}{origem}"
+        programas = _programas_da_dbf(texto_do_ato)
+        if programas:
+            return NO_ESCOPO, f"órgão {orgao}{origem}; {', '.join(programas)}"
+        if cita_programa_so_no_corpo(texto_do_ato, PORTARIA, PROGRAMAS_DBF):
+            return A_CONFIRMAR, f"órgão {orgao}: programa da DBF citado só no corpo da portaria"
+        return FORA_DO_ESCOPO, f"órgão {orgao}{origem} sem programa da DBF"
+    if achado.sefaz is False:
+        programas = _programas_da_dbf(texto_do_ato) if do_titulo else ()
+        if programas:
+            return A_CONFIRMAR, f"cita programa da DBF ({', '.join(programas)}); órgão lido do título: {orgao}"
+        return FORA_DO_ESCOPO, f"órgão {orgao}{origem}"
+    if do_titulo:
+        return A_CONFIRMAR, f"órgão lido do título da seção: {orgao} (da Fazenda, mas não DBF/DBM/SF)"
+    return A_CONFIRMAR, "órgão não consta no cabeçalho"
+
+
 def _situacao(achado: Achado, texto_do_ato: str, motivo: str) -> str:
     if achado.especie == "Republicação":
         return f"{A_CONFIRMAR}: marcador de republicação sem ato associado"
@@ -133,16 +174,12 @@ def _situacao(achado: Achado, texto_do_ato: str, motivo: str) -> str:
             base, detalhe = A_CONFIRMAR, "programa da DBF citado só no corpo do decreto"
         else:
             base, detalhe = FORA_DO_ESCOPO, "nenhum programa da DBF no cabeçalho"
-    else:  # Edital e Portaria: pelo órgão do cabeçalho
-        if achado.sefaz is True:
-            base, detalhe = NO_ESCOPO, f"órgão {achado.orgao}"
-        elif achado.sefaz is False:
-            base, detalhe = FORA_DO_ESCOPO, f"órgão {achado.orgao}"
-        else:
-            base, detalhe = A_CONFIRMAR, "órgão não consta no cabeçalho"
+    else:  # Edital e Portaria: pelo órgão (do cabeçalho ou, na falta dele, do título da seção)
+        base, detalhe = _escopo_por_orgao(achado, texto_do_ato)
 
     if motivo:  # sem número, possível citação...: não dá para afirmar o escopo
-        return f"{A_CONFIRMAR}: {motivo}" + (f" ({base}: {detalhe})" if base != A_CONFIRMAR else "")
+        # O que o escopo diria vem entre parênteses (inclusive a razão de "a confirmar").
+        return f"{A_CONFIRMAR}: {motivo} ({detalhe if base == A_CONFIRMAR else f'{base}: {detalhe}'})"
     return f"{base}: {detalhe}"
 
 
@@ -155,7 +192,7 @@ def _linha(achado: Achado, texto: str, nome_do_caderno: str, publicacao: str) ->
         especie=achado.especie,
         numero=(achado.ref_numero if eh_errata else achado.numero) or "",
         ano=(achado.ref_ano if eh_errata else achado.ano) or "",
-        orgao=achado.orgao or "",
+        orgao=achado.orgao or achado.orgao_do_titulo or "",
         tipo=(achado.destino if eh_errata else achado.tipo) or "",
         data_do_ato=achado.data_do_ato or "",
         data_de_publicacao=publicacao,
