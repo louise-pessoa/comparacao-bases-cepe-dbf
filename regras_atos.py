@@ -430,7 +430,7 @@ _LINHAS_PARA_TRAS_DO_TITULO = 8  # linhas não vazias olhadas antes do cabeçalh
 _INICIO_DE_TITULO = re.compile(
     r"^(?:SECRETARIA|DIRETORIA|UNIVERSIDADE|AG[ÊE]NCIA|FUNDA[ÇC][ÃA]O|FUND\b|PROCURADORIA|"
     r"DEPARTAMENTO|COMPANHIA|INSTITUTO|POL[ÍI]CIA|CORPO DE BOMBEIROS|TRIBUNAL|CONTROLADORIA|"
-    r"JUNTA|SUPERINTEND[ÊE]NCIA|GABINETE|HOSPITAL|EMPRESA|AUTARQUIA|CASA CIVIL|CASA MILITAR)\b"
+    r"JUNTA|SUPERINTEND[ÊE]NCIA|GABINETE|HOSPITAL|AUTARQUIA|CASA CIVIL|CASA MILITAR)\b"
 )
 # Linhas em maiúsculas que NÃO continuam o nome do órgão: são o assunto da publicação.
 _NAO_CONTINUA_O_TITULO = re.compile(
@@ -538,11 +538,12 @@ def _e_maiuscula(linha: str) -> bool:
     return sum(c.isalpha() for c in linha) >= 3 and not any(c.islower() for c in linha)
 
 
-def titulo_da_secao(texto: str, posicao: int) -> str | None:
+def titulo_da_secao(texto: str, posicao: int, max_linhas: int | None = _LINHAS_PARA_TRAS_DO_TITULO) -> str | None:
     """Título de órgão em MAIÚSCULAS nas últimas linhas antes de `posicao` (o mais próximo),
     com as linhas seguintes que continuam o nome (títulos quebrados em 2 ou 3 linhas)."""
-    linhas = [l.strip() for l in texto[:posicao].splitlines()[-60:] if l.strip()]
-    linhas = linhas[-_LINHAS_PARA_TRAS_DO_TITULO:]
+    linhas = [l.strip() for l in texto[:posicao].splitlines()[-(max_linhas or 10**6) * 8 :] if l.strip()]
+    if max_linhas is not None:
+        linhas = linhas[-max_linhas:]
     for i in range(len(linhas) - 1, -1, -1):
         if _e_maiuscula(linhas[i]) and _INICIO_DE_TITULO.match(linhas[i]):
             grupo = [linhas[i]]
@@ -757,6 +758,50 @@ def _ligar_republicacoes(
     return ligados, orfaos
 
 
+_SOBRA_MAXIMA_NO_BLOCO = 300  # caracteres entre dois atos do mesmo bloco (citação quebrada etc.)
+
+
+def _herdar_titulo_do_bloco(texto: str, atos: list[Achado]) -> list[Achado]:
+    """Atos em sequência no mesmo bloco ("PORTARIA Nº 1579 ... PORTARIA Nº 1580 ...") só têm o
+    título de órgão acima do primeiro, às vezes a dezenas de linhas. Para um edital/portaria sem
+    órgão e sem título nas 8 linhas acima:
+      1. procura o título em TODO o trecho desde o cabeçalho do ato anterior (o título do bloco
+         novo fica no fim do trecho do ato anterior);
+      2. se não houver, herda o título do ato anterior, quando este é edital/portaria e entre os
+         dois só sobra texto curto (citação quebrada, por exemplo). A herança encadeia.
+    Decisão do responsável pelo projeto (04/11/2026): o título vale para os atos seguintes do
+    mesmo bloco, mesmo com o risco de atribuir o órgão errado (fica sempre um aviso)."""
+    saida: list[Achado] = []
+    for atual in atos:
+        anterior = saida[-1] if saida else None
+        if (
+            anterior is not None
+            and atual.especie in ("Edital", "Portaria")
+            and atual.orgao is None
+            and atual.orgao_do_titulo is None
+        ):
+            orgaos = ORGAOS_EDITAL_SEFAZ if atual.especie == "Edital" else ORGAOS_PORTARIA_SEFAZ
+            inicio = _fim_da_linha(texto, anterior.posicao)
+            titulo = titulo_da_secao(texto[inicio : atual.posicao], atual.posicao - inicio, max_linhas=None)
+            origem = "lido do título da seção acima, no fim do trecho do ato anterior"
+            if titulo is None and (
+                anterior.especie in ("Edital", "Portaria")
+                and anterior.orgao_do_titulo is not None
+                and len(texto[anterior.fim : atual.posicao].strip()) <= _SOBRA_MAXIMA_NO_BLOCO
+            ):
+                titulo, origem = anterior.orgao_do_titulo, "herdado do título do ato anterior do mesmo bloco"
+            if titulo:
+                titulo = titulo[:80]
+                avisos = tuple(
+                    f"órgão não consta no cabeçalho; {origem}: {titulo!r}"
+                    if a.startswith("órgão não consta no cabeçalho") else a
+                    for a in atual.avisos
+                )
+                atual = _com(atual, orgao_do_titulo=titulo, sefaz=_sefaz_pelo_titulo(titulo, orgaos), avisos=avisos)
+        saida.append(atual)
+    return saida
+
+
 def _com(achado: Achado, **mudancas) -> Achado:
     return Achado(**{**achado.__dict__, **mudancas})
 
@@ -879,6 +924,7 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
             )
 
     atos.sort(key=lambda a: a.posicao)
+    atos = _herdar_titulo_do_bloco(texto, atos)
     atos, orfaos = _ligar_republicacoes(texto, atos, pagina_de)
 
     # --- Errata

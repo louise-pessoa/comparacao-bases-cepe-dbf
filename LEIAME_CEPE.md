@@ -47,8 +47,8 @@ decide `sefaz`; o campo `orgao` continua vazio.
   **descredenciamento** da DBF também não (tipo marcado como `presumido`).
 - **Portaria:** só os tipos vistos nos cadernos (designação, dispensa, exoneração, concessão, prorrogação, substituição,
   alteração, perda de incentivo); os demais saem com `tipo = None` ("a confirmar").
-- **Órgão pelo título da seção** só é lido até 8 linhas acima do cabeçalho: portarias em sequência sem título próprio (a
-  segunda, a terceira...) continuam com `sefaz = None` ("a confirmar").
+- **Órgão pelo título da seção**: vale até 8 linhas acima e para os atos seguintes do mesmo bloco. Quando o título está
+  longe, o rótulo pode sair errado (há aviso no achado); por isso ele nunca entra em `orgao`.
 - **Páginas digitalizadas** (imagem, sem texto) não são cobertas: precisam de OCR antes.
 - A ligação de republicação só alcança decreto, edital e portaria; rodapés de outras espécies (instrução normativa, lista de
   atos do Governador, resolução) voltam como achados `Republicação` com aviso.

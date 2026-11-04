@@ -33,7 +33,9 @@ def test_dpc_nao_esta_no_escopo():
 
 
 def test_nome_do_arquivo_depende_so_de_especie_e_numero():
-    assert EDITAL.nome_arquivo("063") == "Edital 063.pdf"
+    assert EDITAL.nome_arquivo("064", "2025") == "Edital 064-2025.pdf"  # como na base da DBF
+    with pytest.raises(ValueError, match="ano"):
+        EDITAL.nome_arquivo("064")
     assert PORTARIA.nome_arquivo("76") == "Portaria 76.pdf"
 
 

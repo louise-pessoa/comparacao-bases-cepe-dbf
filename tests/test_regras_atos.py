@@ -589,3 +589,53 @@ def test_decreto_com_ligadura_no_cabecalho_ainda_e_reconhecido():
 def test_texto_vazio_ou_sem_atos_devolve_lista_vazia():
     assert identificar("") == []
     assert identificar("apenas texto corrido, sem cabeçalho de ato\n") == []
+
+
+# ---------------------------------------------------------------------------
+# Título vale para os atos seguintes do mesmo bloco (decisão de 04/11/2026)
+# ---------------------------------------------------------------------------
+
+_CORPO = "linha do corpo da portaria, sem título\n" * 10  # mais de 8 linhas: o título fica longe
+UPE_BLOCO = (
+    "UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA\n"
+    "PORTARIA Nº 1578/2026 de 17.06.2026\nI - Designar X.\n" + _CORPO
+    + "PORTARIA Nº 1579/2026 de 17.06.2026\nI - Dispensar Y.\n" + _CORPO
+    + "PORTARIA Nº 1580/2026 de 17.06.2026\nI - Designar Z.\n" + _CORPO
+)
+
+
+def test_portarias_seguintes_do_bloco_herdam_o_titulo():
+    achados = [a for a in identificar(UPE_BLOCO) if a.especie == "Portaria"]
+    assert [a.orgao_do_titulo for a in achados] == ["UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA"] * 3
+    assert all(a.sefaz is False and a.orgao is None for a in achados)
+    assert any("herdado do título do ato anterior" in aviso for aviso in achados[2].avisos)
+
+
+def test_heranca_atravessa_citacao_curta_entre_dois_atos():
+    texto = UPE_BLOCO + "RESOLUÇÃO CONSUN Nº 020/2026, de 30/04/2026.\nPORTARIA Nº 1631/2026 de 25.06.2026\nI - Exonerar.\n"
+    ultima = [a for a in identificar(texto) if a.especie == "Portaria"][-1]
+    assert ultima.orgao_do_titulo == "UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA"
+
+
+def test_titulo_no_fim_do_trecho_do_ato_anterior_vale_mesmo_longe():
+    texto = (
+        "PORTARIA FUNASE Nº 415/2026, de 25 de junho de 2026.\nO Diretor RESOLVE: Designar.\n"
+        "UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA\n" + "linha comum do texto\n" * 20
+        + "PORTARIA Nº 1579/2026 de 17.06.2026\nI - Dispensar.\n"
+    )
+    upe = [a for a in identificar(texto) if a.numero == "1579"][0]
+    assert upe.orgao_do_titulo == "UNIVERSIDADE DE PERNAMBUCO - UPE / REITORIA"
+    assert any("fim do trecho do ato anterior" in aviso for aviso in upe.avisos)
+
+
+def test_sem_titulo_em_lugar_nenhum_nao_herda_orgao_de_cabecalho():
+    texto = "PORTARIA FUNASE Nº 415/2026\nO Diretor RESOLVE: Designar.\nPORTARIA Nº 1579/2026 de 17.06.2026\nI - Dispensar.\n"
+    upe = [a for a in identificar(texto) if a.numero == "1579"][0]
+    assert (upe.orgao, upe.orgao_do_titulo, upe.sefaz) == (None, None, None)
+
+
+def test_heranca_nao_atravessa_sobra_longa():
+    # Um AVISO (outro marcador) com texto longo entre os dois atos: não é mais o mesmo bloco.
+    texto = UPE_BLOCO + "AVISO DE LICITAÇÃO\n" + "texto de outra publicação. " * 20 + "\nPORTARIA Nº 1631/2026 de 25.06.2026\nI - Exonerar.\n"
+    ultima = [a for a in identificar(texto) if a.especie == "Portaria"][-1]
+    assert ultima.orgao_do_titulo is None

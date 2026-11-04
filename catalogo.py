@@ -34,12 +34,13 @@ from __future__ import annotations
 import csv
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
-from especies import DECRETO, PORTARIA
-from programas import PROGRAMAS_DBF, cita_programa_so_no_corpo, programas_do_ato
+from duplicidade import ja_existe
+from especies import DECRETO, EDITAL, PORTARIA
+from programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, cita_programa_so_no_corpo, programas_do_ato
 from regras_atos import Achado, identificar
 from separador import ErroSeparacao, ler_caderno
 
@@ -75,6 +76,10 @@ class LinhaDoCatalogo:
     situacao: str
     trecho: str = ""  # só para a lista "não reconhecido"; não vai para o CSV
     motivo: str = ""  # por que precisa de olho humano; "" = reconhecido por completo
+    # Só da errata (não vão para o CSV): o ato referido como escrito e os programas da DBF
+    # que o texto da errata cita.
+    ato_referido: str = ""
+    programas: tuple[str, ...] = ()
 
     def como_linha(self) -> list[str]:
         return [str(getattr(self, coluna)) for coluna in COLUNAS]
@@ -137,8 +142,12 @@ def _escopo_por_orgao(achado: Achado, texto_do_ato: str) -> tuple[str, str]:
     origem = " (lido do título da seção)" if do_titulo else ""
 
     if achado.sefaz is True:
-        if achado.especie != "Portaria":
-            return NO_ESCOPO, f"órgão {orgao}{origem}"
+        if achado.especie == "Edital":
+            # Credenciamento ligado ao programa pelo texto do edital (PRODEAUTO, Lei do Esporte...).
+            programas = tuple(p.sigla for p in programas_do_ato(texto_do_ato, EDITAL, PROGRAMAS_DE_CREDENCIAMENTO))
+            if programas:
+                return NO_ESCOPO, f"órgão {orgao}{origem}; {', '.join(programas)}"
+            return A_CONFIRMAR, f"órgão {orgao}{origem}: nenhum programa reconhecido no texto do edital"
         programas = _programas_da_dbf(texto_do_ato)
         if programas:
             return NO_ESCOPO, f"órgão {orgao}{origem}; {', '.join(programas)}"
@@ -160,9 +169,12 @@ def _situacao(achado: Achado, texto_do_ato: str, motivo: str) -> str:
         return f"{A_CONFIRMAR}: marcador de republicação sem ato associado"
     if achado.especie == "Errata":
         # Decisão pendente da DBF: errata de decreto/edital/portaria entra no catálogo?
+        if achado.ato_referido == "?":  # sem alvo identificado, não dá para dizer que é fora
+            return f"{A_CONFIRMAR}: errata de ato não identificado"
         if achado.destino == "outro":
             return f"{FORA_DO_ESCOPO}: errata de {achado.ato_referido}"
-        return f"{A_CONFIRMAR}: errata de {achado.ato_referido} (falta a DBF decidir se erratas entram)"
+        # Provisório: `resolver_erratas` decide depois de ler todos os cadernos do lote.
+        return f"{A_CONFIRMAR}: errata de {achado.ato_referido}: ato referido não achado na base nem nos cadernos lidos"
 
     if achado.especie == "Decreto":
         if achado.numero is None:
@@ -202,6 +214,8 @@ def _linha(achado: Achado, texto: str, nome_do_caderno: str, publicacao: str) ->
         situacao=_situacao(achado, texto_do_ato, motivo),
         trecho=achado.trecho,
         motivo=motivo,
+        ato_referido=achado.ato_referido or "",
+        programas=_programas_da_dbf(texto_do_ato) if eh_errata else (),
     )
 
 
@@ -234,9 +248,62 @@ def listar_cadernos(caminho: Path) -> list[Path]:
     return [caminho]
 
 
-def catalogar(caminho: Path) -> ResultadoDoCatalogo:
+def nome_na_base(especie: str, numero: str, ano: str) -> str | None:
+    """Nome do arquivo do ato na base da DBF: 'Decreto 58509.pdf', 'Edital 064-2025.pdf'.
+    Portaria não tem arquivo na base (informado pela responsável pelo projeto): None."""
+    if especie == "decreto" and numero:
+        return DECRETO.nome_arquivo(numero)
+    if especie == "edital" and numero and ano:
+        return EDITAL.nome_arquivo(numero, ano)
+    return None
+
+
+def resolver_erratas(linhas: list[LinhaDoCatalogo], indice: set[str] | None) -> list[LinhaDoCatalogo]:
+    """Escopo da errata de decreto, edital ou portaria: segue o ato referido.
+
+    Entra no escopo se ao menos um sinal confirmar que o ato é da DBF:
+      - base: o arquivo do ato existe na base da DBF (`indice`; só com --com-base);
+      - lote: o ato está no escopo nos cadernos lidos nesta execução (rodar os lotes em ordem
+        cronológica, dos mais antigos aos mais novos, cobre o ato e a errata no mesmo lote);
+      - texto: a própria errata cita programa da DBF.
+    Sem nenhum sinal, fica a confirmar (nunca fora: o original pode faltar na base)."""
+    no_lote = {
+        (l.especie.casefold(), l.numero.lstrip("0"), l.ano if l.especie != "Decreto" else "")
+        for l in linhas
+        if l.especie in ("Decreto", "Edital", "Portaria") and l.situacao.startswith(NO_ESCOPO)
+    }
+    saida = []
+    for l in linhas:
+        if l.especie != "Errata" or l.tipo not in ("decreto", "edital", "portaria") or l.ato_referido == "?":
+            saida.append(l)
+            continue
+        sinais = []
+        nome = nome_na_base(l.tipo, l.numero, l.ano)
+        if indice is not None and nome and ja_existe(indice, nome):
+            sinais.append(f"{nome[:-4]} está na base")
+        chave = (l.tipo, l.numero.lstrip("0"), l.ano if l.tipo != "decreto" else "")
+        if chave in no_lote:
+            sinais.append("ato no escopo nos cadernos lidos")
+        if l.programas:
+            sinais.append(f"a errata cita {', '.join(l.programas)}")
+        if sinais:
+            situacao = f"{NO_ESCOPO}: errata de {l.ato_referido} ({'; '.join(sinais)})"
+            if indice is not None and nome and ja_existe(indice, f"{nome[:-4]} Errata.pdf"):
+                situacao += "; a errata já está arquivada na base"
+        else:
+            sem_base = " (base não consultada: use --com-base)" if indice is None and nome else ""
+            situacao = (
+                f"{A_CONFIRMAR}: errata de {l.ato_referido}: ato referido não achado "
+                f"na base nem nos cadernos lidos{sem_base}"
+            )
+        saida.append(replace(l, situacao=situacao))
+    return saida
+
+
+def catalogar(caminho: Path, indice_da_base: set[str] | None = None) -> ResultadoDoCatalogo:
     """Cataloga um caderno ou todos os PDFs de uma pasta. Um caderno ilegível vira aviso
-    e não interrompe os demais."""
+    e não interrompe os demais. `indice_da_base` (opcional, só leitura): nomes da base da DBF,
+    usados para decidir o escopo das erratas."""
     resultado = ResultadoDoCatalogo()
     for caderno in listar_cadernos(caminho):
         resultado.cadernos += 1
@@ -248,6 +315,7 @@ def catalogar(caminho: Path) -> ResultadoDoCatalogo:
             continue
         resultado.linhas.extend(linhas)
         resultado.avisos.extend(avisos)
+    resultado.linhas = resolver_erratas(resultado.linhas, indice_da_base)
     return resultado
 
 

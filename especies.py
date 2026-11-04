@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from programas import PROGRAMAS_DBF, Programa
+from programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, Programa
 from regras_atos import (
     ABERTURA_DO_CORPO_DECRETO,
     CABECALHO_DECRETO,
@@ -92,9 +92,11 @@ class Especie:
     inicios_com_recuo: re.Pattern[str] | None = None
     inicios_sem_recuo: re.Pattern[str] | None = None
 
-    def nome_arquivo(self, numero: str) -> str:
-        """Nome de salvamento e de comparação, ex.: 'Decreto 60929.pdf'."""
-        return self.padrao_arquivo.format(especie=self.nome, numero=numero)
+    def nome_arquivo(self, numero: str, ano: str | None = None) -> str:
+        """Nome de salvamento e de comparação, ex.: 'Decreto 60929.pdf', 'Edital 064-2025.pdf'."""
+        if "{ano}" in self.padrao_arquivo and not ano:
+            raise ValueError(f"{self.nome}: o nome do arquivo exige o ano ({self.padrao_arquivo})")
+        return self.padrao_arquivo.format(especie=self.nome, numero=numero, ano=ano)
 
 
 # ----------------------------------------------------------------------------
@@ -158,16 +160,16 @@ DECRETO = Especie(
 # 26/06, 15/07, 21/10 e 22/10/2026 (ver regras_atos.py). Fora de ESPECIES_ATIVAS:
 # falta a DBF definir o que fazer com o edital (nome do arquivo, escopo por programa,
 # template). Pendências:
-#   - `padrao_arquivo` é provisório: o número do edital só é único junto com o órgão
-#     e o ano ("EDITAL DBF Nº 063/2026"); a DBF define o nome;
-#   - o credenciamento do PEAP/PRODEAUTO/Lei do Esporte ainda não está ligado a
-#     `programas`;
+#   - nome do arquivo: "Edital 064-2025.pdf" (número com os zeros e ano), como na base da DBF;
+#   - o credenciamento se liga ao programa pelo TEXTO do edital (`programas` abaixo, que
+#     inclui a Lei de Incentivo ao Esporte);
 #   - DBM foi informado como outro nome da DBF, mas não aparece em nenhum caderno.
 EDITAL = Especie(
     nome="Edital",
     cabecalho=CABECALHO_EDITAL,
-    padrao_arquivo="{especie} {numero}.pdf",
+    padrao_arquivo="{especie} {numero}-{ano}.pdf",
     tipos=tuple(Tipo(nome, padrao, None, evidencia) for nome, padrao, evidencia in _REGRAS_TIPOS_EDITAL),
+    programas=PROGRAMAS_DE_CREDENCIAMENTO,
     orgaos_do_escopo=ORGAOS_EDITAL_SEFAZ,
 )
 
