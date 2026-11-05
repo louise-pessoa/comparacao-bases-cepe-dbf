@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-import exportador
-import main as modulo_main
-import relatorio as modulo_relatorio
-from config import Configuracao, ErroConfiguracao
-from duplicidade import PastaDbfIndisponivel
-from main import main
-from relatorio import relatorio_dos_cadernos
-from separador import ErroSeparacao
+from dbf_cepe.pipeline import exportador
+from dbf_cepe import cli as modulo_main
+from dbf_cepe.pipeline import relatorio as modulo_relatorio
+from dbf_cepe.config import Configuracao, ErroConfiguracao
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel
+from dbf_cepe.cli import main
+from dbf_cepe.pipeline.relatorio import relatorio_dos_cadernos
+from dbf_cepe.leitura.separador import ErroSeparacao
 
 AMOSTRAS_CADERNOS = Path(__file__).parent / "amostras_cadernos"
 TRECHO = AMOSTRAS_CADERNOS / "Caderno 2026-06-26 (paginas 24 a 26).pdf"  # 60928..60937
@@ -161,8 +161,8 @@ def test_gravar_de_novo_nao_duplica_nem_sobrescreve(cfg, caplog):
 
 def test_pdfs_gravados_seguem_para_o_lote(cfg):
     # O PDF gravado é aceito pela etapa 2: identifica o número e o tipo.
-    from identificador import identificar
-    from reader import ler_pdf
+    from dbf_cepe.leitura.identificador import identificar
+    from dbf_cepe.leitura.reader import ler_pdf
 
     relatorio_dos_cadernos(cfg, TRECHO, gravar=True)
     ident = identificar(ler_pdf(cfg.pasta_temp / "Decreto 60928.pdf").texto)
@@ -192,8 +192,8 @@ def test_falha_ao_gravar_e_contada_e_nao_deixa_arquivo(cfg, monkeypatch, caplog)
 
 
 def test_numero_repetido_no_caderno_grava_so_o_primeiro(cfg, tmp_path, monkeypatch, caplog):
-    from especies import DECRETO
-    from separador import AtoSeparado, ResultadoSeparacao
+    from dbf_cepe.regras.especies import DECRETO
+    from dbf_cepe.leitura.separador import AtoSeparado, ResultadoSeparacao
 
     texto = (
         "DECRETO Nº 60.777, DE 25 DE JUNHO DE 2026.\nConcede estímulo previsto na Lei nº 11.675, "

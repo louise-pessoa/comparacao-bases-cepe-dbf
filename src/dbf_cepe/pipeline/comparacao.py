@@ -26,9 +26,9 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from identificador import normalizar_espacos
-from reader import StatusLeitura, ler_pdf
-from separador import limpar_ligaduras
+from dbf_cepe.leitura.identificador import normalizar_espacos
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
+from dbf_cepe.leitura.separador import limpar_ligaduras
 
 _ELEMENTO = re.compile(r"\w+|[^\w\s]")
 _PADRONIZAR = str.maketrans(

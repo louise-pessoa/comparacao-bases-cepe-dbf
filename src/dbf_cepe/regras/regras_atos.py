@@ -10,7 +10,7 @@ do PDF de um caderno, estas espécies:
 
 Uso mínimo:
 
-    from regras_atos import identificar
+    from dbf_cepe.regras.regras_atos import identificar
     for achado in identificar(texto_do_caderno):
         print(achado.especie, achado.numero, achado.tipo, achado.data_do_ato)
 

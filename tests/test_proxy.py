@@ -8,10 +8,10 @@ from datetime import date
 
 import pytest
 
-import captura
-import main
-import proxy
-from config import Configuracao
+from dbf_cepe import captura
+from dbf_cepe import cli as main
+from dbf_cepe import proxy
+from dbf_cepe.config import Configuracao
 
 ALVO = "https://diariooficial.cepe.com.br/1/arquivos/resumoDiario/2026-10-21/2026-10-21.pdf"
 

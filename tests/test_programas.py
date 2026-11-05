@@ -8,8 +8,8 @@ import pymupdf
 import pytest
 
 from conftest import AMOSTRAS, TIPO_ESPERADO_DECRETO
-from especies import DECRETO
-from programas import (
+from dbf_cepe.regras.especies import DECRETO
+from dbf_cepe.regras.programas import (
     EVIDENCIA_AMOSTRA,
     EVIDENCIA_PRESUMIDO,
     EVIDENCIA_PUBLICADO,
@@ -19,7 +19,7 @@ from programas import (
     cita_programa_so_no_corpo,
     programas_do_ato,
 )
-from separador import separar_caderno
+from dbf_cepe.leitura.separador import separar_caderno
 
 AMOSTRAS_CADERNOS = Path(__file__).parent / "amostras_cadernos"
 TRECHO_24_A_26 = AMOSTRAS_CADERNOS / "Caderno 2026-06-26 (paginas 24 a 26).pdf"

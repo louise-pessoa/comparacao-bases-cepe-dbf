@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-import armazenamento
-import normalizador
-from armazenamento import (
+from dbf_cepe.pipeline import armazenamento
+from dbf_cepe.pipeline import normalizador
+from dbf_cepe.pipeline.armazenamento import (
     ArquivoJaExiste,
     ErroArmazenamento,
     GravacaoDivergente,
@@ -18,8 +18,8 @@ from armazenamento import (
     descartar_se_existir,
 )
 from conftest import criar_pdf_texto, texto_decreto
-from identificador import identificar
-from reader import ler_pdf
+from dbf_cepe.leitura.identificador import identificar
+from dbf_cepe.leitura.reader import ler_pdf
 
 NOME = "Decreto 60951.pdf"
 

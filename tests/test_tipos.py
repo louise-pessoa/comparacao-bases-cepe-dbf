@@ -11,14 +11,14 @@ from __future__ import annotations
 import pytest
 
 from conftest import TIPO_ESPERADO_DECRETO, texto_decreto
-from especies import (
+from dbf_cepe.regras.especies import (
     DECRETO,
     EVIDENCIA_AMOSTRA,
     EVIDENCIA_PRESUMIDO,
     EVIDENCIA_PUBLICADO,
     TIPOS_DECRETO,
 )
-from identificador import StatusIdentificacao, identificar
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 
 # (tipo esperado, ementa)
 CASOS = [

@@ -12,7 +12,7 @@ from conftest import (
     criar_pdf_imagem,
     criar_pdf_texto,
 )
-from reader import StatusLeitura, ler_pdf
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 
 
 ##################################################################################

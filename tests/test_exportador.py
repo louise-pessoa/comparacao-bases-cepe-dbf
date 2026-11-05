@@ -7,13 +7,13 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-import exportador
-from exportador import ErroExportacao, gravar_pdf_do_ato
-from identificador import StatusIdentificacao, identificar, normalizar_espacos
-from reader import StatusLeitura, ler_pdf
-from separador import AtoSeparado, separar_caderno
+from dbf_cepe.pipeline import exportador
+from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
+from dbf_cepe.leitura.separador import AtoSeparado, separar_caderno
 from conftest import AMOSTRAS
-from especies import DECRETO
+from dbf_cepe.regras.especies import DECRETO
 
 TRECHO = Path(__file__).parent / "amostras_cadernos" / "Caderno 2026-06-26 (paginas 24 a 26).pdf"
 

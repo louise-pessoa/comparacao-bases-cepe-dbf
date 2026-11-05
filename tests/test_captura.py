@@ -13,8 +13,8 @@ from datetime import date
 import pymupdf
 import pytest
 
-import captura
-from captura import (
+from dbf_cepe import captura
+from dbf_cepe.captura import (
     Caderno,
     ErroCaptura,
     StatusDownload,
@@ -22,8 +22,8 @@ from captura import (
     criar_abridor,
     dias_do_periodo,
 )
-from config import Configuracao
-from main import capturar, main
+from dbf_cepe.config import Configuracao
+from dbf_cepe.cli import capturar, main
 
 DIA = date(2026, 6, 27)
 URL_EXECUTIVO = (
@@ -610,8 +610,7 @@ def test_cli_fonte_desconhecida_e_recusada(capsys):
 
 
 def test_cli_fonte_e_repassada_ao_download(cfg, monkeypatch):
-    import main as modulo_main
-
+    from dbf_cepe import cli as modulo_main
     recebido = {}
 
     def falso_baixar(inicio, fim, pasta, **kwargs):
@@ -634,8 +633,7 @@ def test_cli_data_invalida_e_recusada(capsys):
 
 
 def test_cli_periodo_invertido_sai_com_erro_2(cfg, monkeypatch, capsys):
-    import main as modulo_main
-
+    from dbf_cepe import cli as modulo_main
     monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
     assert main(["--baixar", "--de", "2026-07-02", "--ate", "2026-07-01", "--simular"]) == 2
     assert "invertido" in capsys.readouterr().err
@@ -674,8 +672,7 @@ def test_remover_nao_levanta_erro_se_o_arquivo_continua_preso(tmp_path, monkeypa
 
 
 def test_cli_sai_com_codigo_1_quando_ha_falta_de_conexao(cfg, monkeypatch):
-    import main as modulo_main
-
+    from dbf_cepe import cli as modulo_main
     sem_rede = urllib.error.URLError(TimeoutError("timed out"))
 
     def abridor_sem_rede(url):
@@ -688,8 +685,7 @@ def test_cli_sai_com_codigo_1_quando_ha_falta_de_conexao(cfg, monkeypatch):
 
 
 def test_cli_ctrl_c_sai_com_codigo_130_sem_traceback(cfg, monkeypatch, capsys):
-    import main as modulo_main
-
+    from dbf_cepe import cli as modulo_main
     def interrompe(*args, **kwargs):
         raise KeyboardInterrupt
 

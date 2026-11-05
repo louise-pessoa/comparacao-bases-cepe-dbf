@@ -17,8 +17,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, Programa
-from regras_atos import (
+from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, Programa
+from dbf_cepe.regras.regras_atos import (
     ABERTURA_DO_CORPO_DECRETO,
     CABECALHO_DECRETO,
     CABECALHO_EDITAL,
@@ -31,8 +31,8 @@ from regras_atos import (
     ORGAOS_EDITAL_SEFAZ,
     ORGAOS_PORTARIA_SEFAZ,
 )
-from regras_atos import TIPOS_DECRETO as _REGRAS_TIPOS_DECRETO
-from regras_atos import TIPOS_EDITAL as _REGRAS_TIPOS_EDITAL
+from dbf_cepe.regras.regras_atos import TIPOS_DECRETO as _REGRAS_TIPOS_DECRETO
+from dbf_cepe.regras.regras_atos import TIPOS_EDITAL as _REGRAS_TIPOS_EDITAL
 
 # Origem do padrão de um tipo (documentação e testes; não altera o comportamento):
 #   amostra   - conferido em ato real da DBF versionado em tests/amostras/ ou em caderno;

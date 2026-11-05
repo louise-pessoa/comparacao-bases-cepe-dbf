@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import pytest
 
-import especies
-import regras_atos as ra
-import separador
-from especies import DECRETO, EDITAL, ESPECIES_ATIVAS, PORTARIA, Especie
-from separador import separar_texto
+from dbf_cepe.regras import especies
+from dbf_cepe.regras import regras_atos as ra
+from dbf_cepe.leitura import separador
+from dbf_cepe.regras.especies import DECRETO, EDITAL, ESPECIES_ATIVAS, PORTARIA, Especie
+from dbf_cepe.leitura.separador import separar_texto
 
 
 def test_edital_e_portaria_nao_estao_ativos():

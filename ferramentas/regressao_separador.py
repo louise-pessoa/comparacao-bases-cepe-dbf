@@ -1,35 +1,54 @@
 """Ferramenta auxiliar (fora do pipeline) — confere que a separação dos decretos não mudou.
 
-Pega o `separador.py` e o `especies.py` de um commit antigo (via `git show`), roda os dois
-separadores nos mesmos PDFs e diz, caderno a caderno, se os decretos separados (número, texto,
-páginas e avisos) são idênticos. Só lê: nada é gravado no repositório (os módulos antigos vão
-para uma pasta temporária). Serve para provar que uma mudança não altera o texto que vai para a
-comparação com a base.
+Extrai um commit antigo para uma pasta temporária (`git archive`), roda o separador dele e o
+atual nos mesmos PDFs, cada um em um processo próprio, e diz, caderno a caderno, se os decretos
+separados (número, cabeçalho, texto, páginas e avisos) são idênticos. Funciona com o layout
+antigo (módulos na raiz) e com o atual (pacote em src/dbf_cepe). Só lê: nada é gravado no
+repositório.
 
 Uso (da raiz do repositório):
-    python -m ferramentas.regressao_separador 0c54c8b
-    python -m ferramentas.regressao_separador main dados/cadernos tests/amostras_cadernos
+    python -m ferramentas.regressao_separador main
+    python -m ferramentas.regressao_separador 0c54c8b dados/cadernos tests/amostras_cadernos
 
 Sai com código 0 se tudo for idêntico e 1 se houver diferença.
 """
 
 from __future__ import annotations
 
+import io
+import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
-PASTAS_PADRAO = (Path("dados/cadernos"), Path("tests/amostras_cadernos"))
+PASTAS_PADRAO = ("dados/cadernos", "tests/amostras_cadernos")
+
+# Roda dentro de cada versão: importa o separador do layout que existir e imprime JSON.
+_SEPARAR = r"""
+import json, sys
+try:
+    from dbf_cepe.leitura import separador
+except ImportError:
+    import separador
+saida = {}
+for pdf in sys.argv[1:]:
+    r = separador.separar_caderno(pdf)
+    saida[pdf] = [[a.numero, a.cabecalho, a.texto, a.pagina_inicial, a.pagina_final, list(a.avisos)] for a in r.atos]
+    saida[pdf].append([list(r.avisos), r.paginas, list(r.paginas_digitalizadas)])
+print(json.dumps(saida, ensure_ascii=False))
+"""
 
 
-def _resumo(resultado):
-    return (
-        [(a.numero, a.cabecalho, a.texto, a.pagina_inicial, a.pagina_final, a.avisos) for a in resultado.atos],
-        resultado.avisos,
-        resultado.paginas,
-        resultado.paginas_digitalizadas,
+def _separar(raiz: Path, pdfs: list[str]) -> dict:
+    caminho = f"{raiz / 'src'}{';' if sys.platform == 'win32' else ':'}{raiz}"
+    resultado = subprocess.run(
+        [sys.executable, "-c", _SEPARAR, *pdfs],
+        cwd=raiz, env={**__import__("os").environ, "PYTHONPATH": caminho},
+        capture_output=True, text=True, encoding="utf-8", check=True,
     )
+    return json.loads(resultado.stdout)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,31 +56,23 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         print(__doc__)
         return 2
-    base, pastas = args[0], [Path(p) for p in args[1:]] or list(PASTAS_PADRAO)
-    sys.path.insert(0, str(Path.cwd()))
+    base, pastas = args[0], args[1:] or list(PASTAS_PADRAO)
+    pdfs = [str(pdf.resolve()) for pasta in pastas for pdf in sorted(Path(pasta).glob("*.pdf"))]
+    if not pdfs:
+        print(f"nenhum PDF em {', '.join(pastas)}")
+        return 2
     with tempfile.TemporaryDirectory() as tmp:
-        for nome in ("separador", "especies"):
-            fonte = subprocess.run(
-                ["git", "show", f"{base}:{nome}.py"], capture_output=True, check=True
-            ).stdout.decode("utf-8")
-            fonte = fonte.replace("from especies import", "from especies_antes import")
-            (Path(tmp) / f"{nome}_antes.py").write_text(fonte, encoding="utf-8")
-        sys.path.insert(1, tmp)
-        import especies_antes
-        import separador as depois
-        import separador_antes as antes
-
-        pdfs = [pdf for pasta in pastas for pdf in sorted(pasta.glob("*.pdf"))]
-        if not pdfs:
-            print(f"nenhum PDF em {', '.join(map(str, pastas))}")
-            return 2
-        tudo, total = True, 0
-        for pdf in pdfs:
-            a = _resumo(antes.separar_caderno(pdf, (especies_antes.DECRETO,)))
-            d = _resumo(depois.separar_caderno(pdf))
-            total += len(d[0])
-            tudo &= a == d
-            print(f"{pdf.name[:44]:<44} decretos={len(d[0]):>3}  {'IDÊNTICO' if a == d else 'DIFERENTE'}")
+        arquivo = subprocess.run(["git", "archive", base], capture_output=True, check=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(arquivo)) as tar:
+            tar.extractall(tmp, filter="data")
+        antes = _separar(Path(tmp), pdfs)
+    depois = _separar(Path.cwd(), pdfs)
+    tudo, total = True, 0
+    for pdf in pdfs:
+        igual = antes[pdf] == depois[pdf]
+        tudo &= igual
+        total += len(depois[pdf]) - 1
+        print(f"{Path(pdf).name[:44]:<44} decretos={len(depois[pdf]) - 1:>3}  {'IDÊNTICO' if igual else 'DIFERENTE'}")
     print(f"\n{total} decretos separados; tudo idêntico ao commit {base}: {tudo}")
     return 0 if tudo else 1
 

@@ -42,10 +42,10 @@ from pathlib import Path
 
 import pymupdf
 
-from regras_atos import ERRATA_LINHA as _ERRATA
-from regras_atos import REPUBLICACAO_MARCADOR as _REPUBLICACAO
-from regras_atos import RETIFICACAO_LINHA as _RETIFICACAO
-from regras_atos import ato_referido_da_errata
+from dbf_cepe.regras.regras_atos import ERRATA_LINHA as _ERRATA
+from dbf_cepe.regras.regras_atos import REPUBLICACAO_MARCADOR as _REPUBLICACAO
+from dbf_cepe.regras.regras_atos import RETIFICACAO_LINHA as _RETIFICACAO
+from dbf_cepe.regras.regras_atos import ato_referido_da_errata
 
 PASTA_CADERNOS_PADRAO = Path("dados/cadernos")
 PASTA_EXEMPLOS_PADRAO = Path("dados/exemplos")

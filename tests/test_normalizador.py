@@ -17,14 +17,14 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-import normalizador
+from dbf_cepe.pipeline import normalizador
 from conftest import AMOSTRAS, TIPO_ESPERADO_DECRETO, criar_pdf_imagem, criar_pdf_texto, texto_decreto
-from especies import DECRETO, Especie
-from exportador import gravar_pdf_do_ato
-from identificador import StatusIdentificacao, identificar, normalizar_espacos
-from normalizador import Bloco, ErroNormalizacao, Estilo, estruturar, gerar_pdf_normalizado
-from reader import ler_pdf
-from separador import separar_caderno
+from dbf_cepe.regras.especies import DECRETO, Especie
+from dbf_cepe.pipeline.exportador import gravar_pdf_do_ato
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
+from dbf_cepe.pipeline.normalizador import Bloco, ErroNormalizacao, Estilo, estruturar, gerar_pdf_normalizado
+from dbf_cepe.leitura.reader import ler_pdf
+from dbf_cepe.leitura.separador import separar_caderno
 
 PASTA_CADERNOS = Path(__file__).parent / "amostras_cadernos"
 NUMEROS = sorted(TIPO_ESPERADO_DECRETO)

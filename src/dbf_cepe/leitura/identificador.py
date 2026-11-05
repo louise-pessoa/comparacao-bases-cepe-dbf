@@ -16,7 +16,7 @@ import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
-from especies import ESPECIES_ATIVAS, NOMES_OUTRAS_ESPECIES, Especie, Tipo
+from dbf_cepe.regras.especies import ESPECIES_ATIVAS, NOMES_OUTRAS_ESPECIES, Especie, Tipo
 
 _ESPACOS = re.compile(r"\s+")
 _TAMANHO_EMENTA_PADRAO = 600

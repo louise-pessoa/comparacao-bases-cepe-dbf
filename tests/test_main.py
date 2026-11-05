@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import pytest
 
-import armazenamento
-import main as modulo_main
-from armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
-from config import Configuracao, ErroConfiguracao
+from dbf_cepe.pipeline import armazenamento
+from dbf_cepe import cli as modulo_main
+from dbf_cepe.pipeline.armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
+from dbf_cepe.config import Configuracao, ErroConfiguracao
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
-from duplicidade import PastaDbfIndisponivel
-import normalizador
-from lote import Destino, executar
-from normalizador import ErroNormalizacao
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel
+from dbf_cepe.pipeline import normalizador
+from dbf_cepe.pipeline.lote import Destino, executar
+from dbf_cepe.pipeline.normalizador import ErroNormalizacao
 
 
 @pytest.fixture

@@ -38,11 +38,11 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
-from duplicidade import ja_existe
-from especies import DECRETO, EDITAL, PORTARIA
-from programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, cita_programa_so_no_corpo, programas_do_ato
-from regras_atos import Achado, identificar
-from separador import ErroSeparacao, ler_caderno
+from dbf_cepe.pipeline.duplicidade import ja_existe
+from dbf_cepe.regras.especies import DECRETO, EDITAL, PORTARIA
+from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, cita_programa_so_no_corpo, programas_do_ato
+from dbf_cepe.regras.regras_atos import Achado, identificar
+from dbf_cepe.leitura.separador import ErroSeparacao, ler_caderno
 
 PASTA_PADRAO_DO_CSV = Path("dados")
 NOME_PADRAO_DO_CSV = "catalogo_atos.csv"

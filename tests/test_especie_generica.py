@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import re
 
-from especies import DECRETO, Especie, Tipo
-from identificador import StatusIdentificacao, identificar
-from programas import (
+from dbf_cepe.regras.especies import DECRETO, Especie, Tipo
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
+from dbf_cepe.regras.programas import (
     Programa,
     cabecalho_do_ato,
     cita_programa_so_no_corpo,
     em_escopo,
     programas_do_ato,
 )
-from separador import separar_texto
+from dbf_cepe.leitura.separador import separar_texto
 
 ALFA = Programa("ALFA", "Programa Alfa", "norma fictícia", re.compile(r"\bAlfa\b", re.IGNORECASE))
 

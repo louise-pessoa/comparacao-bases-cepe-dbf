@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # só para as anotações: evita importação circular com especies.py
-    from especies import Especie
+    from dbf_cepe.regras.especies import Especie
 
 _FLAGS = re.IGNORECASE
 
@@ -41,7 +41,7 @@ _FLAGS = re.IGNORECASE
 #   amostra   - conferido em decretos reais da DBF (tests/amostras/, caderno de 26/06/2026);
 #   publicado - conferido em decreto real publicado (Alepe/SEFAZ), sem amostra versionada;
 #   presumido - deduzido da legislação; falta decreto real.
-from regras_atos import EVIDENCIA_AMOSTRA, EVIDENCIA_PRESUMIDO, EVIDENCIA_PUBLICADO  # uma fonte só
+from dbf_cepe.regras.regras_atos import EVIDENCIA_AMOSTRA, EVIDENCIA_PRESUMIDO, EVIDENCIA_PUBLICADO  # uma fonte só
 
 
 @dataclass(frozen=True)

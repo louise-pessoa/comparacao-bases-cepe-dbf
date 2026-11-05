@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-import comparacao
-import main as modulo_main
-import relatorio as modulo_relatorio
-from comparacao import Comparacao, comparar_com_base, comparar_textos, palavras
+from dbf_cepe.pipeline import comparacao
+from dbf_cepe import cli as modulo_main
+from dbf_cepe.pipeline import relatorio as modulo_relatorio
+from dbf_cepe.pipeline.comparacao import Comparacao, comparar_com_base, comparar_textos, palavras
 from conftest import criar_pdf_imagem, criar_pdf_texto
-from config import Configuracao
-from relatorio import relatorio_dos_cadernos
-from separador import separar_caderno
+from dbf_cepe.config import Configuracao
+from dbf_cepe.pipeline.relatorio import relatorio_dos_cadernos
+from dbf_cepe.leitura.separador import separar_caderno
 
 AMOSTRAS = Path(__file__).parent / "amostras"
 CADERNO = Path(__file__).parent / "amostras_cadernos" / "Caderno 2026-06-26 (paginas 24 a 26).pdf"

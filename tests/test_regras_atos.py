@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-import regras_atos as ra
-from regras_atos import identificar
+from dbf_cepe.regras import regras_atos as ra
+from dbf_cepe.regras.regras_atos import identificar
 
 
 def _unico(texto: str, especie: str):

@@ -48,19 +48,19 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-from especies import Especie
-from identificador import (
+from dbf_cepe.regras.especies import Especie
+from dbf_cepe.leitura.identificador import (
     Identificacao,
     StatusIdentificacao,
     identificar,
     normalizar_espacos,
 )
-from reader import StatusLeitura, ler_pdf
-from separador import limpar_ligaduras
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
+from dbf_cepe.leitura.separador import limpar_ligaduras
 
 log = logging.getLogger("pipeline")
 
-PASTA_FONTES = Path(__file__).resolve().parent / "fontes"
+PASTA_FONTES = Path(__file__).resolve().parents[1] / "recursos" / "fontes"
 FONTE_TEXTO = "LiberationSerif-Regular.ttf"
 
 # Medidas (pontos), conferidas nos decretos-modelo da DBF.
