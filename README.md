@@ -1,144 +1,59 @@
 # Comparação de bases de Atos Normativos da CEPE e da DBF
 
-Sincroniza a base local de atos normativos de programas de estímulos fiscais da Diretoria de Benefícios Fiscais (DBF) com os atos publicados no Diário Oficial pela CEPE.
+Sincroniza a base local de atos dos programas de estímulos fiscais da Diretoria de Benefícios Fiscais (DBF) com os atos
+publicados pela CEPE no Diário Oficial de Pernambuco:
 
-Além de evitar arquivos duplicados, recria cada decreto inédito em um PDF de layout limpo e linear ("Normalização na Fonte"), mais adequado à leitura por IA.
+- baixa os cadernos do Diário e separa os decretos;
+- descarta o que a DBF já tem;
+- recria cada decreto inédito em um PDF limpo e linear, mais fácil de ler por IA ("Normalização na Fonte");
+- cataloga, só para leitura, decretos, editais, portarias, erratas e republicações.
 
-Análise semântica dos atos **não** faz parte deste projeto.
+Análise semântica dos atos **não** faz parte do projeto.
 
-## Etapas e situação
+## Etapas
 
-| # | Etapa | Arquivo | Situação |
-|---|-------|---------|----------|
-| 1 | Captura dos cadernos da CEPE | `captura.py` | **implementada** |
-| 1b | Separação dos decretos do caderno e gravação em `dados/pendentes` | `separador.py`, `programas.py`, `exportador.py` | **implementada** |
-| 2 | Identificação (PyMuPDF + RegEx) | `reader.py`, `identificador.py`, `especies.py` | **implementada** |
-| 3 | Validação de duplicidade | `duplicidade.py` | **implementada** |
-| 4 | Normalização e geração do PDF (fpdf2) | `normalizador.py` | **implementada** |
-| 5 | Armazenamento na pasta da DBF | `armazenamento.py` | **implementada** |
-| – | Catálogo dos atos (decreto, edital, portaria, errata, republicação), só leitura | `catalogo.py`, `regras_atos.py` | **implementada** (edital e portaria só reconhecidos; não entram no pipeline) |
+| # | Etapa | Situação |
+|---|-------|----------|
+| 1 | Captura dos cadernos da CEPE | implementada |
+| 1b | Separação dos decretos do caderno e gravação dos inéditos em `dados/pendentes` | implementada |
+| 2 | Identificação (PyMuPDF + RegEx) | implementada |
+| 3 | Validação de duplicidade contra a base da DBF | implementada |
+| 4 | Normalização: PDF limpo com o layout da DBF (fpdf2) | implementada |
+| 5 | Gravação na pasta da DBF | implementada |
+| – | Catálogo dos atos (CSV, só leitura) | implementada; edital e portaria só reconhecidos, fora do pipeline |
 
-O original só é descartado depois de o resultado ser gravado e conferido na DBF. Os cadernos baixados pela etapa 1 ainda não seguem para a etapa 2, que espera um ato por PDF: a etapa 1b separa os decretos e grava os inéditos da DBF em `dados/pendentes`, de onde o lote os lê.
-
-### O que a etapa 2 decide
-
-| Situação do PDF | Destino |
-|---|---|
-| Não abre, está vazio, sem páginas ou com senha | `dados/erros` |
-| Digitalizado (total ou parcialmente) | `dados/leitura tesseract`, com o nome original |
-| Começa por Lei, Portaria, Edital, Errata... | descartado |
-| Sem cabeçalho reconhecível, ou com cabeçalhos de mais de um ato | `dados/erros` (revisão manual) |
-| Decreto | segue para a etapa 3 |
-
-Na etapa 3, o arquivo é comparado, pela nomenclatura `Decreto {numero}.pdf` (número sem separador de milhar), com a pasta da DBF. Se já existir, o PDF temporário é descartado. Decretos cujo tipo não é reconhecido (concessão, alteração, alteração da norma do programa, prorrogação, renovação, segunda prorrogação/renovação, transferência, revogação, terceirização, PROIND) vão para `dados/erros`. Na etapa 4, o decreto inédito é recriado em um PDF limpo (ver abaixo); se a normalização falhar, o PDF também vai para `dados/erros`, com o motivo no log.
+O original só é descartado depois de o resultado ser gravado e conferido na base.
 
 ## Instalação
 
-Requer Python 3.11 ou superior (testado com 3.11, 3.12, 3.13 e 3.14). A versão mínima e a configuração do pytest e do ruff ficam em `pyproject.toml`; as dependências fixadas, em `requirements.txt` e `requirements-dev.txt`. No WSL2, mantenha o repositório no sistema de arquivos do Linux (por exemplo, `~/projetos`) e não em `/mnt/c`.
-
-Linux / WSL2:
+Python 3.11 ou mais novo.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-cp .env.example .env
-```
-
-Windows (PowerShell):
-
-```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+source .venv/bin/activate            # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-copy .env.example .env
+cp .env.example .env                 # Windows: copy .env.example .env
 ```
 
-Edite o `.env` e informe `PASTA_DBF` (a pasta da base oficial da DBF). No WSL2, o drive precisa estar montado: `sudo mount -t drvfs G: /mnt/g`.
+No `.env`, informe `PASTA_DBF` (a pasta da base oficial da DBF). Proxy, certificado e WSL2: veja [`docs/uso.md`](docs/uso.md).
 
-As versões das dependências diretas ficam fixas em `requirements*.txt`, para a instalação ser reproduzível (as indiretas não são fixadas). Com o repositório no GitHub, o Dependabot (`.github/dependabot.yml`) propõe atualizações semanais por pull request.
-
-Opcional: instalar o pacote em modo editável (`pip install -e .`) dá o comando `dbf-cepe` (o mesmo que `python main.py`) e `python -m dbf_cepe`. Instale sempre em modo editável, rodando da pasta do repositório: o `.env` e a pasta `dados/` são procurados na raiz do repositório.
+Opcional: `pip install -e .` (sempre em modo editável, na pasta do repositório) dá o comando `dbf-cepe`, que é o mesmo que
+`python main.py`.
 
 ## Uso
 
-### Etapa 1: baixar os cadernos
-
-Os decretos sempre estão no PDF completo do dia (o "caderno"). Editais, portarias e erratas também aparecem como arquivos isolados por órgão, mas só os cadernos completos são baixados, para um decreto não chegar duas vezes.
-
 ```bash
-python main.py --baixar --de 2026-10-01 --simular   # mostra o que baixaria; sem rede
-python main.py --baixar --de 2026-10-01 --ate 2026-10-20
-python main.py --baixar --de 2026-04-01 --ate 2026-04-30 --fonte s3   # endereços históricos
+python main.py --baixar --de 2026-10-01 --ate 2026-10-20   # etapa 1: baixa os cadernos para dados/cadernos
+python main.py --separar dados/cadernos                     # etapa 1b: lista os decretos e se a DBF já os tem (só lê)
+python main.py --separar dados/cadernos --comparar          # compara o texto com o PDF da base (só lê)
+python main.py --separar dados/cadernos --gravar            # grava os decretos inéditos em dados/pendentes
+python main.py --simular                                     # lote (etapas 2 a 5): mostra o que faria
+python main.py                                               # lote de verdade: grava na base da DBF
+python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
 ```
 
-O `--ate` é opcional (padrão: hoje). A `--fonte` escolhe de onde baixar: `resumo` (padrão) usa o site atual da CEPE (`diariooficial.cepe.com.br/.../resumoDiario/AAAA-MM-DD/`) e consulta, para cada dia, o caderno do dia e a edição extra, salvos em `dados/cadernos/` como `AAAAMMDD_ResumoDiario.pdf` e `AAAAMMDD_ResumoDiarioExtra.pdf`; `s3` usa o bucket histórico e consulta o Poder Executivo, o Executivo Extra e o Poder Legislativo (`AAAAMMDD_PoderExecutivo.pdf` e assim por diante). Não misture as duas fontes no mesmo período, senão o mesmo dia é baixado duas vezes. O registro do que já foi baixado fica em `dados/cadernos/manifesto.json`: rodar de novo não baixa o mesmo caderno. Dia sem edição (resposta 403 ou 404 do servidor) não é registrado e é consultado outra vez na próxima execução.
-
-Sem conexão com o servidor (timeout, proxy, firewall), o programa tenta 2 vezes cada caderno e, depois de 2 cadernos seguidos nessa situação, cancela o resto do período e termina com código de saída 1. Se o navegador abre o link e o Python não, a rede provavelmente exige um proxy que o Python não descobre sozinho (proxy automático, PAC ou WPAD). O jeito mais simples é colocar `HTTPS_PROXY=auto` no `.env`: a cada captura o programa pergunta ao Windows (pelo PowerShell, com o mesmo comando que o navegador usa) qual é o proxy para o site da CEPE, então a porta não precisa ser atualizada quando muda entre sessões; se o Windows não indicar proxy, a captura segue direto, e se a consulta falhar, o log avisa e a captura segue sem proxy explícito. Também é possível informar o endereço fixo (por exemplo, `HTTPS_PROXY=http://127.0.0.1:9000`), que o PowerShell mostra com `([System.Net.WebRequest]::GetSystemWebProxy().GetProxy([uri]"https://diariooficial.cepe.com.br/")).AbsoluteUri`. Não coloque senha nessa linha. Uma variável `HTTPS_PROXY` definida na janela do PowerShell tem precedência sobre o `.env` e, com uma porta antiga, faz a captura (e o Git) falhar: apague-a com `Remove-Item Env:HTTPS_PROXY`. Se o download falhar com `CERTIFICATE_VERIFY_FAILED ... Missing Authority Key Identifier` (acontece no Python 3.13 ou mais novo quando o proxy inspeciona o HTTPS com um certificado fora do padrão estrito), coloque `SSL_ESTRITO=nao` no `.env`: isso desliga apenas a checagem de conformidade do certificado, e a cadeia de confiança e o nome do servidor continuam sendo verificados. Ctrl+C interrompe sem deixar arquivo parcial.
-
-### Etapa 1b: separar os decretos do caderno
-
-```bash
-python main.py --separar "dados/cadernos/20260626_ResumoDiario.pdf"      # só lista
-python main.py --separar dados/cadernos --gravar                          # grava os inéditos em dados/pendentes
-python main.py --separar dados/cadernos --comparar                        # compara o texto com o da base (só leitura)
-```
-
-Sem `--gravar` o comando só lê: não grava, move nem apaga nada. Para cada decreto do caderno (ou de todos os PDFs da pasta, se você passar uma pasta) ele mostra o nome do arquivo (`Decreto 60929.pdf`), as páginas, o tipo (concessão, alteração etc., ou "tipo não reconhecido"), o programa da DBF e a situação: `fora do escopo da DBF`, `já existe na DBF` ou `INÉDITO`. Com `--gravar`, cada decreto de programa da DBF que a base ainda não tem vira um PDF próprio em `dados/pendentes/` (`INÉDITO (gravado em pendentes)`), pronto para o lote. O comando exige a pasta da DBF (`PASTA_DBF`), nunca sobrescreve um arquivo e termina com código 1 se algum decreto não puder ser gravado. Rodar de novo não duplica nada: o decreto que já está em pendentes é só informado.
-
-Com `--comparar`, cada decreto que "já existe na DBF" tem o texto comparado, elemento por elemento (palavras, números e cada sinal de pontuação), com o do PDF da base. Espaços e quebras de linha não contam, e ligaduras, aspas e apóstrofos curvos e travessões são padronizados, então "Recife/ PE" e "Recife/PE", ou "0001- 42" e "0001-42", são iguais; maiúsculas, acentos e pontuação contam. A linha do decreto passa a dizer "texto idêntico ao da base" ou, se houver diferença, a similaridade e quantos elementos estão só no caderno ou só na base, mostra cada diferença com um pouco de contexto (as 8 primeiras), e o fim do relatório resume quantos caem em cada faixa (idêntico, 99% a menos de 100%, 95% a 99%, abaixo de 95%, PDF da base não lido) e lista os 20 menos parecidos. Serve para saber se um decreto repetido é só a mesma publicação ou uma possível republicação, e para escolher um limiar de similaridade com dados reais. Só lê a base e não grava nada.
-
-O escopo vem de `programas.py`: um decreto é da DBF se a ementa ou os considerandos (do início até o `DECRETA:`) citam um dos programas de benefício fiscal da lista, entre eles PRODEPE, PROIND, PEAP, PRODINPE e PRODEAUTO. Cada programa é reconhecido pela sigla, pelo nome oficial, pela lei ou decreto de origem e pelo anexo do RICMS-PE (o "Anexo 33" só vale com o Decreto nº 44.650 ou o RICMS ao lado); termos genéricos como "setor automotivo" ou "indústria naval" soltos não marcam programa. Os programas ainda não decididos (COOPERA, fios, tecidos e confecções, monofásica, Inovar-PE e FEEF) já têm o padrão pronto em `PROGRAMAS_OPCIONAIS`: para incluí-los, mova-os para `PROGRAMAS_DBF`. Se um programa só aparece no corpo do texto, o decreto fica fora do escopo mas o log traz um `AVISO` para você conferir. Para incluir um programa, acrescente-o em `PROGRAMAS_DBF`.
-
-A separação é feita pelo texto, não por páginas, porque as páginas do Diário têm colunas e os decretos começam e terminam no meio delas: cada decreto vai do cabeçalho `DECRETO Nº ...` em maiúsculas, no início da linha, até as assinaturas que seguem o fecho (ou até o fim do anexo, se houver), e as citações a outros decretos no corpo do texto nunca são confundidas com cabeçalho. Os cabeçalhos e rodapés de página do Diário são removidos e as ligaduras (`ﬁ cam`) são convertidas (`ficam`); com isso o texto do decreto 60929 extraído do caderno de 26/06/2026 é idêntico ao do PDF avulso da DBF. Como o recorte de página não serve, o PDF de cada decreto é gerado de novo com o texto, em Liberation Sans (licença SIL OFL, versionada em `fontes/`), só com título e linhas, e é conferido antes de ser guardado: o PDF é relido e o texto e o número precisam bater com os do decreto, senão nada é gravado. Esse PDF é intermediário; o layout limpo dos modelos da DBF é a etapa 4. Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`, fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação) e páginas digitalizadas.
-
-### Etapa 4: o PDF normalizado
-
-A etapa 4 recria cada decreto inédito em um PDF limpo, em `dados/normalizados/Decreto {numero}.pdf`, com o layout dos decretos que a DBF já guarda: fonte de 12 pontos (a Liberation Serif, de mesmas medidas da Times New Roman e de licença livre, versionada em `fontes/`), texto justificado e sem negrito, itálico, sublinhado ou link. O título (`DECRETO Nº ..., DE ... DE ....`) e as assinaturas ficam centralizados, a ementa fica no bloco da metade direita da página, artigos, incisos, alíneas e o fecho têm recuo na primeira linha, os trechos citados dos decretos de alteração ficam recuados dos dois lados e uma linha em branco separa os parágrafos. A logomarca e as assinaturas não são reproduzidas. Os seis modelos têm o mesmo layout, por isso há um gerador só, para qualquer tipo de decreto.
-
-O texto chega em linhas fixas, sem marca de parágrafo, então a estrutura é recuperada: uma linha abre um parágrafo novo se começa como um dispositivo (`Art. 1º`, `I -`, `a)`, `1.1.`, `Parágrafo único`), como um considerando ou como `DECRETA:` e se a linha anterior terminou uma frase; o resto continua o parágrafo anterior. Essas regras ficam na `Especie` (`inicios_com_recuo` e `inicios_sem_recuo`), e nos seis modelos a divisão em parágrafos é idêntica à do Word. Só o espaço em branco muda: o PDF gerado é relido e o texto, o número e o tipo precisam bater com os do decreto, senão ele é descartado e o original vai para `dados/erros` com o motivo (por exemplo, um caractere que a fonte não tem). O `--simular` também gera e confere o PDF, em uma pasta temporária, sem gravar nada. Os pontos de atenção (ementa não encontrada, fecho ausente, citação sem aspas de fechamento, anexo) aparecem como `AVISO` no log. Um PDF normalizado que sobrou de uma execução anterior, sem a etapa 5, é substituído, porque é uma cópia derivada e não a base da DBF.
-
-### Ferramenta auxiliar: achar erratas e republicações nos cadernos
-
-Para reunir exemplos reais antes de escrever as regras de errata, de republicação e das demais espécies, `python -m ferramentas.localizar_exemplos` (rodado da raiz do repositório) lê os cadernos de `dados/cadernos` (só lê) e procura páginas com uma linha que começa com "ERRATA" (o relatório diz a que ato ela se refere), com marcas de republicação ("republicado por haver saído...", "2ª republicação de edital"; citações como "republicado no DOE" não contam), com "RETIFICAÇÃO", decretos cujo cabeçalho aparece em mais de uma página e cabeçalhos em maiúsculas de **edital e portaria**. Para estes últimos o relatório traz uma tabela de formatos (os números viram "N", ex.: `EDITAL DBF Nº N/N`) com a contagem e um exemplo de cada, e só as 2 primeiras páginas de cada formato são copiadas (`--por-formato`). `--cabecalhos EDITAL,PORTARIA,RESOLUÇÃO` muda as espécies levantadas. Cada página achada é copiada, uma por PDF, para `dados/exemplos` (sem sobrescrever nada), junto de um `relatorio.txt` com o trecho de cada achado. `--sem-paginas` grava só o relatório. Os critérios são aproximados de propósito: é preferível olhar uma página a mais do que perder um exemplo. Isso não faz parte do pipeline. As RegEx de errata, retificação e republicação não ficam mais aqui: vêm de `regras_atos.py` (uma fonte só), e o relatório gerado nos 5 cadernos de referência não mudou depois da troca.
-
-### Catálogo dos atos (somente leitura)
-
-```bash
-python main.py --catalogar dados/cadernos                    # grava dados/catalogo_atos.csv
-python main.py --catalogar dados/cadernos --saida outro.csv
-python main.py --catalogar dados/cadernos --com-base           # também consulta a base (só leitura), para as erratas
-```
-
-Reconhece **decretos, editais, portarias, erratas e republicações** em um caderno (ou em todos os PDFs de uma pasta) e grava um CSV com um ato por linha, nas colunas `especie, numero, ano, orgao, tipo, data_do_ato, data_de_publicacao, caderno, pagina, republicacao, situacao` (separador `;` e UTF-8 com BOM, que o Excel em português abre sem ajustes). Depois imprime as contagens por espécie e por tipo e a lista **"não reconhecido ou a conferir"** com caderno, página e trecho: cabeçalho sem número, possível citação quebrada em duas linhas, marcador de republicação sem ato, errata cujo ato referido não foi identificado, página digitalizada. Só lê os cadernos: não usa o `.env`, a base da DBF, os logs nem as pastas do pipeline, e só grava o CSV (um arquivo existente no mesmo caminho é substituído).
-
-- `data_de_publicacao` vem do **nome** do caderno (`AAAAMMDD_...`). `data_do_ato` vem do cabeçalho; o edital da DBF não a traz, e ela é lida da linha `Recife, 21 de outubro de 2026.` do fecho.
-- Errata: `numero` e `ano` são os do **ato referido** (a errata não tem número próprio) e `tipo` é o destino (`decreto`, `edital`, `portaria` ou `outro`). Errata de decreto, edital ou portaria **segue o ato referido**: entra no escopo se o ato estiver na base da DBF (`Decreto 58509.pdf`, `Edital 064-2025.pdf`; só com `--com-base`, que lê a lista de arquivos da pasta do `.env`, sem gravar nada), se estiver no escopo nos cadernos lidos na mesma execução ou se a própria errata citar programa da DBF; sem nenhum desses sinais fica `a_confirmar` (nunca `fora`). Portaria não tem arquivo na base. Para o ato e a errata não caírem em lotes trocados, rode os lotes em ordem cronológica, dos mais antigos aos mais novos. Se `Decreto 58509 Errata.pdf` já existir, a situação avisa. Errata cujo ato referido não foi identificado também fica `a_confirmar`.
-- `republicacao`: `sim` (o `(REPUBLICADO ...)` vem logo após as assinaturas do ato, ou em título acima do edital), `provavel` ou `nao`. Rodapé de republicação de outra espécie (instrução normativa, lista de atos do Governador) não se liga a nenhum ato e sai como linha `Republicação` a conferir.
-- `situacao`: `no_escopo`, `fora_do_escopo` ou `a_confirmar`, seguida do motivo. Decreto: cita programa da DBF no cabeçalho (`programas.py`). Edital: órgão `DBF` ou `DBM` **e** programa reconhecido no texto do edital (`programas.PROGRAMAS_DE_CREDENCIAMENTO`: os programas da DBF mais a Lei de Incentivo ao Esporte, Lei nº 15.706/2015; a situação traz o programa, ex.: `no_escopo: órgão DBF; PRODEAUTO`); edital da DBF sem programa reconhecido fica `a_confirmar`. O nome de arquivo do edital é `Edital {numero}-{ano}.pdf` (ex.: `Edital 064-2025.pdf`), como na base. Portaria: órgão `SF` **e** programa da DBF citado no texto (a portaria da SF que só designa ou dispensa servidor fica `fora_do_escopo: órgão SF sem programa da DBF`). DPC e os demais órgãos são reconhecidos, mas ficam fora do escopo. Se o cabeçalho não traz o órgão, vale o título em maiúsculas logo acima (até 8 linhas; `SECRETARIA DE ADMINISTRAÇÃO`), e o título também vale para os atos seguintes do mesmo bloco (decisão de 04/11/2026), com a marca "lido do título da seção" e sem nunca esconder um ato que cite programa da DBF (esse fica `a_confirmar`); sem título, o ato fica `a_confirmar`.
-
-Nos 5 cadernos de referência (25/04, 26/06, 15/07, 21/10 e 22/10/2026) saem 264 linhas: 73 decretos (30 no escopo: 28 concessões do PRODEPE e 2 do PROIND), 38 editais (14 da DBF), 131 portarias (7 da SF, das quais só a SF 200, perda de incentivo do PRODEPE, está no escopo), 13 erratas e 9 marcadores de republicação sem ato; 2 republicações ligadas (Decreto 61.055 e o edital de credenciamento 0014.2026.PNE). Situação: 45 `no_escopo` (30 decretos, 14 editais (13 da Lei do Esporte e 1 do PRODEAUTO) e 1 portaria), 185 `fora_do_escopo` e 34 `a_confirmar`.
-
-As RegEx moram em **`src/dbf_cepe/regras/regras_atos.py`**, um arquivo só com a biblioteca padrão que pode ser enviado sozinho à equipe da CEPE; o cabeçalho dele explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`, `programas.py` e a ferramenta de levantamento importam dele; `python regras_atos.py` confere a tabela de exemplos. `EDITAL` e `PORTARIA` estão definidos em `especies.py`, mas **não estão em `ESPECIES_ATIVAS`**: nenhum edital ou portaria é separado, gravado ou comparado.
-
-### Etapa 5: gravação na pasta da DBF
-
-Para cada decreto inédito, o PDF normalizado de `dados/normalizados` é gravado na pasta da DBF como `Decreto {numero}.pdf`. Antes de gravar, o programa abre o PDF gerado e confirma que ele se identifica como o decreto esperado, e confere de novo que o nome ainda não existe na DBF (outra pessoa pode ter salvado o mesmo decreto depois da etapa 3). A cópia é feita para um arquivo `.part` na própria pasta da DBF, o SHA-256 do que foi gravado é comparado com o do PDF gerado, e só então o arquivo recebe o nome final (no Windows, o renomear recusa um nome que já existe, então um decreto da DBF nunca é sobrescrito) e é relido. O PDF original de `dados/pendentes` e a cópia de `dados/normalizados` só são apagados depois dessa conferência. Se alguém salvou o mesmo decreto durante o lote, o original é descartado como duplicado. Se o conteúdo gravado não conferir, o arquivo é removido da DBF e o original vai para `dados/erros`. Se a gravação falhar por problema de acesso (drive desmontado, sem permissão, disco cheio), o original continua em `dados/pendentes`, o log registra o erro e o programa termina com código de saída 1; basta rodar de novo depois de resolver o problema. Se o Windows não deixar apagar o original depois de uma gravação confirmada, o log avisa para apagá-lo à mão; se isso não for feito, o próximo lote o descarta como duplicado.
-
-### Lote (etapas 2 a 5)
-
-Coloque os PDFs de um ato por arquivo em `dados/pendentes/` e rode:
-
-```bash
-python main.py --simular   # mostra o que seria feito; nada é movido ou apagado
-python main.py             # executa de verdade
-```
-
-Rode sempre `--simular` primeiro: o descarte de PDFs é definitivo (sem lixeira). O registro de cada decisão fica em `logs/pipeline.log`.
-
-A execução é abortada, sem tocar em nenhum arquivo, se a pasta da DBF não existir, não puder ser lida ou estiver vazia (por exemplo, drive não montado ou ainda sem sincronizar). Para uma base realmente vazia, use `--permitir-pasta-vazia`.
-
-Também é abortada se a pasta da DBF e as pastas de trabalho não forem todas diferentes ou se uma ficar dentro de outra. Exemplo: com `PASTA_TEMP` igual à `PASTA_DBF`, o script trataria cada decreto da base como duplicado e o apagaria.
+Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. O registro de cada decisão fica em
+`logs/pipeline.log`. Opções, mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
 
 ## Testes
 
@@ -147,51 +62,26 @@ pytest
 ruff check .
 ```
 
-Parte dos testes usa os 6 decretos reais de `tests/amostras/` e dois trechos do caderno de 26/06/2026 em `tests/amostras_cadernos/` (páginas 24 a 26 e página 9) (sem os metadados do arquivo original), já publicados pela CEPE e por isso versionados. Se alguma amostra faltar, os testes **reprovam** (não são pulados). O resto da suíte usa PDFs sintéticos criados pelos próprios testes, e os testes de download não acessam a internet.
-
-A cada push na `main` e a cada pull request, o GitHub Actions (`.github/workflows/testes.yml`) roda o `ruff check .` e a suíte em Python 3.11 (o mínimo) e 3.14. Não há deploy.
+Parte dos testes usa decretos e trechos de cadernos reais, já publicados (`tests/amostras*`). Se faltar uma amostra, os
+testes reprovam. O CI (GitHub Actions) roda o ruff e a suíte em Python 3.11 e 3.14 a cada push na `main` e a cada pull
+request.
 
 ## Estrutura
 
 ```
-main.py                atalho: python main.py ... roda a linha de comando sem instalar nada
-src/dbf_cepe/          o pacote (instalável com pip install -e .; comando dbf-cepe)
-  cli.py               linha de comando: argumentos e escolha do modo (--baixar, --separar, --catalogar, lote)
-  config.py            pastas e variáveis do .env (o .env fica na raiz do repositório)
-  proxy.py             descoberta do proxy do Windows (HTTPS_PROXY=auto)
-  captura.py           etapa 1: download dos cadernos do dia
-  catalogo.py          --catalogar: CSV dos atos dos cadernos, só leitura
-  regras/              regra de negócio
-    regras_atos.py     RegEx de decreto, edital, portaria, errata e republicação; só biblioteca padrão; pode ir sozinho para a CEPE
-    especies.py        regras por espécie: cabeçalho, nome de arquivo, tipos, fecho, escopo (importa as RegEx de regras_atos.py)
-    programas.py       escopo: programas de benefício fiscal da DBF (e os de credenciamento por edital)
-  leitura/             leitura dos PDFs
-    reader.py          etapa 2: leitura e detecção de PDF de imagem
-    separador.py       etapa 1b: um bloco de texto por decreto do caderno
-    identificador.py   etapa 2: número, espécie e tipo do ato
-  pipeline/            execução
-    duplicidade.py     etapa 3: comparação com a pasta da DBF
-    normalizador.py    etapa 4: estrutura o texto e gera o PDF limpo (fpdf2)
-    exportador.py      etapa 1b: grava o PDF de cada decreto em pendentes
-    armazenamento.py   etapa 5: grava o PDF normalizado na DBF; move e descarta
-    comparacao.py      compara o texto de um decreto do caderno com o PDF da base (--comparar)
-    lote.py            modo lote: etapas 2 a 5 sobre os PDFs de pendentes
-    relatorio.py       modo --separar: relatório dos cadernos, --gravar e --comparar
-  recursos/fontes/     Liberation Sans e Liberation Serif (SIL OFL) e as licenças
-ferramentas/           fora do pipeline (rodar da raiz com python -m ferramentas.<nome>):
-  localizar_exemplos.py   acha erratas, republicações e formatos de edital/portaria nos cadernos
-  regressao_separador.py  compara a separação dos decretos de um commit antigo com a atual
-docs/                  decisões, limitações e roteiro de testes
-tests/                 testes automatizados (tests/amostras: decretos reais; tests/amostras_cadernos: trecho de caderno real)
-pyproject.toml         pacote, versão mínima do Python e configuração do pytest e do ruff
-requirements*.txt      dependências, com versões fixas (o -dev inclui pytest e ruff)
-.github/               workflow de testes (Actions) e configuração do Dependabot
+main.py              atalho: python main.py ... roda a linha de comando sem instalar
+src/dbf_cepe/        o pacote: cli, config, proxy, captura, catalogo
+  regras/            RegEx dos atos (regras_atos.py, só biblioteca padrão), espécies e programas da DBF
+  leitura/           leitura do PDF, separação dos atos do caderno e identificação
+  pipeline/          duplicidade, normalização, gravação, comparação e os modos lote e relatório
+  recursos/fontes/   fontes Liberation (SIL OFL)
+ferramentas/         fora do pipeline: levantamento de exemplos e regressão do separador
+docs/                documentação
+tests/               testes automatizados
 ```
-
-Para tratar uma nova espécie, defina uma nova `Especie` em `especies.py` e inclua-a em `ESPECIES_ATIVAS`; as demais etapas não precisam ser reescritas. `EDITAL` e `PORTARIA` já estão definidos (cabeçalho com número, órgão, tipo e `orgaos_do_escopo`), mas só entram em `ESPECIES_ATIVAS` por decisão da DBF. O edital já tem nome de arquivo (`Edital {numero}-{ano}.pdf`, como na base) e liga o credenciamento ao programa pelo texto (`programas.PROGRAMAS_DE_CREDENCIAMENTO`); a portaria não tem arquivo na base, e o padrão de nome dela continua provisório. As RegEx (cabeçalho e tipos) ficam em `regras_atos.py`, não em `especies.py`. A `Especie` reúne tudo o que muda de um ato para outro: o cabeçalho com o número, o padrão do nome do arquivo, os tipos, o fecho que encerra o texto, o cargo de quem assina, a frase que abre o corpo depois da ementa, o ponto onde termina o cabeçalho (no decreto, o `DECRETA:`), a lista de programas que define o escopo e os inícios de parágrafo que dão a estrutura do PDF normalizado. Os campos opcionais podem ficar vazios: sem fecho o separador não o procura, e sem lista de programas todo ato da espécie entra no escopo. O teste `tests/test_especie_generica.py` usa uma espécie fictícia para garantir que nenhuma etapa dependa de regra de decreto.
 
 ## Documentação
 
-- [`docs/decisoes.md`](docs/decisoes.md): decisões e pressupostos (escopo, formato, regras).
-- [`docs/limitacoes.md`](docs/limitacoes.md): limitações conhecidas.
+- [`docs/uso.md`](docs/uso.md): como rodar cada modo, o que ele mostra, e problemas de rede e de base.
+- [`docs/funcionamento.md`](docs/funcionamento.md): como funciona por dentro, decisões e limitações.
 - [`docs/roteiro_de_testes.md`](docs/roteiro_de_testes.md): o que conferir antes de aceitar uma mudança.
