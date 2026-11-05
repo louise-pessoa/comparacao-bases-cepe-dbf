@@ -14,7 +14,7 @@ from config import Configuracao, ErroConfiguracao
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
 from duplicidade import PastaDbfIndisponivel
 import normalizador
-from main import Destino, executar
+from lote import Destino, executar
 from normalizador import ErroNormalizacao
 
 

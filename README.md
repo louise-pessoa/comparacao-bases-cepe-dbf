@@ -16,7 +16,7 @@ Análise semântica dos atos **não** faz parte deste projeto.
 | 3 | Validação de duplicidade | `duplicidade.py` | **implementada** |
 | 4 | Normalização e geração do PDF (fpdf2) | `normalizador.py` | **implementada** |
 | 5 | Armazenamento na pasta da DBF | `armazenamento.py` | **implementada** |
-| – | Catálogo dos atos (decreto, edital, portaria, errata, republicação), só leitura | `catalogo.py`, `regras_atos.py`, `atos_acessorios.py` | **implementada** (edital e portaria só reconhecidos; não entram no pipeline) |
+| – | Catálogo dos atos (decreto, edital, portaria, errata, republicação), só leitura | `catalogo.py`, `regras_atos.py` | **implementada** (edital e portaria só reconhecidos; não entram no pipeline) |
 
 O original só é descartado depois de o resultado ser gravado e conferido na DBF. Os cadernos baixados pela etapa 1 ainda não seguem para a etapa 2, que espera um ato por PDF: a etapa 1b separa os decretos e grava os inéditos da DBF em `dados/pendentes`, de onde o lote os lê.
 
@@ -34,7 +34,7 @@ Na etapa 3, o arquivo é comparado, pela nomenclatura `Decreto {numero}.pdf` (n�
 
 ## Instalação
 
-Requer Python 3.11 ou superior (testado com 3.11, 3.12, 3.13 e 3.14; o CI ainda roda também em 3.10, ver Testes). No WSL2, mantenha o repositório no sistema de arquivos do Linux (por exemplo, `~/projetos`) e não em `/mnt/c`.
+Requer Python 3.11 ou superior (testado com 3.11, 3.12, 3.13 e 3.14). A versão mínima e a configuração do pytest e do ruff ficam em `pyproject.toml`; as dependências fixadas, em `requirements.txt` e `requirements-dev.txt`. No WSL2, mantenha o repositório no sistema de arquivos do Linux (por exemplo, `~/projetos`) e não em `/mnt/c`.
 
 Linux / WSL2:
 
@@ -98,7 +98,7 @@ O texto chega em linhas fixas, sem marca de parágrafo, então a estrutura é re
 
 ### Ferramenta auxiliar: achar erratas e republicações nos cadernos
 
-Para reunir exemplos reais antes de escrever as regras de errata, de republicação e das demais espécies, `python localizar_exemplos.py` lê os cadernos de `dados/cadernos` (só lê) e procura páginas com uma linha que começa com "ERRATA" (o relatório diz a que ato ela se refere), com marcas de republicação ("republicado por haver saído...", "2ª republicação de edital"; citações como "republicado no DOE" não contam), com "RETIFICAÇÃO", decretos cujo cabeçalho aparece em mais de uma página e cabeçalhos em maiúsculas de **edital e portaria**. Para estes últimos o relatório traz uma tabela de formatos (os números viram "N", ex.: `EDITAL DBF Nº N/N`) com a contagem e um exemplo de cada, e só as 2 primeiras páginas de cada formato são copiadas (`--por-formato`). `--cabecalhos EDITAL,PORTARIA,RESOLUÇÃO` muda as espécies levantadas. Cada página achada é copiada, uma por PDF, para `dados/exemplos` (sem sobrescrever nada), junto de um `relatorio.txt` com o trecho de cada achado. `--sem-paginas` grava só o relatório. Os critérios são aproximados de propósito: é preferível olhar uma página a mais do que perder um exemplo. Isso não faz parte do pipeline. As RegEx de errata, retificação e republicação não ficam mais aqui: vêm de `atos_acessorios.py` e `regras_atos.py` (uma fonte só), e o relatório gerado nos 5 cadernos de referência não mudou depois da troca.
+Para reunir exemplos reais antes de escrever as regras de errata, de republicação e das demais espécies, `python -m ferramentas.localizar_exemplos` (rodado da raiz do repositório) lê os cadernos de `dados/cadernos` (só lê) e procura páginas com uma linha que começa com "ERRATA" (o relatório diz a que ato ela se refere), com marcas de republicação ("republicado por haver saído...", "2ª republicação de edital"; citações como "republicado no DOE" não contam), com "RETIFICAÇÃO", decretos cujo cabeçalho aparece em mais de uma página e cabeçalhos em maiúsculas de **edital e portaria**. Para estes últimos o relatório traz uma tabela de formatos (os números viram "N", ex.: `EDITAL DBF Nº N/N`) com a contagem e um exemplo de cada, e só as 2 primeiras páginas de cada formato são copiadas (`--por-formato`). `--cabecalhos EDITAL,PORTARIA,RESOLUÇÃO` muda as espécies levantadas. Cada página achada é copiada, uma por PDF, para `dados/exemplos` (sem sobrescrever nada), junto de um `relatorio.txt` com o trecho de cada achado. `--sem-paginas` grava só o relatório. Os critérios são aproximados de propósito: é preferível olhar uma página a mais do que perder um exemplo. Isso não faz parte do pipeline. As RegEx de errata, retificação e republicação não ficam mais aqui: vêm de `regras_atos.py` (uma fonte só), e o relatório gerado nos 5 cadernos de referência não mudou depois da troca.
 
 ### Catálogo dos atos (somente leitura)
 
@@ -117,7 +117,7 @@ Reconhece **decretos, editais, portarias, erratas e republicações** em um cade
 
 Nos 5 cadernos de referência (25/04, 26/06, 15/07, 21/10 e 22/10/2026) saem 264 linhas: 73 decretos (30 no escopo: 28 concessões do PRODEPE e 2 do PROIND), 38 editais (14 da DBF), 131 portarias (7 da SF, das quais só a SF 200, perda de incentivo do PRODEPE, está no escopo), 13 erratas e 9 marcadores de republicação sem ato; 2 republicações ligadas (Decreto 61.055 e o edital de credenciamento 0014.2026.PNE). Situação: 45 `no_escopo` (30 decretos, 14 editais (13 da Lei do Esporte e 1 do PRODEAUTO) e 1 portaria), 185 `fora_do_escopo` e 34 `a_confirmar`.
 
-As RegEx moram em **`regras_atos.py`**, um arquivo só com a biblioteca padrão que é enviado à equipe da CEPE (veja `LEIAME_CEPE.md`). `especies.py` e `atos_acessorios.py` importam dele; `python regras_atos.py` confere a tabela de exemplos. `EDITAL` e `PORTARIA` estão definidos em `especies.py`, mas **não estão em `ESPECIES_ATIVAS`**: nenhum edital ou portaria é separado, gravado ou comparado.
+As RegEx moram em **`regras_atos.py`**, um arquivo só com a biblioteca padrão que pode ser enviado sozinho à equipe da CEPE; o cabeçalho dele explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`, `programas.py` e a ferramenta de levantamento importam dele; `python regras_atos.py` confere a tabela de exemplos. `EDITAL` e `PORTARIA` estão definidos em `especies.py`, mas **não estão em `ESPECIES_ATIVAS`**: nenhum edital ou portaria é separado, gravado ou comparado.
 
 ### Etapa 5: gravação na pasta da DBF
 
@@ -142,22 +142,23 @@ Também é abortada se a pasta da DBF e as pastas de trabalho não forem todas d
 
 ```bash
 pytest
+ruff check .
 ```
 
 Parte dos testes usa os 6 decretos reais de `tests/amostras/` e dois trechos do caderno de 26/06/2026 em `tests/amostras_cadernos/` (páginas 24 a 26 e página 9) (sem os metadados do arquivo original), já publicados pela CEPE e por isso versionados. Se alguma amostra faltar, os testes **reprovam** (não são pulados). O resto da suíte usa PDFs sintéticos criados pelos próprios testes, e os testes de download não acessam a internet.
 
-A cada push na `main` e a cada pull request, o GitHub Actions (`.github/workflows/testes.yml`) roda a suíte em Python 3.10 e 3.13 (o mínimo declarado é 3.11; o 3.10 fica no CI só como verificação extra). Não há deploy.
+A cada push na `main` e a cada pull request, o GitHub Actions (`.github/workflows/testes.yml`) roda o `ruff check .` e a suíte em Python 3.11 (o mínimo) e 3.14. Não há deploy.
 
 ## Estrutura
 
 ```
-main.py            orquestra a captura (--baixar) e o lote (etapas 2 a 5)
+main.py            linha de comando: argumentos e escolha do modo (--baixar, --separar, --catalogar, lote)
+lote.py            modo lote: etapas 2 a 5 sobre os PDFs de pendentes
+relatorio.py       modo --separar: relatório dos cadernos, --gravar e --comparar
 config.py          pastas e variáveis do .env
 especies.py        regras por espécie: cabeçalho, nome de arquivo, tipos, fecho, escopo (importa as RegEx de regras_atos.py)
-regras_atos.py     RegEx de decreto, edital, portaria, errata e republicação; só biblioteca padrão; vai para a CEPE
-atos_acessorios.py errata (ato referido e destino) e marcador de republicação
+regras_atos.py     RegEx de decreto, edital, portaria, errata e republicação; só biblioteca padrão; pode ir sozinho para a CEPE
 catalogo.py        --catalogar: CSV dos atos dos cadernos, só leitura
-LEIAME_CEPE.md     uma página para a equipe da CEPE: formato esperado, exemplos, pendências, o que devolver
 separador.py       etapa 1b: um bloco de texto por decreto do caderno
 programas.py       escopo: programas de benefício fiscal da DBF
 exportador.py      etapa 1b: grava o PDF de cada decreto em pendentes
@@ -170,44 +171,20 @@ armazenamento.py   etapa 5: grava o PDF normalizado na DBF; move e descarta
 captura.py         etapa 1: download dos cadernos do dia
 proxy.py           descoberta do proxy do Windows (HTTPS_PROXY=auto)
 comparacao.py      compara o texto de um decreto do caderno com o PDF da base (--comparar)
-localizar_exemplos.py  ferramenta auxiliar: acha erratas, republicações e formatos de edital/portaria
+ferramentas/       fora do pipeline (rodar da raiz com python -m ferramentas.<nome>):
+  localizar_exemplos.py   acha erratas, republicações e formatos de edital/portaria nos cadernos
+  regressao_separador.py  compara a separação dos decretos de um commit antigo com a atual
+docs/              decisões, limitações e roteiro de testes
 tests/             testes automatizados (tests/amostras: decretos reais; tests/amostras_cadernos: trecho de caderno real)
-requirements*.txt  dependências, com versões fixas
+requirements*.txt  dependências, com versões fixas (o -dev inclui pytest e ruff)
+pyproject.toml     versão mínima do Python e configuração do pytest e do ruff
 .github/           workflow de testes (Actions) e configuração do Dependabot
 ```
 
 Para tratar uma nova espécie, defina uma nova `Especie` em `especies.py` e inclua-a em `ESPECIES_ATIVAS`; as demais etapas não precisam ser reescritas. `EDITAL` e `PORTARIA` já estão definidos (cabeçalho com número, órgão, tipo e `orgaos_do_escopo`), mas só entram em `ESPECIES_ATIVAS` por decisão da DBF. O edital já tem nome de arquivo (`Edital {numero}-{ano}.pdf`, como na base) e liga o credenciamento ao programa pelo texto (`programas.PROGRAMAS_DE_CREDENCIAMENTO`); a portaria não tem arquivo na base, e o padrão de nome dela continua provisório. As RegEx (cabeçalho e tipos) ficam em `regras_atos.py`, não em `especies.py`. A `Especie` reúne tudo o que muda de um ato para outro: o cabeçalho com o número, o padrão do nome do arquivo, os tipos, o fecho que encerra o texto, o cargo de quem assina, a frase que abre o corpo depois da ementa, o ponto onde termina o cabeçalho (no decreto, o `DECRETA:`), a lista de programas que define o escopo e os inícios de parágrafo que dão a estrutura do PDF normalizado. Os campos opcionais podem ficar vazios: sem fecho o separador não o procura, e sem lista de programas todo ato da espécie entra no escopo. O teste `tests/test_especie_generica.py` usa uma espécie fictícia para garantir que nenhuma etapa dependa de regra de decreto.
 
-## Decisões e pressupostos
+## Documentação
 
-- Escopo do pipeline: apenas Decretos. Editais, Erratas e Portarias já são **reconhecidos** (catálogo, só leitura), mas só entram no pipeline numa fase futura, desde que relacionados aos programas de estímulos da DBF.
-- Escopo SEFAZ do catálogo (definido pelo responsável pelo projeto): edital de órgão `DBF` (`DBM` é aceito como outro nome da DBF, sem nenhum exemplo nos cadernos) e portaria de órgão `SF`, pela sigla do cabeçalho; a portaria da SF só entra se citar programa da DBF (decisão de 03/11/2026, depois de ver que a SF 76 é só a designação do Gestor de Telemática). A DPC não faz parte da demanda.
-- Decisões de 04/11/2026 (responsável pelo projeto): o edital da DBF só entra no escopo se o texto citar um programa (PRODEAUTO, Lei de Incentivo ao Esporte etc.); o órgão lido do título em maiúsculas vale também para os atos seguintes do mesmo bloco; o `EDITAL DE NÃO CONCORRÊNCIA` (publicação particular do PRODEPE) não entra no escopo; a errata segue o ato referido (base, lote ou texto; ver Catálogo), e os lotes devem ser rodados em ordem cronológica, dos mais antigos aos mais novos; o CSV continua com `;` e BOM; o decreto republicado fica sem os anexos que vêm depois do marcador (ver Limitações).
-- Dentro dos decretos, só interessam os de programas de benefício fiscal da DBF (`programas.py`); crédito suplementar, utilidade pública e outros assuntos são ignorados.
-- Cada decreto que a DBF ainda não tem ganha o seu próprio PDF; os decretos não são agrupados como no Diário.
-- O PDF gerado não reproduz assinaturas nem logomarcas. O layout dele segue os decretos da DBF (justificado, sem negrito, itálico, sublinhado ou link; título e assinaturas centralizados); a fonte é a Liberation Serif no lugar da Times New Roman, que é proprietária e não pode ser versionada.
-- A captura baixa apenas os cadernos completos do dia, não os arquivos isolados por órgão, porque os decretos sempre estão no caderno completo e assim nenhum decreto chega duplicado.
-- O modelo de cada tipo de ato é o decreto indicado em `especies.py` (concessão 60929, alteração 60951, prorrogação 60950, renovação 60945, transferência 60505, terceirização 60233). Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650"), revogação e PROIND ainda não têm modelo. O credenciamento no PEAP é feito por edital, não por decreto, e por isso não é um tipo de decreto: fica para a fase dos editais. Cada tipo e cada programa traz em `especies.py` e `programas.py` o campo `evidencia`: `amostra` (decreto real da DBF em mãos), `publicado` (decreto real publicado na Alepe ou na SEFAZ) ou `presumido` (deduzido da legislação, a confirmar). Para segunda prorrogação/renovação usa-se o modelo da prorrogação/renovação; o padrão de texto dessa ementa é presumido, pois não há amostra real.
-- O tipo do decreto é lido só pelo **início** da ementa. A palavra "prorrogação" aparece também na ementa da revogação e no corpo da renovação.
-- O cabeçalho "DECRETO Nº ..." precisa estar no início do texto e em maiúsculas, para não confundir o ato com decretos citados no corpo.
-- Um PDF com mais de um ato, ou sem cabeçalho reconhecível, nunca é descartado: vai para revisão manual.
-- Uma página conta como digitalizada se tem menos de 20 caracteres (sem espaços) e uma imagem cobrindo 10% ou mais da sua área. O brasão da CEPE cobre cerca de 3% e não dispara; o Decreto 35945, que é uma imagem, cobre 29%. Um PDF sem nenhum texto extraível também vai para OCR.
-- A base da DBF é tratada como uma pasta plana (sem pastas). Maiúsculas e minúsculas não diferenciam nomes de arquivo (a base fica no Windows).
-- Um PDF inédito repetido no mesmo lote vai para revisão manual.
-- A gravação na DBF nunca sobrescreve um arquivo e só apaga os PDFs de trabalho depois de reler o que foi gravado. O `.part` é o único arquivo temporário na pasta sincronizada com o Drive, e só existe durante a cópia.
-- Os PDFs de `tests/amostras/` são decretos já publicados pela CEPE (publicidade confirmada pelo responsável pelo projeto), por isso podem ficar no repositório. Não adicionar ali PDFs que não sejam públicos. Antes de incluir uma amostra nova, confira as propriedades do PDF, pois arquivos mais antigos da CEPE (Word 2010) podem trazer o nome do autor do documento em seus metadados.
-
-## Limitações conhecidas
-
-- Download truncado não é detectável na leitura: os PDFs da CEPE trazem dados após o último `%%EOF` e o PyMuPDF os marca como "reparados" mesmo íntegros. Por isso a etapa 1 confere o tamanho recebido contra o `Content-Length` e recusa respostas sem esse cabeçalho.
-- Os endereços da fonte `s3` (bucket público da CEPE) foram conferidos em janeiro a maio de 2026 (Executivo) e até 2025 (Extra e Legislativo), mas responderam 403 para 19 a 22/10/2026. Os da fonte `resumo` foram vistos em publicações de julho a outubro de 2026 e ainda precisam ser confirmados na rede da DBF. Se nenhum caderno for encontrado em 5 ou mais consultas, o log avisa; nesse caso, copie o endereço do PDF de um caderno recente no site e ajuste `Caderno.modelo_url` em `captura.py`. Nem todo dia tem edição extra.
-- O S3 responde 403 para arquivo inexistente (e possivelmente o site da CEPE também), por isso 403 é lido como "sem edição" e não se distingue de um bloqueio real (o aviso acima cobre esse caso).
-- Um caderno republicado no mesmo endereço não é baixado de novo, porque o manifesto só guarda o que já veio. Para rebaixar, apague a entrada dele no manifesto.
-- **Decreto republicado com anexo:** o `(REPUBLICADO POR HAVER SAÍDO COM INCORREÇÃO NO ORIGINAL)` vem depois das assinaturas e **antes** do `ANEXO I`; o separador encerra o ato nas assinaturas (o marcador não é assinatura) e deixa os anexos de fora. No Decreto 61.055 (caderno de 15/07/2026) o texto separado tem 1.670 caracteres e o ato inteiro, 14.787. Isso não foi alterado (a comparação com a base não pode regredir); o catálogo marca esse decreto como republicado. Decisão de 04/11/2026: fica assim, sem os anexos.
-- Edital e portaria: o órgão vem do cabeçalho e, na falta dele, do título em maiúsculas até 8 linhas acima ou herdado do ato anterior do mesmo bloco (`orgao_do_titulo`, pista de baixa confiança: quando o título está longe, o rótulo do órgão pode sair errado, embora o escopo não mude, porque ato que cita programa da DBF nunca sai como fora); cabeçalhos sem número (`EDITAL DE CONVOCAÇÃO`, `PORTARIA SEE/SEGP DE 20 DE OUTUBRO...`) saem com aviso; e uma citação em maiúsculas que quebra de linha (`... designada, por meio da` + `PORTARIA Nº 2224/2026, de ...`) só é sinalizada, não descartada. O tipo da portaria é o primeiro verbo operativo; os que não foram vistos nos cadernos saem sem tipo.
-- Decretos republicados ou com errata têm o mesmo número do original. Pela regra atual (comparação estrita por número), a republicação seria tratada como duplicada e descartada.
-- PDFs de imagem só são separados na pasta `leitura tesseract`; o OCR em si ainda não existe.
-- Se o computador for desligado ou o drive cair durante a cópia, pode sobrar um arquivo `Decreto NNNNN.pdf.part` na pasta da DBF; ele é substituído na próxima gravação do mesmo decreto, mas pode ser apagado à mão. O Drive pode sincronizá-lo antes disso.
-- A estrutura do PDF normalizado é inferida do texto. Um erro de inferência (um parágrafo que não foi separado, ou separado a mais) só muda o espaço em branco, nunca o texto, que é conferido; os atos com anexo mantêm as linhas do anexo como estão, sem reorganizar tabelas.
-- Um PDF com cabeçalho em texto (20 caracteres ou mais na página) e corpo em imagem não é detectado como digitalizado: é lido como texto, não casa com nenhum cabeçalho de ato e acaba em `dados/erros`, não em `leitura tesseract`.
-- A checagem de pastas sobrepostas compara caminhos (já resolvidos, sem diferenciar maiúsculas). A mesma pasta acessada por dois caminhos de natureza diferente (por exemplo, `G:` e um caminho de rede UNC) não é detectada.
+- [`docs/decisoes.md`](docs/decisoes.md): decisões e pressupostos (escopo, formato, regras).
+- [`docs/limitacoes.md`](docs/limitacoes.md): limitações conhecidas.
+- [`docs/roteiro_de_testes.md`](docs/roteiro_de_testes.md): o que conferir antes de aceitar uma mudança.

@@ -17,7 +17,6 @@ from programas import (
     PROGRAMAS_OPCIONAIS,
     cabecalho_do_ato,
     cita_programa_so_no_corpo,
-    em_escopo,
     programas_do_ato,
 )
 from separador import separar_caderno

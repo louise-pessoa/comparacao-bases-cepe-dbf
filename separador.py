@@ -49,7 +49,8 @@ from pathlib import Path
 
 import pymupdf
 
-from especies import ESPECIES_ATIVAS, NOMES_OUTRAS_ESPECIES, Especie
+from especies import ESPECIES_ATIVAS, Especie
+from regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras  # uma fonte só (só biblioteca padrão)
 from reader import _pagina_digitalizada
 
 # Linhas de cabeçalho/rodapé de página do Diário Oficial de Pernambuco. Só são
@@ -61,10 +62,6 @@ PADROES_TOPO_DE_PAGINA: tuple[re.Pattern[str], ...] = (
     re.compile(r"^Recife,\s+\d{1,2}\s+de\s+\w+\s+de\s+\d{4}\s*$"),
 )
 LINHAS_DE_TOPO = 4
-
-_LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl"}
-# Ligadura + espaço espúrio (cada ligadura do Diário vem seguida de um espaço).
-_LIGADURA_COM_ESPACO = re.compile("([" + "".join(_LIGADURAS) + "]) ")
 
 # Linha de assinatura: nome em maiúsculas. O cargo de quem assina (no decreto,
 # "Governadora do Estado") é da espécie: `Especie.cargo_assinante`.
@@ -104,18 +101,10 @@ class ResultadoSeparacao:
     avisos: tuple[str, ...] = field(default=())
 
 
-def limpar_ligaduras(texto: str) -> str:
-    """'beneﬁ ciário' -> 'beneficiário'; ligadura sem espaço também é convertida."""
-    texto = _LIGADURA_COM_ESPACO.sub(lambda m: _LIGADURAS[m.group(1)], texto)
-    for ligadura, letras in _LIGADURAS.items():
-        texto = texto.replace(ligadura, letras)
-    return texto
-
-
 def _regex_marcadores(especies: tuple[Especie, ...]) -> re.Pattern[str]:
     """Início de QUALQUER ato conhecido (ativo ou não), no começo da linha."""
-    nomes = {n.upper() for n in NOMES_OUTRAS_ESPECIES} | {e.nome.upper() for e in especies}
-    nomes |= {"ATOS DO DIA", "ATO DO DIA", "EXTRATO", "AVISO", "DESPACHO"}
+    # A lista fixa mora em regras_atos.py (uma fonte só); somam-se as espécies pedidas.
+    nomes = set(NOMES_DE_MARCADOR) | {e.nome.upper() for e in especies}
     alternativas = "|".join(re.escape(n) for n in sorted(nomes, key=len, reverse=True))
     return re.compile(rf"(?m)^[ \t]*(?:{alternativas})\b")
 
