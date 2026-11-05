@@ -389,13 +389,14 @@ NOMES_OUTRAS_ESPECIES: tuple[str, ...] = (
     "DELIBERAÇÃO",
     "ORDEM DE SERVIÇO",
 )
-_NOMES_DE_MARCADOR = (
+# Nomes que, no começo da linha, abrem um ato (usado também pelo separador do projeto).
+NOMES_DE_MARCADOR = frozenset(
     set(NOMES_OUTRAS_ESPECIES)
     | {"DECRETO", "ATOS DO DIA", "ATO DO DIA", "EXTRATO", "AVISO", "DESPACHO"}
 )
 MARCADOR_DE_ATO = re.compile(
     r"(?m)^[ \t]*(?:"
-    + "|".join(re.escape(n) for n in sorted(_NOMES_DE_MARCADOR, key=len, reverse=True))
+    + "|".join(re.escape(n) for n in sorted(NOMES_DE_MARCADOR, key=len, reverse=True))
     + r"|Errata)\b"
 )
 

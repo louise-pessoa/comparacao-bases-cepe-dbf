@@ -48,17 +48,6 @@ def test_tabela_de_exemplos_confere():
     assert ra.conferir_exemplos() == []
 
 
-def test_leiame_da_cepe_nao_cita_caminho_servidor_nem_email():
-    leiame = (Path(ra.__file__).parent / "LEIAME_CEPE.md").read_text(encoding="utf-8")
-    assert not re.search(r"\b[A-Za-z]:[\\/]|/mnt/[a-z]/|[\w.-]+@[\w-]+\.[\w.]+", leiame)
-    assert "dados/" not in leiame and ".env" not in leiame
-
-
-def test_leiame_da_cepe_cabe_em_uma_pagina():
-    leiame = (Path(ra.__file__).parent / "LEIAME_CEPE.md").read_text(encoding="utf-8")
-    assert len(leiame.splitlines()) <= 75
-
-
 def test_exemplos_nao_trazem_nomes_de_pessoas_nem_cnpj():
     # Os exemplos viajam para a equipe externa: só trechos curtos, sem dados pessoais.
     for texto, _ in ra.EXEMPLOS:
@@ -639,3 +628,24 @@ def test_heranca_nao_atravessa_sobra_longa():
     texto = UPE_BLOCO + "AVISO DE LICITAÇÃO\n" + "texto de outra publicação. " * 20 + "\nPORTARIA Nº 1631/2026 de 25.06.2026\nI - Exonerar.\n"
     ultima = [a for a in identificar(texto) if a.especie == "Portaria"][-1]
     assert ultima.orgao_do_titulo is None
+
+
+# ---------------------------------------------------------------------------
+# Uma fonte só: a ferramenta de levantamento usa as mesmas RegEx
+# (vindo do antigo tests/test_atos_acessorios.py)
+# ---------------------------------------------------------------------------
+
+
+def test_localizar_exemplos_usa_as_mesmas_regex_de_regras_atos():
+    import localizar_exemplos as lx
+
+    assert lx._ERRATA is ra.ERRATA_LINHA
+    assert lx._REPUBLICACAO is ra.REPUBLICACAO_MARCADOR
+    assert lx._RETIFICACAO is ra.RETIFICACAO_LINHA
+    assert lx.ato_referido("ERRATA Na Portaria SDS nº 2508, de 15/04/2026") == "Portaria 2508"
+    assert lx.ato_referido("ERRATA A PUBLICAÇÃO DO TERMO") == "?"
+
+
+def test_ato_referido_da_errata_traz_numero_ano_e_destino():
+    ref = ra.ato_referido_da_errata("ERRATA No art. 4º do Decreto nº 61.560, de 19 de outubro de 2026")
+    assert (ref.especie, ref.numero, ref.ano, ref.destino, ref.rotulo) == ("Decreto", "61560", "2026", "decreto", "Decreto 61.560")

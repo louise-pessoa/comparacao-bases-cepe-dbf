@@ -23,11 +23,11 @@ from regras_atos import (
     CABECALHO_DECRETO,
     CABECALHO_EDITAL,
     CABECALHO_PORTARIA,
-    EVIDENCIA_AMOSTRA,
+    EVIDENCIA_AMOSTRA,  # noqa: F401 (reexportado: testes importam daqui)
     EVIDENCIA_PRESUMIDO,
-    EVIDENCIA_PUBLICADO,
+    EVIDENCIA_PUBLICADO,  # noqa: F401 (reexportado)
     FECHO_DECRETO,
-    NOMES_OUTRAS_ESPECIES,
+    NOMES_OUTRAS_ESPECIES,  # noqa: F401 (reexportado: separador e identificador)
     ORGAOS_EDITAL_SEFAZ,
     ORGAOS_PORTARIA_SEFAZ,
 )

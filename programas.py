@@ -41,9 +41,7 @@ _FLAGS = re.IGNORECASE
 #   amostra   - conferido em decretos reais da DBF (tests/amostras/, caderno de 26/06/2026);
 #   publicado - conferido em decreto real publicado (Alepe/SEFAZ), sem amostra versionada;
 #   presumido - deduzido da legislação; falta decreto real.
-EVIDENCIA_AMOSTRA = "amostra"
-EVIDENCIA_PUBLICADO = "publicado"
-EVIDENCIA_PRESUMIDO = "presumido"
+from regras_atos import EVIDENCIA_AMOSTRA, EVIDENCIA_PRESUMIDO, EVIDENCIA_PUBLICADO  # uma fonte só
 
 
 @dataclass(frozen=True)

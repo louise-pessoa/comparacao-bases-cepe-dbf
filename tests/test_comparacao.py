@@ -10,10 +10,11 @@ import pytest
 
 import comparacao
 import main as modulo_main
+import relatorio as modulo_relatorio
 from comparacao import Comparacao, comparar_com_base, comparar_textos, palavras
 from conftest import criar_pdf_imagem, criar_pdf_texto
 from config import Configuracao
-from main import relatorio_dos_cadernos
+from relatorio import relatorio_dos_cadernos
 from separador import separar_caderno
 
 AMOSTRAS = Path(__file__).parent / "amostras"
@@ -219,7 +220,7 @@ def test_cli_repassa_comparar_ao_relatorio(cfg, monkeypatch):
 
     def falso(cfg_, caminho, gravar, vazia, comparar):
         recebido["comparar"] = comparar
-        return modulo_main.ResumoRelatorio()
+        return modulo_relatorio.ResumoRelatorio()
 
     monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
     monkeypatch.setattr(modulo_main, "relatorio_dos_cadernos", falso)

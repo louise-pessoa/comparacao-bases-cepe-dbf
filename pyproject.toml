@@ -1,0 +1,23 @@
+# Configuração do projeto. As dependências fixadas continuam em requirements.txt e
+# requirements-dev.txt (lidas pelo pip, pelo CI e pelo Dependabot); aqui ficam a versão
+# mínima do Python e a configuração das ferramentas. O projeto não é instalado como pacote:
+# roda da raiz (python main.py ...).
+
+[project]
+name = "comparacao-bases-cepe-dbf"
+version = "0.1.0"
+description = "Identifica atos do Diário Oficial de Pernambuco (CEPE) e confere com a base da DBF/SEFAZ-PE"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "ferramentas"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Só erros reais (pyflakes e sintaxe): importação sem uso, nome indefinido etc.
+select = ["F", "E9"]

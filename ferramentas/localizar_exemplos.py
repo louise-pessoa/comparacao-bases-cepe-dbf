@@ -8,9 +8,9 @@ são do Diário Oficial (publicação pública), como as amostras versionadas em
 `tests/amostras_cadernos/`.
 
 Uso:
-    python localizar_exemplos.py                          # lê dados/cadernos, grava em dados/exemplos
-    python localizar_exemplos.py dados/cadernos --saida dados/exemplos
-    python localizar_exemplos.py --sem-paginas           # só o relatório, sem copiar páginas
+    python -m ferramentas.localizar_exemplos             # (da raiz) lê dados/cadernos, grava em dados/exemplos
+    python -m ferramentas.localizar_exemplos dados/cadernos --saida dados/exemplos
+    python -m ferramentas.localizar_exemplos --sem-paginas  # só o relatório, sem copiar páginas
 
 Os critérios são aproximados, de propósito: é preferível mostrar uma página a mais
 do que perder um exemplo.
@@ -42,10 +42,10 @@ from pathlib import Path
 
 import pymupdf
 
-from atos_acessorios import ERRATA_LINHA as _ERRATA
-from atos_acessorios import REPUBLICACAO_MARCADOR as _REPUBLICACAO
-from atos_acessorios import RETIFICACAO_LINHA as _RETIFICACAO
-from atos_acessorios import ato_referido as _ato_referido
+from regras_atos import ERRATA_LINHA as _ERRATA
+from regras_atos import REPUBLICACAO_MARCADOR as _REPUBLICACAO
+from regras_atos import RETIFICACAO_LINHA as _RETIFICACAO
+from regras_atos import ato_referido_da_errata
 
 PASTA_CADERNOS_PADRAO = Path("dados/cadernos")
 PASTA_EXEMPLOS_PADRAO = Path("dados/exemplos")
@@ -78,8 +78,8 @@ def _compactar(texto: str, limite: int) -> str:
 
 def ato_referido(trecho: str) -> str:
     """O ato que a errata corrige, lido do começo do trecho: "Decreto 61.560", "Despacho" (sem
-    número) ou "?" se não achou nenhuma espécie conhecida. A RegEx mora em atos_acessorios."""
-    return _ato_referido(trecho)
+    número) ou "?" se não achou nenhuma espécie conhecida. A RegEx mora em regras_atos."""
+    return ato_referido_da_errata(trecho).rotulo
 
 
 def formato_do_cabecalho(trecho: str) -> str:

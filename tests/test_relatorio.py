@@ -10,9 +10,11 @@ import pytest
 
 import exportador
 import main as modulo_main
+import relatorio as modulo_relatorio
 from config import Configuracao, ErroConfiguracao
 from duplicidade import PastaDbfIndisponivel
-from main import main, relatorio_dos_cadernos
+from main import main
+from relatorio import relatorio_dos_cadernos
 from separador import ErroSeparacao
 
 AMOSTRAS_CADERNOS = Path(__file__).parent / "amostras_cadernos"
@@ -181,7 +183,7 @@ def test_falha_ao_gravar_e_contada_e_nao_deixa_arquivo(cfg, monkeypatch, caplog)
     def sempre_falha(ato, destino, *a, **k):
         raise exportador.ErroExportacao("falha simulada")
 
-    monkeypatch.setattr(modulo_main, "gravar_pdf_do_ato", sempre_falha)
+    monkeypatch.setattr(modulo_relatorio, "gravar_pdf_do_ato", sempre_falha)
     with caplog.at_level(logging.INFO, logger="pipeline"):
         resumo = relatorio_dos_cadernos(cfg, TRECHO, gravar=True)
     assert resumo.falhas == 1
@@ -200,7 +202,7 @@ def test_numero_repetido_no_caderno_grava_so_o_primeiro(cfg, tmp_path, monkeypat
     )
     ato = AtoSeparado(DECRETO, "60777", "DECRETO Nº 60.777", texto, 1, 1)
     monkeypatch.setattr(
-        modulo_main, "separar_caderno",
+        modulo_relatorio, "separar_caderno",
         lambda caminho: ResultadoSeparacao((ato, ato), 1),
     )
     with caplog.at_level(logging.INFO, logger="pipeline"):
@@ -231,7 +233,7 @@ def test_cli_gravar_com_falha_sai_com_codigo_1(cfg, monkeypatch):
         raise exportador.ErroExportacao("falha simulada")
 
     monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
-    monkeypatch.setattr(modulo_main, "gravar_pdf_do_ato", sempre_falha)
+    monkeypatch.setattr(modulo_relatorio, "gravar_pdf_do_ato", sempre_falha)
     assert main(["--separar", str(TRECHO), "--gravar"]) == 1
 
 
