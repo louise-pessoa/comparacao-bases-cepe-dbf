@@ -5,6 +5,7 @@ para não ter erro de acentuação no console do Windows:
 
 ```powershell
 $env:PYTHONUTF8 = "1"
+$env:PYTHONPATH = "src"   # para o python -c abaixo achar o pacote sem instalar
 ```
 
 Os totais de referência (seção 6) valem para os **5 cadernos de referência**: 25/04, 26/06, 15/07, 21/10
@@ -30,8 +31,8 @@ ruff check .
 
 ```powershell
 git ls-files | Select-String -Pattern "\.env$|^dados/|checklist|\.zip$|\.venv"
-python -c "from especies import ESPECIES_ATIVAS; print([e.nome for e in ESPECIES_ATIVAS])"
-Select-String -Path regras_atos.py -Pattern 'G:\\', '@', 'sefaz\.pe', 'senha', 'password', 'proxy'
+python -c "from dbf_cepe.regras.especies import ESPECIES_ATIVAS; print([e.nome for e in ESPECIES_ATIVAS])"
+Select-String -Path src\dbf_cepe\regras\regras_atos.py -Pattern 'G:\\', '@', 'sefaz\.pe', 'senha', 'password', 'proxy'
 ```
 
 - [ ] A primeira linha não mostra nada (nenhum `.env`, `dados/`, checklist, `.zip` ou `.venv` versionado).
@@ -60,7 +61,7 @@ python main.py --separar dados\cadernos --comparar
 ```powershell
 $d = Join-Path $env:TEMP "cepe_teste"
 New-Item -ItemType Directory -Force $d | Out-Null
-Copy-Item regras_atos.py $d -Force
+Copy-Item src\dbf_cepe\regras\regras_atos.py $d -Force
 python -I "$d\regras_atos.py"
 ```
 

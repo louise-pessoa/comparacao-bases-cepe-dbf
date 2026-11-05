@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from conftest import AMOSTRAS, TIPO_ESPERADO_DECRETO, texto_decreto
-from identificador import StatusIdentificacao, identificar, normalizar_espacos
-from reader import ler_pdf
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
+from dbf_cepe.leitura.reader import ler_pdf
 
 
 @pytest.mark.parametrize("numero, tipo", sorted(TIPO_ESPERADO_DECRETO.items()))

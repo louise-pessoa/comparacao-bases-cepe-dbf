@@ -9,16 +9,16 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import comparacao
-from config import (
+from dbf_cepe.pipeline import comparacao
+from dbf_cepe.config import (
     Configuracao,
     ErroConfiguracao,
 )
-from duplicidade import PastaDbfIndisponivel, carregar_indice, chave_nome, ja_existe
-from exportador import ErroExportacao, gravar_pdf_do_ato
-from identificador import identificar
-from programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
-from separador import AtoSeparado, ErroSeparacao, separar_caderno
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice, chave_nome, ja_existe
+from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
+from dbf_cepe.leitura.identificador import identificar
+from dbf_cepe.regras.programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
+from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, separar_caderno
 
 log = logging.getLogger("pipeline")
 

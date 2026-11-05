@@ -1,7 +1,10 @@
-# Configuração do projeto. As dependências fixadas continuam em requirements.txt e
-# requirements-dev.txt (lidas pelo pip, pelo CI e pelo Dependabot); aqui ficam a versão
-# mínima do Python e a configuração das ferramentas. O projeto não é instalado como pacote:
-# roda da raiz (python main.py ...).
+# Configuração do projeto. O código fica em src/dbf_cepe. As dependências fixadas ficam em
+# requirements.txt (lido também pelo Dependabot e pelo CI) e entram aqui por referência.
+# Rodar sem instalar: python main.py ...  Instalado (pip install -e .): dbf-cepe ...
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "comparacao-bases-cepe-dbf"
@@ -9,10 +12,23 @@ version = "0.1.0"
 description = "Identifica atos do Diário Oficial de Pernambuco (CEPE) e confere com a base da DBF/SEFAZ-PE"
 readme = "README.md"
 requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+dbf-cepe = "dbf_cepe.cli:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dbf_cepe = ["recursos/fontes/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "ferramentas"]
+pythonpath = ["src", ".", "ferramentas"]
 
 [tool.ruff]
 target-version = "py311"

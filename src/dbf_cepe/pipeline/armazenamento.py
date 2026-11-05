@@ -38,9 +38,9 @@ import os
 import shutil
 from pathlib import Path
 
-from duplicidade import chave_nome
-from identificador import StatusIdentificacao, identificar
-from reader import StatusLeitura, ler_pdf
+from dbf_cepe.pipeline.duplicidade import chave_nome
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 
 log = logging.getLogger("pipeline")
 

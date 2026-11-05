@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from duplicidade import PastaDbfIndisponivel, carregar_indice, ja_existe
-from especies import DECRETO
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice, ja_existe
+from dbf_cepe.regras.especies import DECRETO
 
 
 def test_nome_do_arquivo_segue_o_padrao():

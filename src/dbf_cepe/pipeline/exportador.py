@@ -25,11 +25,11 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-from identificador import StatusIdentificacao, identificar, normalizar_espacos
-from reader import StatusLeitura, ler_pdf
-from separador import AtoSeparado
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
+from dbf_cepe.leitura.separador import AtoSeparado
 
-PASTA_FONTES = Path(__file__).resolve().parent / "fontes"
+PASTA_FONTES = Path(__file__).resolve().parents[1] / "recursos" / "fontes"
 FONTE_REGULAR = "LiberationSans-Regular.ttf"
 FONTE_NEGRITO = "LiberationSans-Bold.ttf"
 

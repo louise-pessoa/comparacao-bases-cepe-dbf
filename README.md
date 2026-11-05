@@ -58,6 +58,8 @@ Edite o `.env` e informe `PASTA_DBF` (a pasta da base oficial da DBF). No WSL2, 
 
 As versões das dependências diretas ficam fixas em `requirements*.txt`, para a instalação ser reproduzível (as indiretas não são fixadas). Com o repositório no GitHub, o Dependabot (`.github/dependabot.yml`) propõe atualizações semanais por pull request.
 
+Opcional: instalar o pacote em modo editável (`pip install -e .`) dá o comando `dbf-cepe` (o mesmo que `python main.py`) e `python -m dbf_cepe`. Instale sempre em modo editável, rodando da pasta do repositório: o `.env` e a pasta `dados/` são procurados na raiz do repositório.
+
 ## Uso
 
 ### Etapa 1: baixar os cadernos
@@ -117,7 +119,7 @@ Reconhece **decretos, editais, portarias, erratas e republicações** em um cade
 
 Nos 5 cadernos de referência (25/04, 26/06, 15/07, 21/10 e 22/10/2026) saem 264 linhas: 73 decretos (30 no escopo: 28 concessões do PRODEPE e 2 do PROIND), 38 editais (14 da DBF), 131 portarias (7 da SF, das quais só a SF 200, perda de incentivo do PRODEPE, está no escopo), 13 erratas e 9 marcadores de republicação sem ato; 2 republicações ligadas (Decreto 61.055 e o edital de credenciamento 0014.2026.PNE). Situação: 45 `no_escopo` (30 decretos, 14 editais (13 da Lei do Esporte e 1 do PRODEAUTO) e 1 portaria), 185 `fora_do_escopo` e 34 `a_confirmar`.
 
-As RegEx moram em **`regras_atos.py`**, um arquivo só com a biblioteca padrão que pode ser enviado sozinho à equipe da CEPE; o cabeçalho dele explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`, `programas.py` e a ferramenta de levantamento importam dele; `python regras_atos.py` confere a tabela de exemplos. `EDITAL` e `PORTARIA` estão definidos em `especies.py`, mas **não estão em `ESPECIES_ATIVAS`**: nenhum edital ou portaria é separado, gravado ou comparado.
+As RegEx moram em **`src/dbf_cepe/regras/regras_atos.py`**, um arquivo só com a biblioteca padrão que pode ser enviado sozinho à equipe da CEPE; o cabeçalho dele explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`, `programas.py` e a ferramenta de levantamento importam dele; `python regras_atos.py` confere a tabela de exemplos. `EDITAL` e `PORTARIA` estão definidos em `especies.py`, mas **não estão em `ESPECIES_ATIVAS`**: nenhum edital ou portaria é separado, gravado ou comparado.
 
 ### Etapa 5: gravação na pasta da DBF
 
@@ -152,33 +154,38 @@ A cada push na `main` e a cada pull request, o GitHub Actions (`.github/workflow
 ## Estrutura
 
 ```
-main.py            linha de comando: argumentos e escolha do modo (--baixar, --separar, --catalogar, lote)
-lote.py            modo lote: etapas 2 a 5 sobre os PDFs de pendentes
-relatorio.py       modo --separar: relatório dos cadernos, --gravar e --comparar
-config.py          pastas e variáveis do .env
-especies.py        regras por espécie: cabeçalho, nome de arquivo, tipos, fecho, escopo (importa as RegEx de regras_atos.py)
-regras_atos.py     RegEx de decreto, edital, portaria, errata e republicação; só biblioteca padrão; pode ir sozinho para a CEPE
-catalogo.py        --catalogar: CSV dos atos dos cadernos, só leitura
-separador.py       etapa 1b: um bloco de texto por decreto do caderno
-programas.py       escopo: programas de benefício fiscal da DBF
-exportador.py      etapa 1b: grava o PDF de cada decreto em pendentes
-fontes/            Liberation Sans e Liberation Serif (SIL OFL) e as licenças
-reader.py          etapa 2: leitura e detecção de PDF de imagem
-identificador.py   etapa 2: número, espécie e tipo do ato
-duplicidade.py     etapa 3: comparação com a pasta da DBF
-normalizador.py    etapa 4: estrutura o texto e gera o PDF limpo (fpdf2)
-armazenamento.py   etapa 5: grava o PDF normalizado na DBF; move e descarta
-captura.py         etapa 1: download dos cadernos do dia
-proxy.py           descoberta do proxy do Windows (HTTPS_PROXY=auto)
-comparacao.py      compara o texto de um decreto do caderno com o PDF da base (--comparar)
-ferramentas/       fora do pipeline (rodar da raiz com python -m ferramentas.<nome>):
+main.py                atalho: python main.py ... roda a linha de comando sem instalar nada
+src/dbf_cepe/          o pacote (instalável com pip install -e .; comando dbf-cepe)
+  cli.py               linha de comando: argumentos e escolha do modo (--baixar, --separar, --catalogar, lote)
+  config.py            pastas e variáveis do .env (o .env fica na raiz do repositório)
+  proxy.py             descoberta do proxy do Windows (HTTPS_PROXY=auto)
+  captura.py           etapa 1: download dos cadernos do dia
+  catalogo.py          --catalogar: CSV dos atos dos cadernos, só leitura
+  regras/              regra de negócio
+    regras_atos.py     RegEx de decreto, edital, portaria, errata e republicação; só biblioteca padrão; pode ir sozinho para a CEPE
+    especies.py        regras por espécie: cabeçalho, nome de arquivo, tipos, fecho, escopo (importa as RegEx de regras_atos.py)
+    programas.py       escopo: programas de benefício fiscal da DBF (e os de credenciamento por edital)
+  leitura/             leitura dos PDFs
+    reader.py          etapa 2: leitura e detecção de PDF de imagem
+    separador.py       etapa 1b: um bloco de texto por decreto do caderno
+    identificador.py   etapa 2: número, espécie e tipo do ato
+  pipeline/            execução
+    duplicidade.py     etapa 3: comparação com a pasta da DBF
+    normalizador.py    etapa 4: estrutura o texto e gera o PDF limpo (fpdf2)
+    exportador.py      etapa 1b: grava o PDF de cada decreto em pendentes
+    armazenamento.py   etapa 5: grava o PDF normalizado na DBF; move e descarta
+    comparacao.py      compara o texto de um decreto do caderno com o PDF da base (--comparar)
+    lote.py            modo lote: etapas 2 a 5 sobre os PDFs de pendentes
+    relatorio.py       modo --separar: relatório dos cadernos, --gravar e --comparar
+  recursos/fontes/     Liberation Sans e Liberation Serif (SIL OFL) e as licenças
+ferramentas/           fora do pipeline (rodar da raiz com python -m ferramentas.<nome>):
   localizar_exemplos.py   acha erratas, republicações e formatos de edital/portaria nos cadernos
   regressao_separador.py  compara a separação dos decretos de um commit antigo com a atual
-docs/              decisões, limitações e roteiro de testes
-tests/             testes automatizados (tests/amostras: decretos reais; tests/amostras_cadernos: trecho de caderno real)
-requirements*.txt  dependências, com versões fixas (o -dev inclui pytest e ruff)
-pyproject.toml     versão mínima do Python e configuração do pytest e do ruff
-.github/           workflow de testes (Actions) e configuração do Dependabot
+docs/                  decisões, limitações e roteiro de testes
+tests/                 testes automatizados (tests/amostras: decretos reais; tests/amostras_cadernos: trecho de caderno real)
+pyproject.toml         pacote, versão mínima do Python e configuração do pytest e do ruff
+requirements*.txt      dependências, com versões fixas (o -dev inclui pytest e ruff)
+.github/               workflow de testes (Actions) e configuração do Dependabot
 ```
 
 Para tratar uma nova espécie, defina uma nova `Especie` em `especies.py` e inclua-a em `ESPECIES_ATIVAS`; as demais etapas não precisam ser reescritas. `EDITAL` e `PORTARIA` já estão definidos (cabeçalho com número, órgão, tipo e `orgaos_do_escopo`), mas só entram em `ESPECIES_ATIVAS` por decisão da DBF. O edital já tem nome de arquivo (`Edital {numero}-{ano}.pdf`, como na base) e liga o credenciamento ao programa pelo texto (`programas.PROGRAMAS_DE_CREDENCIAMENTO`); a portaria não tem arquivo na base, e o padrão de nome dela continua provisório. As RegEx (cabeçalho e tipos) ficam em `regras_atos.py`, não em `especies.py`. A `Especie` reúne tudo o que muda de um ato para outro: o cabeçalho com o número, o padrão do nome do arquivo, os tipos, o fecho que encerra o texto, o cargo de quem assina, a frase que abre o corpo depois da ementa, o ponto onde termina o cabeçalho (no decreto, o `DECRETA:`), a lista de programas que define o escopo e os inícios de parágrafo que dão a estrutura do PDF normalizado. Os campos opcionais podem ficar vazios: sem fecho o separador não o procura, e sem lista de programas todo ato da espécie entra no escopo. O teste `tests/test_especie_generica.py` usa uma espécie fictícia para garantir que nenhuma etapa dependa de regra de decreto.

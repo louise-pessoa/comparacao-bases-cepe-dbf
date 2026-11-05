@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-import catalogo
-import main
+from dbf_cepe import catalogo
+from dbf_cepe import cli as main
 from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
-from regras_atos import identificar
+from dbf_cepe.regras.regras_atos import identificar
 
 ASSINATURAS = "Independência do Brasil.\nRAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado\n"
 
@@ -311,7 +311,7 @@ def test_edital_da_dbf_sem_programa_reconhecido_fica_a_confirmar():
 
 
 def test_lei_do_esporte_nao_muda_o_escopo_dos_decretos():
-    from programas import PROGRAMAS_DBF
+    from dbf_cepe.regras.programas import PROGRAMAS_DBF
     assert "LEI_ESPORTE" not in {p.sigla for p in PROGRAMAS_DBF}
 
 

@@ -10,9 +10,10 @@ from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
-from proxy import VALOR_AUTOMATICO
+from dbf_cepe.proxy import VALOR_AUTOMATICO
 
-RAIZ = Path(__file__).resolve().parent
+# Raiz do repositório (src/dbf_cepe/config.py -> ../..): onde ficam o .env e, por padrão, dados/.
+RAIZ = Path(__file__).resolve().parents[2]
 
 _UNIDADE_WINDOWS = re.compile(r"^[A-Za-z]:[\\/]")
 

@@ -10,18 +10,18 @@ from collections import Counter
 from enum import Enum
 from pathlib import Path
 
-import armazenamento
-import normalizador
-from armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
-from config import (
+from dbf_cepe.pipeline import armazenamento
+from dbf_cepe.pipeline import normalizador
+from dbf_cepe.pipeline.armazenamento import ArquivoJaExiste, ErroArmazenamento, GravacaoDivergente
+from dbf_cepe.config import (
     Configuracao,
     ErroConfiguracao,
     validar_configuracao,
 )
-from duplicidade import carregar_indice, chave_nome, ja_existe
-from identificador import StatusIdentificacao, identificar
-from normalizador import ErroNormalizacao
-from reader import StatusLeitura, ler_pdf
+from dbf_cepe.pipeline.duplicidade import carregar_indice, chave_nome, ja_existe
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
+from dbf_cepe.pipeline.normalizador import ErroNormalizacao
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 
 log = logging.getLogger("pipeline")
 

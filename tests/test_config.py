@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from config import (
+from dbf_cepe.config import (
     RAIZ,
     Configuracao,
     ErroConfiguracao,
