@@ -132,18 +132,23 @@ def armazenar(
     pasta_dbf: Path,
     original: Path,
     simular: bool = False,
+    nome_identificado: str | None = None,
 ) -> Path:
     """Grava `pdf_gerado` em `pasta_dbf / nome_final` e então descarta `original`.
 
     Devolve o caminho gravado. Em `simular`, só confere que o nome ainda está livre.
+    `nome_identificado` é o nome que o TEXTO do PDF produz (padrão: `nome_final`);
+    difere numa republicação ('Decreto N (republicação).pdf' se identifica como
+    'Decreto N.pdf').
     """
+    esperado_no_texto = nome_identificado or nome_final
     destino = pasta_dbf / nome_final
     if destino.exists():
         raise ArquivoJaExiste(f"{nome_final} já existe em {pasta_dbf}")
     if simular:
         return destino
 
-    _conferir_se_identifica_como(pdf_gerado, nome_final, "o PDF gerado")
+    _conferir_se_identifica_como(pdf_gerado, esperado_no_texto, "o PDF gerado")
 
     parcial = destino.with_name(destino.name + ".part")
     try:
@@ -164,7 +169,7 @@ def armazenar(
         except FileExistsError as erro:
             raise ArquivoJaExiste(f"{nome_final} apareceu em {pasta_dbf} durante a gravação") from erro
         try:
-            _conferir_se_identifica_como(destino, nome_final, f"{nome_final} gravado na DBF")
+            _conferir_se_identifica_como(destino, esperado_no_texto, f"{nome_final} gravado na DBF")
         except GravacaoDivergente:
             descartar_se_existir(destino)  # fomos nós que o criamos há instantes
             raise
@@ -179,3 +184,121 @@ def armazenar(
     descartar_se_existir(original)
     descartar_se_existir(pdf_gerado)
     return destino
+
+# ----------------------------------------------------------------------------
+# Republicação: renomear arquivos da base antes de gravar (com desfazer)
+# ----------------------------------------------------------------------------
+
+
+def renomear_na_base(pasta_dbf: Path, de: str, para: str) -> None:
+    """Renomeia um arquivo da base sem nunca sobrescrever (no Linux, `os.rename`
+    substituiria o destino em silêncio; por isso a conferência antes)."""
+    origem, destino = pasta_dbf / de, pasta_dbf / para
+    if not origem.is_file():
+        raise ErroArmazenamento(f"{de} não está mais em {pasta_dbf}")
+    if destino.exists():
+        raise ArquivoJaExiste(f"{para} já existe em {pasta_dbf}")
+    try:
+        os.rename(origem, destino)
+    except FileExistsError as erro:
+        raise ArquivoJaExiste(f"{para} apareceu em {pasta_dbf}") from erro
+    except OSError as erro:
+        raise ErroArmazenamento(f"não foi possível renomear {de} para {para}: {erro}") from erro
+
+
+def desfazer_renomeacoes(pasta_dbf: Path, feitas: list[tuple[str, str]]) -> list[str]:
+    """Desfaz as renomeações (da última para a primeira). Devolve o que não deu para desfazer."""
+    falhas = []
+    for de, para in reversed(feitas):
+        try:
+            renomear_na_base(pasta_dbf, para, de)
+        except ErroArmazenamento as erro:
+            falhas.append(f"{para} -> {de}: {erro}")
+    return falhas
+
+
+class RenomeacaoNaoDesfeita(ErroArmazenamento):
+    """A gravação falhou e nem todas as renomeações puderam ser desfeitas."""
+
+
+def armazenar_com_renomeacoes(
+    pdf_gerado: Path,
+    nome_final: str,
+    pasta_dbf: Path,
+    original: Path,
+    renomeacoes: tuple[tuple[str, str], ...],
+    nome_identificado: str,
+) -> Path:
+    """Renomeia os arquivos da base (`renomeacoes`, na ordem dada) e grava o novo.
+
+    Se qualquer passo falhar, as renomeações já feitas são desfeitas e a exceção
+    original sobe. Se nem o desfazer funcionar, sobe `RenomeacaoNaoDesfeita` (o
+    registro guarda a operação para a próxima execução tentar de novo)."""
+    feitas: list[tuple[str, str]] = []
+    try:
+        for de, para in renomeacoes:
+            renomear_na_base(pasta_dbf, de, para)
+            feitas.append((de, para))
+        return armazenar(pdf_gerado, nome_final, pasta_dbf, original, nome_identificado=nome_identificado)
+    except Exception as erro:
+        falhas = desfazer_renomeacoes(pasta_dbf, feitas)
+        if falhas:
+            raise RenomeacaoNaoDesfeita(
+                f"{erro}; e não foi possível desfazer: {'; '.join(falhas)}"
+            ) from erro
+        raise
+
+
+def recuperar_operacao(registro, pasta_dbf: Path) -> str:
+    """Trata a operação que ficou anotada no registro (queda no meio da anterior).
+
+    Se o arquivo novo já está na base e todas as renomeações foram feitas, a operação
+    terminou: o registro é atualizado (concluída). Senão, as renomeações feitas são
+    desfeitas e um ".part" que tenha sobrado do arquivo novo é apagado (desfeita).
+    Devolve uma frase para o log. `registro` é um `registro.Registro`.
+    """
+    from dbf_cepe.pipeline.registro import Entrada, ErroRegistro
+
+    operacao = registro.operacao_em_andamento
+    if operacao is None:
+        return "nenhuma"
+    try:
+        especie, numero, ano = operacao["especie"], operacao["numero"], operacao.get("ano")
+        renomeacoes = [(de, para) for de, para in operacao["renomeacoes"]]
+        gravar = operacao["gravar"]
+        nova = Entrada.de_dict(operacao["nova_entrada"])
+    except (KeyError, TypeError, ValueError) as erro:
+        raise ErroRegistro(f"operacao_em_andamento ilegível no registro: {erro}") from erro
+
+    # Cada passo da operação deixa um conjunto conhecido de nomes na base: antes de tudo,
+    # todos os "de"; depois de k renomeações, os k primeiros "de" viram "para"; no fim,
+    # soma-se o arquivo novo. O estado atual diz em que passo o programa caiu.
+    envolvidos = {chave_nome(n) for par in renomeacoes for n in par} | {chave_nome(gravar)}
+    atual = {chave_nome(e.name) for e in pasta_dbf.iterdir() if e.is_file() and chave_nome(e.name) in envolvidos}
+    estado = {chave_nome(de) for de, _ in renomeacoes}
+    passos = [set(estado)]
+    for de, para in renomeacoes:
+        estado = (estado - {chave_nome(de)}) | {chave_nome(para)}
+        passos.append(set(estado))
+    if atual == passos[-1] | {chave_nome(gravar)}:
+        for de, para in renomeacoes:
+            registro.renomear(especie, numero, ano, de, para)
+        registro.adicionar(nova)
+        registro.operacao_em_andamento = None
+        registro.salvar()
+        return f"{gravar} já estava gravado: operação concluída no registro"
+    feitos = next((k for k, passo in enumerate(passos) if passo == atual), None)
+    if feitos is None:
+        raise ErroRegistro(
+            f"os arquivos da base não conferem com a operação interrompida ({renomeacoes}, gravar "
+            f"{gravar}); confira à mão e depois apague 'operacao_em_andamento' do registro"
+        )
+    feitas = renomeacoes[:feitos]
+    falhas = desfazer_renomeacoes(pasta_dbf, feitas)
+    if falhas:
+        raise ErroRegistro(f"não foi possível desfazer a operação interrompida: {'; '.join(falhas)}")
+    descartar_se_existir(pasta_dbf / (gravar + ".part"))
+    registro.operacao_em_andamento = None
+    registro.salvar()
+    desfeitas = ", ".join(f"{para} -> {de}" for de, para in feitas) or "nenhuma renomeação feita"
+    return f"{gravar} não chegou a ser gravado: operação desfeita ({desfeitas})"

@@ -36,6 +36,19 @@ class Configuracao:
     # Endereço de HTTPS_PROXY vindo do ambiente quando ele sobrepõe um valor diferente do
     # .env (a captura avisa; senha, se houver, não é guardada aqui).
     proxy_do_ambiente: str | None = None
+    # Republicação: pasta LOCAL dos PDFs "(conferir duplicata)" e registro das
+    # publicações gravadas. None = ao lado de PASTA_TEMP ("dados/conferir duplicata"
+    # e "dados/registro_publicacoes.json" com a configuração padrão).
+    pasta_conferir_duplicata: Path | None = None
+    arquivo_registro: Path | None = None
+
+    @property
+    def conferir_duplicata(self) -> Path:
+        return self.pasta_conferir_duplicata or self.pasta_temp.parent / "conferir duplicata"
+
+    @property
+    def registro(self) -> Path:
+        return self.arquivo_registro or self.pasta_temp.parent / "registro_publicacoes.json"
 
 
 def _resolver_caminho(variavel: str, valor: str) -> Path:
@@ -59,6 +72,7 @@ def _pastas_nomeadas(cfg: Configuracao) -> list[tuple[str, Path]]:
         ("PASTA_OCR", cfg.pasta_ocr),
         ("PASTA_NORMALIZADOS", cfg.pasta_normalizados),
         ("PASTA_LOGS", cfg.pasta_logs),
+        ("PASTA_CONFERIR_DUPLICATA", cfg.conferir_duplicata),
     ]
     if cfg.pasta_dbf is not None:
         pastas.append(("PASTA_DBF", cfg.pasta_dbf))
@@ -95,6 +109,9 @@ def validar_configuracao(cfg: Configuracao) -> None:
         for nome_b, pasta_b in pastas[i + 1 :]
         if _se_sobrepoem(pasta_a, pasta_b)
     ]
+    # O registro é um arquivo: só não pode ficar DENTRO da base da DBF.
+    if cfg.pasta_dbf is not None and _partes(cfg.registro)[: len(_partes(cfg.pasta_dbf))] == _partes(cfg.pasta_dbf):
+        conflitos.append(f"REGISTRO_PUBLICACOES ({cfg.registro}) e PASTA_DBF ({cfg.pasta_dbf})")
     if conflitos:
         raise ErroConfiguracao(
             "As pastas configuradas não podem ser iguais nem ficar uma dentro "
@@ -168,6 +185,8 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         pasta_ocr=pasta("PASTA_OCR", "dados/leitura tesseract"),
         pasta_normalizados=pasta("PASTA_NORMALIZADOS", "dados/normalizados"),
         pasta_logs=pasta("PASTA_LOGS", "logs"),
+        pasta_conferir_duplicata=pasta("PASTA_CONFERIR_DUPLICATA", "dados/conferir duplicata"),
+        arquivo_registro=pasta("REGISTRO_PUBLICACOES", "dados/registro_publicacoes.json"),
         pasta_dbf=_resolver_caminho("PASTA_DBF", bruto_dbf) if bruto_dbf else None,
         proxy_https=_ler_proxy(valores.get("HTTPS_PROXY") or ""),
         ssl_estrito=_ler_booleano("SSL_ESTRITO", valores.get("SSL_ESTRITO") or "", True),

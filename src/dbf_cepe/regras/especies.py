@@ -15,6 +15,7 @@ NÃO ativos: só entram em `ESPECIES_ATIVAS` por decisão da DBF.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, Programa
@@ -91,12 +92,70 @@ class Especie:
     # (considerandos, "DECRETA:"), sem recuo.
     inicios_com_recuo: re.Pattern[str] | None = None
     inicios_sem_recuo: re.Pattern[str] | None = None
+    # Republicação (mesmo número publicado de novo, em outra data). Entre as
+    # publicações do mesmo número, a de data mais antiga fica com o nome padrão
+    # (`nome_arquivo`); as seguintes recebem um sufixo antes da extensão:
+    # 1ª republicação: `sufixo_republicacao`; da 2ª em diante: `sufixo_republicacao_n`
+    # com {n} = 2, 3... Publicação diferente de um arquivo da base gravado antes do
+    # registro de publicações existir: `sufixo_conferir` (vai para conferência manual).
+    sufixo_republicacao: str = " (republicação)"
+    sufixo_republicacao_n: str = " (republicação {n})"
+    sufixo_conferir: str = " (conferir duplicata)"
 
     def nome_arquivo(self, numero: str, ano: str | None = None) -> str:
         """Nome de salvamento e de comparação, ex.: 'Decreto 60929.pdf', 'Edital 064-2025.pdf'."""
         if "{ano}" in self.padrao_arquivo and not ano:
             raise ValueError(f"{self.nome}: o nome do arquivo exige o ano ({self.padrao_arquivo})")
         return self.padrao_arquivo.format(especie=self.nome, numero=numero, ano=ano)
+
+    def _com_sufixo(self, numero: str, sufixo: str, ano: str | None) -> str:
+        nome = self.nome_arquivo(numero, ano)
+        raiz, ponto, extensao = nome.rpartition(".")
+        return f"{raiz}{sufixo}.{extensao}" if ponto else f"{nome}{sufixo}"
+
+    def nome_da_publicacao(self, numero: str, ordem: int, ano: str | None = None) -> str:
+        """Nome da publicação na ordem cronológica do número: 0 = a original
+        ('Decreto 61055.pdf'), 1 = 'Decreto 61055 (republicação).pdf',
+        2 = 'Decreto 61055 (republicação 2).pdf' e assim por diante."""
+        if ordem < 0:
+            raise ValueError(f"ordem inválida: {ordem}")
+        if ordem == 0:
+            return self.nome_arquivo(numero, ano)
+        sufixo = self.sufixo_republicacao if ordem == 1 else self.sufixo_republicacao_n.format(n=ordem)
+        return self._com_sufixo(numero, sufixo, ano)
+
+    def nome_conferir_duplicata(self, numero: str, ano: str | None = None) -> str:
+        """'Decreto 61055 (conferir duplicata).pdf'."""
+        return self._com_sufixo(numero, self.sufixo_conferir, ano)
+
+    def ordem_do_nome(self, nome: str, numero: str, ano: str | None = None) -> int | None:
+        """Inverso de `nome_da_publicacao`: a ordem de um nome de arquivo da base
+        (sem diferença de maiúsculas nem de forma Unicode), ou None se o nome não
+        seguir o padrão."""
+        nome = unicodedata.normalize("NFC", nome)
+        alvo = nome.casefold()
+        if alvo == self.nome_arquivo(numero, ano).casefold():
+            return 0
+        if alvo == self.nome_da_publicacao(numero, 1, ano).casefold():
+            return 1
+        raiz, _, extensao = self.nome_arquivo(numero, ano).rpartition(".")
+        antes, _, depois = self.sufixo_republicacao_n.partition("{n}")
+        padrao = re.compile(
+            re.escape(raiz + antes) + r"([2-9]|[1-9]\d+)" + re.escape(depois + "." + extensao),
+            re.IGNORECASE,
+        )
+        casamento = padrao.fullmatch(nome)
+        return int(casamento.group(1)) if casamento else None
+
+    def e_da_familia(self, nome: str, numero: str, ano: str | None = None) -> bool:
+        """True se o nome é deste número: no padrão (`ordem_do_nome`) ou começando
+        pelo nome padrão sem extensão seguido de algo que não seja dígito
+        ('Decreto 61055 (1).pdf', 'Decreto 61055-A.pdf'); 'Decreto 610551.pdf' não é."""
+        if self.ordem_do_nome(nome, numero, ano) is not None:
+            return True
+        raiz = self.nome_arquivo(numero, ano).rpartition(".")[0].casefold()
+        alvo = unicodedata.normalize("NFC", nome).casefold()
+        return alvo.startswith(raiz) and len(alvo) > len(raiz) and not alvo[len(raiz)].isdigit()
 
 
 # ----------------------------------------------------------------------------

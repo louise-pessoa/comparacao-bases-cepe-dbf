@@ -388,8 +388,12 @@ def gerar_pdf_normalizado(
     pasta_saida: Path,
     simular: bool = False,
     pasta_fontes: Path = PASTA_FONTES,
+    nome_saida: str | None = None,
 ) -> Path:
     """Gera o PDF normalizado do ato em `pasta_saida` e devolve o caminho.
+
+    `nome_saida`: nome do arquivo gerado (padrão: o nome da espécie e do número; numa
+    republicação, 'Decreto N (republicação).pdf').
 
     Um arquivo anterior com o mesmo nome em `pasta_saida` (sobra de uma
     execução em que a etapa 5 não terminou) é substituído: é cópia derivada,
@@ -403,7 +407,7 @@ def gerar_pdf_normalizado(
         raise ErroNormalizacao(
             f"{original.name} não pôde ser lido ({leitura.status.value}): {leitura.detalhe}"
         )
-    nome = ident.especie.nome_arquivo(ident.numero)
+    nome = nome_saida or ident.especie.nome_arquivo(ident.numero)
     destino = pasta_saida / nome
     if simular:
         with tempfile.TemporaryDirectory() as pasta_temporaria:
