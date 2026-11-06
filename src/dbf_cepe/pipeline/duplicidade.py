@@ -34,6 +34,12 @@ def chave_nome(nome: str) -> str:
 
 def carregar_indice(pasta_dbf: Path, permitir_vazia: bool = False) -> set[str]:
     """Lista os nomes de arquivo da pasta da DBF como conjunto de chaves."""
+    return {chave_nome(nome) for nome in listar_nomes(pasta_dbf, permitir_vazia)}
+
+
+def listar_nomes(pasta_dbf: Path, permitir_vazia: bool = False) -> set[str]:
+    """Os nomes REAIS dos arquivos da pasta da DBF (para renomear numa republicação).
+    Mesmas verificações de `carregar_indice`."""
     if not pasta_dbf.is_dir():
         raise PastaDbfIndisponivel(
             f"Pasta da DBF não encontrada ou inacessível: {pasta_dbf}. "
@@ -53,7 +59,7 @@ def carregar_indice(pasta_dbf: Path, permitir_vazia: bool = False) -> set[str]:
             "sincronizou, aguarde. Se a base está realmente vazia, execute "
             "com --permitir-pasta-vazia."
         )
-    return {chave_nome(nome) for nome in nomes}
+    return set(nomes)
 
 
 def ja_existe(indice: set[str], nome_arquivo: str) -> bool:

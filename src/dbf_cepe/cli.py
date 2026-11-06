@@ -52,6 +52,7 @@ from dbf_cepe.config import (
 from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice
 from dbf_cepe.leitura.separador import ErroSeparacao
 from dbf_cepe.pipeline.lote import Destino, executar
+from dbf_cepe.pipeline.registro import ErroRegistro
 from dbf_cepe.pipeline.relatorio import relatorio_dos_cadernos
 
 log = logging.getLogger("pipeline")
@@ -260,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         if resumo_lote[Destino.FALHA_AO_GRAVAR]:
             return 1  # decretos ficaram em pendentes; vale rodar de novo
     except (
-        ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao
+        ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao, ErroRegistro
     ) as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2

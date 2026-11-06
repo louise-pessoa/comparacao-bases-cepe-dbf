@@ -14,7 +14,10 @@ from dbf_cepe.config import (
     Configuracao,
     ErroConfiguracao,
 )
-from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice, chave_nome, ja_existe
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice, chave_nome, ja_existe, listar_nomes
+from dbf_cepe.pipeline.publicacao import Publicacao, hash_do_texto
+from dbf_cepe.pipeline.registro import Registro
+from dbf_cepe.pipeline.republicacao import Acao, planejar
 from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
@@ -55,6 +58,15 @@ def _carregar_indice_do_relatorio(
         return None
 
 
+@dataclass
+class ContextoDaGravacao:
+    """Para `--gravar` com cadernos datados: o registro de publicações (só lido) e os
+    nomes reais da base."""
+
+    registro: Registro
+    nomes_na_base: set[str]
+
+
 def _relatar_caderno(
     cfg: Configuracao,
     caderno: Path,
@@ -62,6 +74,7 @@ def _relatar_caderno(
     gravar: bool,
     resumo: ResumoRelatorio,
     comparar: bool = False,
+    contexto: ContextoDaGravacao | None = None,
 ) -> None:
     resultado = separar_caderno(caderno)
     log.info(
@@ -89,6 +102,8 @@ def _relatar_caderno(
                     "confira se não é um ato da DBF", nome,
                 )
                 resumo.avisos += 1
+        elif gravar and indice is not None and ato.data_publicacao is not None and ato.caderno:
+            situacao = _gravar_publicacao(cfg, ato, nome, contexto, resumo)
         elif indice is not None and ja_existe(indice, nome):
             situacao = "já existe na DBF"
             if comparar and cfg.pasta_dbf is not None:
@@ -153,12 +168,64 @@ def _resumir_comparacoes(resumo: ResumoRelatorio) -> None:
         log.info("  menos parecidos: %s (%.2f%%)", nome, comparado.similaridade * 100)
 
 
+def nome_em_pendentes(nome: str, ato: AtoSeparado) -> str:
+    """Nome do PDF intermediário com a publicação: 'Decreto 61055 - 20260715_ResumoDiario p3.pdf'.
+    Duas publicações do mesmo número (mesmo caderno ou não) não colidem em pendentes."""
+    raiz, _, extensao = nome.rpartition(".")
+    caderno = (ato.caderno or "").rpartition(".")[0] or (ato.caderno or "")
+    return f"{raiz} - {caderno} p{ato.pagina_inicial}.{extensao}"
+
+
+def _gravar_publicacao(
+    cfg: Configuracao,
+    ato: AtoSeparado,
+    nome: str,
+    contexto: ContextoDaGravacao | None,
+    resumo: ResumoRelatorio,
+) -> str:
+    """`--gravar` de um ato com data de publicação: a regra de republicação decide se ele
+    segue para pendentes (o lote decide o nome final de novo, com a base daquele momento)."""
+    assert contexto is not None and cfg.pasta_dbf is not None and ato.data_publicacao and ato.caderno
+    pasta_dbf = cfg.pasta_dbf
+    publicacao = Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial)
+    plano = planejar(
+        ato.especie, ato.numero, publicacao, hash_do_texto(ato.texto), contexto.registro,
+        contexto.nomes_na_base,
+        lambda nome_base: comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base).identico,
+    )
+    for aviso in plano.avisos:
+        log.warning("%s | AVISO: %s", nome, aviso)
+    if plano.acao is Acao.JA_REGISTRADA:
+        return "já registrado (mesma publicação)"
+    if plano.acao is Acao.DUPLICATA:
+        return "já existe na DBF (texto idêntico)"
+    rotulo = (
+        "CONFERIR DUPLICATA" if plano.acao is Acao.CONFERIR
+        else "REPUBLICAÇÃO" if plano.republicacao
+        else "ANTERIOR À DA BASE" if plano.renomeacoes
+        else "INÉDITO"
+    )
+    destino = cfg.pasta_temp / nome_em_pendentes(nome, ato)
+    if destino.exists():
+        return f"{rotulo} (já está em pendentes)"
+    try:
+        gravar_pdf_do_ato(ato, destino)
+    except ErroExportacao as erro:
+        log.error("%s | falha ao gravar em pendentes: %s", nome, erro)
+        resumo.falhas += 1
+        return f"{rotulo} (FALHA ao gravar)"
+    return f"{rotulo} (gravado em pendentes: {plano.motivo})"
+
+
 def _gravar_inedito(
     cfg: Configuracao, ato: AtoSeparado, nome: str, gravados: set[str], resumo: ResumoRelatorio
 ) -> str:
     destino = cfg.pasta_temp / nome
     if chave_nome(nome) in gravados:
-        log.warning("%s | AVISO: repetido neste caderno; só a primeira ocorrência foi gravada", nome)
+        log.warning(
+            "%s | AVISO: repetido neste caderno, que não tem data no nome (AAAAMMDD_...); "
+            "só a primeira ocorrência foi gravada", nome,
+        )
         resumo.avisos += 1
         return "INÉDITO (repetido no caderno, não gravado)"
     if destino.exists():
@@ -194,9 +261,15 @@ def relatorio_dos_cadernos(
     else:
         cadernos = [caminho]
     indice = _carregar_indice_do_relatorio(cfg, gravar, permitir_pasta_vazia)
+    contexto = None
+    if gravar and cfg.pasta_dbf is not None:
+        registro = Registro.carregar(cfg.registro)  # ilegível: ErroRegistro (nada é gravado)
+        if registro.operacao_em_andamento is not None:
+            log.warning("O registro tem uma operação interrompida; o próximo lote a desfaz ou conclui.")
+        contexto = ContextoDaGravacao(registro, listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia))
     resumo = ResumoRelatorio()
     for caderno in cadernos:
-        _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar)
+        _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar, contexto)
     log.info("Total: %d caderno(s), %d ato(s).", resumo.cadernos, resumo.atos)
     for situacao, quantidade in resumo.situacoes.most_common():
         log.info("  %3d  %s", quantidade, situacao)

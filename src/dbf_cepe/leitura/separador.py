@@ -44,7 +44,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import date
 from pathlib import Path
 
 import pymupdf
@@ -78,6 +79,22 @@ _ANEXO = re.compile(r"^ANEXO\b")
 _JANELA_ABERTURA = 1500  # caracteres após o cabeçalho para achar a abertura do corpo
 
 
+# Nome do caderno baixado pela etapa 1: "20260715_ResumoDiario.pdf", "20250916_PoderExecutivoExtra.pdf".
+_DATA_NO_NOME = re.compile(r"^(\d{4})(\d{2})(\d{2})_")
+
+
+def data_do_caderno(nome: str) -> date | None:
+    """Data de publicação do caderno, tirada do nome do arquivo (AAAAMMDD_...);
+    None se o nome não começar por uma data válida."""
+    casamento = _DATA_NO_NOME.match(nome)
+    if not casamento:
+        return None
+    try:
+        return date(*(int(parte) for parte in casamento.groups()))
+    except ValueError:
+        return None
+
+
 class ErroSeparacao(Exception):
     """O caderno não pôde ser aberto ou lido."""
 
@@ -91,6 +108,10 @@ class AtoSeparado:
     pagina_inicial: int  # base 1
     pagina_final: int
     avisos: tuple[str, ...] = ()
+    # Publicação: data do caderno (tirada do nome do arquivo, AAAAMMDD_...) e nome
+    # do caderno. None quando o ato não veio de um caderno com data no nome.
+    data_publicacao: date | None = None
+    caderno: str | None = None
 
 
 @dataclass(frozen=True)
@@ -294,6 +315,9 @@ def separar_caderno(
     texto, inicios, digitalizadas, paginas = ler_caderno(caminho)
 
     atos, avisos = separar_texto(texto, inicios, especies)
+    nome = Path(caminho).name  # aceita também o caminho como texto
+    publicado_em = data_do_caderno(nome)
+    atos = [replace(ato, data_publicacao=publicado_em, caderno=nome) for ato in atos]
     if digitalizadas:
         avisos.append(
             f"páginas digitalizadas {list(digitalizadas)}: atos nelas não foram "
