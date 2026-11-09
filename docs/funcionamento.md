@@ -39,12 +39,17 @@ terminam no meio delas.
 - Cada decreto vai do cabeçalho `DECRETO Nº ...` (em maiúsculas, no início da linha) até as assinaturas que seguem o
   fecho, ou até o fim do anexo, se houver.
 - Citações a outros decretos no corpo do texto nunca são confundidas com cabeçalho.
-- Cabeçalhos e rodapés de página do Diário são removidos, e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
+- Cabeçalhos e rodapés de página do Diário são removidos (nas 4 primeiras linhas de cada página: "Recife, 26 de junho de
+  2026", "Ano CX Ć NÀ 114 - 9", "Diário Oficial do Estado de Pernambuco..."; desde 09/11/2026 também as variantes do dia
+  1º e da edição Extra, "Recife, 1À de outubro de 2026" e "CX Ć NÀ 31 3", e as dos anos antigos, com dia da semana,
+  travessão, sem o "Ano" ou com o título na mesma linha), e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
   o texto do decreto 60929 extraído do caderno de 26/06/2026 é idêntico ao do PDF avulso da DBF.
 - O **expediente do Diário** (o quadro com governador(a), vice, secretários, preços e endereço da CEPE, impresso uma vez
   por caderno) é removido pela posição: o quadro é localizado pelas linhas típicas dele (`MARCAS_DO_EXPEDIENTE`; pelo
   menos 4 tipos, entre eles o nome da CEPE e o par "GOVERNADOR(A)"/"VICE-GOVERNADOR(A)"), e toda linha da página que
-  cai no retângulo dos blocos dessas linhas sai do texto. Antes, quando ele dividia a página com um decreto, entrava no
+  cai no retângulo dos blocos dessas linhas sai do texto. O "GOVERNADOR(A)" só conta seguido de "VICE-GOVERNADOR(A)"
+  (sozinho, pode ser a assinatura de outro ato), e o quadro cresce para baixo com os blocos de cargo ("SECRETÁRIO DE
+  DEFESA SOCIAL") alinhados à lista de secretários, que às vezes desce além da última marca. Antes, quando ele dividia a página com um decreto, entrava no
   meio do texto (ex.: Decreto 57.317/2024, da DBF). Nos cadernos de referência de 2026, isso só muda os decretos 61.563
   e 61.566, fora da DBF. *Decisão de 09/11/2026.*
 - Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o

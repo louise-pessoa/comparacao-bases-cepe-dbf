@@ -293,3 +293,48 @@ def test_pdf_de_texto_simples_com_um_decreto(tmp_path):
     pdf = criar_pdf_texto(tmp_path / "um.pdf", decreto("60.013"))
     resultado = separar_caderno(pdf)
     assert [a.numero for a in resultado.atos] == ["60013"]
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        "Recife, 26 de junho de 2026",
+        "Recife, 1À de outubro de 2026",  # "1º" extraído como "1À"
+        "Recife, 1º de outubro de 2026",
+        "Recife, quinta-feira, 9 de março de 2017",
+        "Recife, sábado, 14 de março de 2020",
+        "Recife,9 de setembro de 2015",
+        "Recife, 9 de maio de 2017 - 9",
+        "Recife, 9 de março de 2018                           Diário Oficial do Estado de Pernambuco – Poder Executivo",
+        "2 - Ano CX Ć NÀ 31",
+        "9 – Ano XCIV • Nº 47",
+        "Ano CX Ć NÀ 194 - 3",
+        "Ano XCIV • Nº 47 – 9",
+        "Ano XCV • Nº 47",
+        "CX Ć NÀ 31 3",  # Extra, páginas ímpares
+        "CII Ć NÀ 47- 9",
+        "C Ć NÀ 52 - 9",
+        "Diário Oficial do Estado de Pernambuco - Poder Executivo - Edição Extra",
+    ],
+)
+def test_linhas_de_topo_de_pagina_reconhecidas(linha):
+    from dbf_cepe.leitura.separador import PADROES_TOPO_DE_PAGINA
+
+    assert any(p.match(linha) for p in PADROES_TOPO_DE_PAGINA)
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        "Recife, 21 de outubro de 2026.",  # data de um ato
+        "Recife, 21 de outubro de 2026, às 10h",
+        "Recife, 169 aves típicas do Bioma Caatinga",
+        "DECRETO Nº 61.398, DE 1º DE OUTUBRO DE 2026.",
+        "PORTARIA SE Nº 9 DE 9 DE MARÇO DE 2019.",
+        "Diário Oficial do Estado.",
+        "CNPJ 10.921.252/0001-07",
+    ],
+)
+def test_linhas_de_ato_nao_sao_topo_de_pagina(linha):
+    from dbf_cepe.leitura.separador import PADROES_TOPO_DE_PAGINA
+
+    assert not any(p.match(linha) for p in PADROES_TOPO_DE_PAGINA)

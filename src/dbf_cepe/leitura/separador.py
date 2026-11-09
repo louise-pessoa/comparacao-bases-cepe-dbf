@@ -56,11 +56,23 @@ from dbf_cepe.leitura.reader import _pagina_digitalizada
 
 # Linhas de cabeçalho/rodapé de página do Diário Oficial de Pernambuco. Só são
 # removidas nas primeiras linhas de cada página (ver LINHAS_DE_TOPO).
+_DIA_DA_SEMANA = r"(?:(?:segunda|ter[çc]a|quarta|quinta|sexta)-feira|s[áa]bado|domingo),\s*"
 PADROES_TOPO_DE_PAGINA: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^\d+\s*-\s*Ano\s+[A-Z]+\b.*$"),  # "8 - Ano CX Ć NÀ 114"
-    re.compile(r"^Ano\s+[A-Z]+\b.*-\s*\d+\s*$"),  # "Ano CX Ć NÀ 114 - 9"
+    re.compile(r"^\d+\s*[-–]\s*Ano\s+[A-Z]+\b.*$"),  # "8 - Ano CX Ć NÀ 114", "9 – Ano XCIV • Nº 47"
+    re.compile(r"^Ano\s+[A-Z]+\b.*[-–]\s*\d+\s*$"),  # "Ano CX Ć NÀ 114 - 9", "Ano XCIV • Nº 47 – 9"
+    re.compile(r"^Ano\s+[A-Z]+\s+\S\s+N\S{0,2}\s*\d+\s*$"),  # "Ano XCV • Nº 47" (sem a página)
+    # Sem o "Ano": "CX Ć NÀ 31 3" (Extra, páginas ímpares), "CII Ć NÀ 47- 9", "C Ć NÀ 52 - 9"
+    re.compile(r"^[A-Z]{1,7}\s+\S\s+N\S{0,2}\s*\d+\s*(?:[-–]\s*)?\d+\s*$"),
     re.compile(r"^Di[aá]rio Oficial do Estado de Pernambuco\b.*$"),
-    re.compile(r"^Recife,\s+\d{1,2}\s+de\s+\w+\s+de\s+\d{4}\s*$"),
+    # "Recife, 26 de junho de 2026", "Recife, 1À de outubro de 2026" (o "º" de "1º" extraído
+    # como "À"), "Recife, quinta-feira, 9 de março de 2017", "Recife,9 de setembro de 2015",
+    # "Recife, 9 de maio de 2017 - 9" (com a página) e a data com o título do Diário na mesma
+    # linha. Uma data terminada em ponto ("Recife, 21 de outubro de 2026.", a data de um ato)
+    # NÃO casa.
+    re.compile(
+        rf"^Recife,\s*(?:{_DIA_DA_SEMANA})?\d{{1,2}}[ºª°À]?\s+de\s+\w+\s+de\s+\d{{4}}"
+        r"(?:\s*[-–]\s*\d+|\s+Di[aá]rio\s+Oficial\b.*)?\s*$"
+    ),
 )
 LINHAS_DE_TOPO = 4
 
@@ -85,6 +97,17 @@ MARCAS_DO_EXPEDIENTE: dict[str, re.Pattern[str]] = {
 }
 MINIMO_DE_MARCAS_DO_EXPEDIENTE = 4
 _ATE_O_VICE = 3  # linhas entre "GOVERNADOR(A)" e "VICE-GOVERNADOR(A)" no quadro (o nome fica no meio)
+# Cargo do quadro, em maiúsculas e sozinho na linha ("SECRETÁRIO DE DEFESA SOCIAL",
+# "PROCURADORA-GERAL DO ESTADO"): a lista de secretários pode descer além da última marca.
+# O quadro cresce PARA BAIXO (o par governador/vice é sempre o alto do quadro) para incluir
+# o BLOCO de um cargo (cargo e nome) colado à borda de baixo (até `_FOLGA_DO_QUADRO` pontos)
+# e alinhado à lista de secretários (margem esquerda a até `_ALINHAMENTO_DA_LISTA` pontos).
+_CARGO_DO_QUADRO = re.compile(
+    r"^\s*(?:SECRET\S{1,2}RI[OA]|PROCURADORA?-GERAL|CHEFE|SUPERINTENDENTE|DIRETORA?|GERENTE|COORDENADORA?)"
+    r"\b[^a-zà-ú]*$"
+)
+_FOLGA_DO_QUADRO = 30.0
+_ALINHAMENTO_DA_LISTA = 15.0
 # Trechos que só existem no expediente: se algum sobrar no texto de um ato (quadro não
 # removido), o critério da leitura em cascata reprova o ato (leitura/criterio.py). São
 # linhas inteiras em maiúsculas, como no quadro: "Secretários de Estado" e "Diretor
@@ -201,6 +224,18 @@ def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
     caixas = [itens[i][2] for posicoes in marcadas.values() for i in posicoes]
     x0, y0 = min(c[0] for c in caixas), min(c[1] for c in caixas)
     x1, y1 = max(c[2] for c in caixas), max(c[3] for c in caixas)
+    margens = {itens[i][2][0] for i in marcadas["secretarios"]}
+    cargos = [
+        bloco for texto, _, bloco in itens
+        if _CARGO_DO_QUADRO.match(texto) and any(abs(bloco[0] - m) <= _ALINHAMENTO_DA_LISTA for m in margens)
+    ]
+    cresceu = True
+    while cresceu:
+        cresceu = False
+        for b in cargos:
+            if y1 < b[3] and y0 <= b[1] <= y1 + _FOLGA_DO_QUADRO and x0 <= (b[0] + b[2]) / 2 <= x1:
+                y1 = b[3]
+                cresceu = True
 
     def dentro(caixa: tuple[float, float, float, float]) -> bool:
         cx, cy = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
