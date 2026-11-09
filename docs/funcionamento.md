@@ -217,11 +217,21 @@ baixado, o que bate com Extras ausentes do S3.
 "Dispõe sobre a fruição de estímulo" (Decreto 34.733/2010, que no artigo 1º concede o estímulo) como **concessão**.
 Ainda não aplicadas.
 
+*Decisão de 09/11/2026:* a abertura de quem substitui o titular ("A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO DE
+GOVERNADORA DO ESTADO", "O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR DO ESTADO") é
+aceita. Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU AS
+SEGUINTES PORTARIAS:") vai para revisão manual.
+
 **Proposta, não implementada:** uma cascata de leituras por decreto. Primeiro a leitura atual; se o decreto reprovar (fecho
 ausente ou repetido, abertura ausente, outro cabeçalho ou expediente dentro, ou tipo não reconhecido sendo da DBF), tenta
 o fecho antigo e depois a leitura por coluna das páginas dele; se nenhuma aprovar, vai para revisão manual. A leitura
 por coluna sozinha corrige o corte (2016 a 2019: de 12 a 14 decretos cortados por ano para 0), mas embaralha ementas e
 muda o texto dos anos bons, então só pode entrar como recuperação.
+
+**Medição do critério (etapa A da cascata):** `python -m ferramentas.medir_criterio` aplica o critério à leitura atual.
+Nas amostras de 06/11/2026, de 2020 a 2026 só o expediente reprova (2 decretos em 73 nos cadernos de referência de
+2026, nenhum da DBF); de 2012 a 2019, 15% a 25% dos decretos reprovam, quase todos por `sem fecho` ou `fecho repetido`
+(colunas fora de ordem); em 2010, todos reprovam por `fecho antigo`.
 
 ### Modelos e evidência dos tipos
 
