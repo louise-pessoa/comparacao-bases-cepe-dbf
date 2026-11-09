@@ -4,7 +4,7 @@ Sincroniza a base local de atos dos programas de estímulos fiscais da Diretoria
 publicados pela CEPE no Diário Oficial de Pernambuco:
 
 - baixa os cadernos do Diário e separa os decretos;
-- descarta o que a DBF já tem;
+- descarta o que a DBF já tem e reconhece republicações (o mesmo número publicado de novo, em outra data);
 - recria cada decreto inédito em um PDF limpo e linear, mais fácil de ler por IA ("Normalização na Fonte");
 - cataloga, só para leitura, decretos, editais, portarias, erratas e republicações.
 
@@ -17,12 +17,19 @@ Análise semântica dos atos **não** faz parte do projeto.
 | 1 | Captura dos cadernos da CEPE | implementada |
 | 1b | Separação dos decretos do caderno e gravação dos inéditos em `dados/pendentes` | implementada |
 | 2 | Identificação (PyMuPDF + RegEx) | implementada |
-| 3 | Validação de duplicidade contra a base da DBF | implementada |
+| 3 | Validação de duplicidade e republicação contra a base da DBF | implementada |
 | 4 | Normalização: PDF limpo com o layout da DBF (fpdf2) | implementada |
 | 5 | Gravação na pasta da DBF | implementada |
 | – | Catálogo dos atos (CSV, só leitura) | implementada; edital e portaria só reconhecidos, fora do pipeline |
 
 O original só é descartado depois de o resultado ser gravado e conferido na base.
+
+Republicação: a publicação mais antiga de um número fica com `Decreto N.pdf`; as seguintes, com `Decreto N
+(republicação).pdf`, `(republicação 2)` e assim por diante. A data de cada arquivo gravado fica em
+`dados/registro_publicacoes.json`. Detalhes em [`docs/funcionamento.md`](docs/funcionamento.md#republicação).
+
+Anos antigos: o pipeline lê corretamente os cadernos de **2020 em diante**. Antes disso há problemas de leitura
+conhecidos ([`docs/funcionamento.md`](docs/funcionamento.md#cadernos-antigos-ano-limite)).
 
 ## Instalação
 
@@ -46,13 +53,14 @@ Opcional: `pip install -e .` (sempre em modo editável, na pasta do repositório
 python main.py --baixar --de 2026-10-01 --ate 2026-10-20   # etapa 1: baixa os cadernos para dados/cadernos
 python main.py --separar dados/cadernos                     # etapa 1b: lista os decretos e se a DBF já os tem (só lê)
 python main.py --separar dados/cadernos --comparar          # compara o texto com o PDF da base (só lê)
-python main.py --separar dados/cadernos --gravar            # grava os decretos inéditos em dados/pendentes
+python main.py --separar dados/cadernos --gravar            # grava os inéditos e as republicações em dados/pendentes
 python main.py --simular                                     # lote (etapas 2 a 5): mostra o que faria
 python main.py                                               # lote de verdade: grava na base da DBF
 python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
 ```
 
-Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. O registro de cada decisão fica em
+Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. Rode os lotes em **ordem cronológica** (dos
+cadernos mais antigos para os mais novos). O registro de cada decisão fica em
 `logs/pipeline.log`. Opções, mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
 
 ## Testes

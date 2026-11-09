@@ -63,6 +63,10 @@ nenhum decreto chega duas vezes.
   todo dia tem edição extra.
 - **403:** o S3 (e talvez o site da CEPE) responde 403 para arquivo inexistente. Por isso 403 é lido como "sem edição" e
   não se distingue de um bloqueio real; o aviso acima cobre esse caso.
+- **Anos antigos (`--fonte s3`):** o S3 responde de 2025 até pelo menos 2005. Não há caderno às segundas-feiras (o
+  Diário sai de terça a sábado), e algumas Extras não estão no S3 (por exemplo, 14/03/2020). Para baixar um período
+  antigo sem misturar com `dados/cadernos`, defina `PASTA_CADERNOS` só para aquela execução (cada pasta tem o próprio
+  manifesto). Antes de 2020 há problemas de leitura: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).
 - **Caderno republicado no mesmo endereço** não é baixado de novo, porque o manifesto só guarda o que já veio. Para
   rebaixar, apague a entrada dele no manifesto.
 
@@ -80,12 +84,29 @@ Para cada decreto do caderno (ou de todos os PDFs da pasta), mostra:
 - o tipo (concessão, alteração etc., ou "tipo não reconhecido") e o programa da DBF;
 - a situação: `fora do escopo da DBF`, `já existe na DBF` ou `INÉDITO`.
 
-Sem `--gravar`, só lê. Com `--gravar`, cada decreto de programa da DBF que a base não tem vira um PDF em
-`dados/pendentes/` (`INÉDITO (gravado em pendentes)`), pronto para o lote. O comando:
+Sem `--gravar`, só lê. Com `--gravar`, cada decreto de programa da DBF vira um PDF em `dados/pendentes/`, pronto para
+o lote. O comando:
 
-- exige `PASTA_DBF`;
+- exige `PASTA_DBF` e lê o registro de publicações (`dados/registro_publicacoes.json`) sem alterá-lo; registro ilegível
+  interrompe o comando (código 2) sem gravar nada;
 - nunca sobrescreve um arquivo, e rodar de novo não duplica nada;
 - termina com código 1 se algum decreto não puder ser gravado.
+
+**Caderno com data no nome** (`AAAAMMDD_...`, como os baixados pela etapa 1): a data do caderno é a data de publicação e
+segue dentro do PDF de pendentes até a etapa 5. O PDF se chama `Decreto 61055 - 20260715_ResumoDiario p3.pdf`, então o
+mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs separados. A situação mostrada é:
+
+| Situação | O que acontece |
+|---|---|
+| `INÉDITO (gravado em pendentes: ...)` | número que a base não tem |
+| `REPUBLICAÇÃO (gravado em pendentes: Decreto N (republicação).pdf ...)` | publicação mais nova de um número já gravado, com texto diferente |
+| `ANTERIOR À DA BASE (gravado em pendentes: ...; antes, renomear ...)` | publicação mais antiga que a gravada: o lote renomeia o arquivo da base para abrir lugar |
+| `CONFERIR DUPLICATA (gravado em pendentes: ...)` | a base tem o número sem registro e com texto diferente; o lote manda para conferência manual |
+| `já existe na DBF (texto idêntico)` | não grava |
+| `já registrado (mesma publicação)` | não grava (mesma data, caderno e página já no registro) |
+
+O lote decide o nome final de novo, com a base daquele momento. **Caderno sem data no nome:** regra antiga (só o que a
+base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
 fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada e programa
@@ -130,6 +151,24 @@ for feito, o próximo lote o descarta como duplicado.
 
 Se o computador desligar ou o drive cair durante a cópia, pode sobrar um `Decreto NNNNN.pdf.part` na pasta da DBF. Ele é
 substituído na próxima gravação do mesmo decreto, mas pode ser apagado à mão. O Drive pode sincronizá-lo antes disso.
+
+### Republicação no lote
+
+- **Rode os lotes em ordem cronológica**, dos cadernos mais antigos aos mais novos. Dentro do lote, os PDFs são
+  processados em ordem de publicação (data; no mesmo dia, a edição normal antes da Extra; no mesmo caderno, a página).
+- Republicação gravada: `normalizado e armazenado na DBF | Decreto N (republicação).pdf`. Se a publicação que chega for
+  mais antiga que a gravada, o log mostra `renomeado na DBF: Decreto N.pdf -> Decreto N (republicação).pdf` antes.
+- Texto idêntico ao de uma publicação já gravada: descartado como duplicata e anotado no registro.
+- Arquivo da base sem registro (gravado antes deste controle existir) e com texto diferente: o PDF normalizado vai para
+  `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`. **Nada é gravado nem renomeado na base nesse caso.**
+  Confira à mão e, se for mesmo uma republicação, mova e renomeie você.
+- PDF posto à mão em `dados/pendentes` (sem data de publicação): regra antiga, descartado se a base já tiver o nome.
+- **Registro ilegível** (`dados/registro_publicacoes.json`): o lote para antes de mexer em qualquer arquivo (código 2).
+  Restaure o arquivo de uma cópia ou, se tiver certeza, apague-o; aí os arquivos da base passam a ser tratados como
+  anteriores ao registro.
+- **Queda no meio de uma renomeação:** a operação fica anotada no registro, e a próxima execução (sem `--simular`) a
+  desfaz ou conclui antes de tudo, com um aviso no log. Com `--simular`, o programa só avisa e para. Se os arquivos da
+  base não conferirem com nenhum passo da operação, ele pede conferência manual e não mexe em nada.
 
 ## Catálogo (`--catalogar`)
 
