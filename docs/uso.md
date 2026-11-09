@@ -198,6 +198,7 @@ O significado de cada coluna e as regras de escopo estão em [`funcionamento.md`
 ```bash
 python -m ferramentas.localizar_exemplos            # acha erratas, republicações e formatos de edital/portaria
 python -m ferramentas.regressao_separador main      # a separação dos decretos mudou em relação ao commit main?
+python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 ```
 
 - `localizar_exemplos` só lê `dados/cadernos`. Copia cada página achada, uma por PDF, para `dados/exemplos` (sem
@@ -206,3 +207,9 @@ python -m ferramentas.regressao_separador main      # a separação dos decretos
   página a mais do que perder um exemplo.
 - `regressao_separador` extrai um commit antigo e compara, caderno a caderno, os decretos separados. Sai com código 1 se
   algum diferir.
+- `medir_criterio` só lê. Procura PDFs nas pastas (e subpastas) dadas, aplica o critério de aprovação da leitura em
+  cascata a cada decreto e mostra, por ano do caderno, quantos reprovam e por quê (`fecho antigo`, `sem fecho`,
+  `fecho repetido`, `sem abertura`, `outro cabeçalho`, `expediente`, `DBF sem tipo`), com alguns exemplos. `--json
+  ARQUIVO` grava tudo; `--exemplos N` muda quantos exemplos aparecem por ano. Sai com código 1 se algum caderno não
+  puder ser lido. Critério e motivos: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).
+
