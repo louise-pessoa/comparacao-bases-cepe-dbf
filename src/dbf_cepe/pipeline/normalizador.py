@@ -97,6 +97,7 @@ class ErroNormalizacao(Exception):
 
 
 class Estilo(Enum):
+    """Descreva o layout aprovado para cada tipo de bloco do PDF normalizado."""
     TITULO = "título"  # centralizado
     EMENTA = "ementa"  # bloco da metade direita, justificado
     CORPO = "corpo"  # justificado, sem recuo
@@ -109,6 +110,7 @@ class Estilo(Enum):
 
 @dataclass(frozen=True)
 class Bloco:
+    """Represente texto e estilo de um bloco que será desenhado no PDF."""
     estilo: Estilo
     texto: str  # "\n" = quebra de linha obrigatória
     colado: bool = False  # sem linha em branco antes (assinaturas seguidas)
@@ -116,6 +118,7 @@ class Bloco:
 
 @dataclass(frozen=True)
 class Documento:
+    """Agrupe blocos normalizados e avisos gerados durante a reconstrução."""
     blocos: tuple[Bloco, ...]
     avisos: tuple[str, ...] = field(default=())
 

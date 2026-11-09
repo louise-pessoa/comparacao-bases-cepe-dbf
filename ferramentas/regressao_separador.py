@@ -110,6 +110,7 @@ def detalhar(antes: list, depois: list) -> tuple[list[str], list[str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Compare a saída do separador atual com a de um commit informado."""
     args = list(sys.argv[1:] if argv is None else argv)
     detalhes = "--detalhes" in args
     args = [x for x in args if x != "--detalhes"]

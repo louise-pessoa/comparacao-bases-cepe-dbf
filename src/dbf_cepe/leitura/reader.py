@@ -36,6 +36,7 @@ FRACAO_MIN_IMAGEM = 0.10
 ##################################################################################
 
 class StatusLeitura(Enum):
+    """Indique se o PDF tem texto utilizável, é imagem ou está corrompido."""
     OK = "ok"
     IMAGEM = "imagem"
     CORROMPIDO = "corrompido"
@@ -43,6 +44,7 @@ class StatusLeitura(Enum):
 
 @dataclass(frozen=True)
 class ResultadoLeitura:
+    """Transporte o texto bruto, contagem de páginas e páginas que exigem OCR."""
     status: StatusLeitura
     texto: str = ""
     paginas: int = 0

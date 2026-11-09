@@ -274,3 +274,4 @@ def test_sem_variavel_de_ambiente_nao_ha_sinalizacao(tmp_path):
     env = tmp_path / ".env"
     env.write_text("HTTPS_PROXY=auto\n", encoding="utf-8")
     assert carregar_configuracao(env).proxy_do_ambiente is None
+"""Proteja a leitura do .env e a trava contra pastas iguais ou aninhadas."""

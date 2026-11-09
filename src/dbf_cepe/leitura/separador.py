@@ -156,6 +156,7 @@ class ErroSeparacao(Exception):
 
 @dataclass(frozen=True)
 class AtoSeparado:
+    """Transporte um ato recortado do caderno, com páginas e avisos de leitura."""
     especie: Especie
     numero: str  # sem separador de milhar, ex.: "60929"
     cabecalho: str  # ex.: "DECRETO Nº 60.929, DE 25 DE JUNHO DE 2026"
@@ -179,6 +180,7 @@ class AtoSeparado:
 
 @dataclass(frozen=True)
 class ResultadoSeparacao:
+    """Agrupe atos separados, páginas digitalizadas e avisos da edição."""
     atos: tuple[AtoSeparado, ...]
     paginas: int
     paginas_digitalizadas: tuple[int, ...] = ()

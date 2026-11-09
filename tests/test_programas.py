@@ -263,3 +263,4 @@ def test_evidencia_de_cada_programa_e_conhecida():
     assert {p.evidencia for p in TODOS} <= validas
     confirmados = {p.sigla for p in PROGRAMAS_DBF if p.evidencia == EVIDENCIA_AMOSTRA}
     assert confirmados == {"PRODEPE", "PROIND"}  # os únicos com decretos da DBF em mãos
+"""Proteja o escopo dos programas DBF, suas bases legais e níveis de evidência."""

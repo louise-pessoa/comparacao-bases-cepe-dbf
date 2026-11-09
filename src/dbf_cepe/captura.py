@@ -98,11 +98,13 @@ class Caderno:
     modelo_url: str  # aceita {ano}, {data} (aaaammdd) e {data_iso} (aaaa-mm-dd)
 
     def url(self, dia: date) -> str:
+        """Monte o endereço do caderno para uma data, sem aceitar caminho do servidor."""
         return self.modelo_url.format(
             ano=dia.year, data=f"{dia:%Y%m%d}", data_iso=dia.isoformat()
         )
 
     def nome_arquivo(self, dia: date) -> str:
+        """Gere o nome local previsível do caderno a partir da data e do tipo."""
         return f"{dia:%Y%m%d}_{self.nome}.pdf"
 
 
@@ -134,6 +136,7 @@ CADERNOS_ATIVOS: tuple[Caderno, ...] = FONTES[FONTE_PADRAO]
 
 
 class StatusDownload(Enum):
+    """Classifique o resultado de uma tentativa, inclusive ausência legítima de edição."""
     BAIXADO = "baixado"
     JA_BAIXADO = "já baixado (manifesto)"
     SEM_EDICAO = "sem edição nesse dia (403/404)"
@@ -144,6 +147,7 @@ class StatusDownload(Enum):
 
 @dataclass(frozen=True)
 class ResultadoDownload:
+    """Relacione caderno, data, situação e caminho produzido pela captura."""
     caderno: Caderno
     dia: date
     status: StatusDownload
@@ -165,6 +169,7 @@ Abridor = Callable[[str], AbstractContextManager[Any]]
 
 class _SemRedirecionamento(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        """Recuse qualquer redirecionamento para manter host e protocolo fixos."""
         raise urllib.error.HTTPError(
             req.full_url, code, f"redirecionamento recusado para {newurl}", headers, fp
         )
@@ -403,6 +408,7 @@ def _baixar_um(
 
 
 def dias_do_periodo(inicio: date, fim: date) -> list[date]:
+    """Enumere dias inclusivos, recusando intervalo invertido ou maior que um ano."""
     if inicio > fim:
         raise ErroCaptura(f"período invertido: {inicio} é posterior a {fim}")
     total = (fim - inicio).days + 1

@@ -256,3 +256,4 @@ def test_descartar_se_existir_tenta_de_novo_depois_de_liberar_identificadores(tm
     monkeypatch.setattr(Path, "unlink", primeira_falha)
     assert descartar_se_existir(arquivo) is True
     assert len(tentativas) == 2 and not arquivo.exists()
+"""Proteja a gravação atômica, a conferência e a ordem segura de descarte."""

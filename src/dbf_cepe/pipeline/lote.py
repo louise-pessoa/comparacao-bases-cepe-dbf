@@ -47,6 +47,7 @@ log = logging.getLogger("pipeline")
 
 
 class Destino(Enum):
+    """Nomeie o destino de cada PDF após identificação, normalização e gravação."""
     DESCARTADO_OUTRA_ESPECIE = "descartado (outra espécie)"
     DESCARTADO_DUPLICADO = "descartado (já existe na DBF)"
     ENVIADO_OCR = "enviado para leitura tesseract"
@@ -329,6 +330,7 @@ def _encerrar_operacao(registro: Registro, simular: bool) -> None:
 
 
 def listar_pdfs(pasta: Path) -> list[Path]:
+    """Liste somente PDFs diretamente na pasta temporária, em ordem estável."""
     if not pasta.is_dir():
         return []
     return sorted(

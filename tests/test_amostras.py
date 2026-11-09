@@ -12,3 +12,4 @@ def test_amostra_existe_e_e_um_pdf(numero):
     arquivo = AMOSTRAS / f"Decreto {numero}.pdf"
     assert arquivo.is_file(), f"amostra ausente: {arquivo}"
     assert arquivo.read_bytes()[:5] == b"%PDF-", f"não parece um PDF: {arquivo}"
+"""Proteja as regras de domínio contra regressão nas amostras reais versionadas."""

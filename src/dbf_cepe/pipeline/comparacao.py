@@ -57,6 +57,7 @@ def palavras(texto: str) -> list[str]:
 
 @dataclass(frozen=True)
 class Comparacao:
+    """Informe se dois textos são idênticos após normalização e suas diferenças."""
     lido: bool  # False: o PDF da base não tem texto legível (imagem, corrompido...)
     similaridade: float = 0.0  # 0 a 1
     so_no_ato: int = 0  # palavras do ato que não estão na base
@@ -67,6 +68,7 @@ class Comparacao:
 
     @property
     def identico(self) -> bool:
+        """Indique duplicidade somente quando ambos os textos foram lidos e iguais."""
         return self.lido and self.so_no_ato == 0 and self.so_na_base == 0
 
 
@@ -83,6 +85,7 @@ def _trecho(a: list[str], b: list[str], i1: int, i2: int, j1: int, j2: int) -> s
 
 
 def comparar_textos(texto_ato: str, texto_base: str, limite: int | None = LIMITE_DE_TRECHOS) -> Comparacao:
+    """Compare textos sem limiar: igualdade normalizada é o único caso idêntico."""
     a, b = palavras(texto_ato), palavras(texto_base)
     if not a and not b:
         return Comparacao(lido=True, similaridade=1.0)

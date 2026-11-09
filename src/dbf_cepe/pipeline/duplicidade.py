@@ -63,4 +63,5 @@ def listar_nomes(pasta_dbf: Path, permitir_vazia: bool = False) -> set[str]:
 
 
 def ja_existe(indice: set[str], nome_arquivo: str) -> bool:
+    """Consulte no índice casefoldado se o nome final já está na base."""
     return chave_nome(nome_arquivo) in indice

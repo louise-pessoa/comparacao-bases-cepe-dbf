@@ -24,6 +24,7 @@ class ErroConfiguracao(Exception):
 
 @dataclass(frozen=True)
 class Configuracao:
+    """Concentre pastas, proxy e política TLS usados pelas etapas do pipeline."""
     pasta_temp: Path  # área temporária: um ato por PDF, lido pela etapa 2
     pasta_cadernos: Path  # etapa 1: cadernos (PDF completo do dia) baixados da CEPE
     pasta_erros: Path  # revisão manual

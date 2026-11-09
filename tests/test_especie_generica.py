@@ -155,3 +155,4 @@ def test_o_decreto_define_todas_as_regras_da_especie():
     assert DECRETO.abertura_do_corpo.search("A GOVERNADORA DO ESTADO, no uso")
     assert DECRETO.abertura_do_corpo.search("O GOVERNADOR DO ESTADO, no uso")
     assert DECRETO.fim_do_cabecalho.search("DECRETA:") and DECRETO.fim_do_cabecalho.search("DECRETA :")
+"""Proteja que o pipeline use a configuração de espécie sem assumir decreto."""

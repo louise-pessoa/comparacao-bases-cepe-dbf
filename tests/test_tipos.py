@@ -169,3 +169,4 @@ def test_cabecalho_variantes(cabecalho, numero):
 )
 def test_cabecalho_que_nao_e_cabecalho(texto):
     assert identificar(texto).status is not StatusIdentificacao.IDENTIFICADO
+"""Proteja os onze tipos de decreto e a evidência declarada para cada padrão."""

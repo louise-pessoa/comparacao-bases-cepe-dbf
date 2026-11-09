@@ -780,3 +780,4 @@ def test_capturar_repassa_ssl_estrito_desligado(cfg, monkeypatch):
     monkeypatch.setattr(captura.time, "sleep", lambda s: None)
     capturar(Configuracao(**{**cfg.__dict__, "ssl_estrito": False}), DIA, DIA)
     assert recebido["ssl_estrito"] is False
+"""Proteja os limites de rede, integridade de PDF e manifesto da etapa 1."""

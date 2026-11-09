@@ -114,3 +114,4 @@ def test_pdf_com_senha_e_corrompido(tmp_path):
     leitura = ler_pdf(caminho)
     assert leitura.status is StatusLeitura.CORROMPIDO
     assert "senha" in leitura.detalhe
+"""Proteja a distinção entre PDF textual, imagem e arquivo corrompido."""

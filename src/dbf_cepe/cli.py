@@ -147,6 +147,12 @@ def catalogar_cadernos(caminho: Path, saida: Path | None = None, com_base: bool 
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Interprete os modos de captura, separação, lote e catálogo e retorne seu status.
+
+    O código 0 indica conclusão sem falhas; 1 indica falha de captura/catalogação ou
+    ato que não pôde ser gravado; 2 indica argumento inválido, configuração inválida
+    ou erro de leitura que impede o modo solicitado.
+    """
     parser = argparse.ArgumentParser(
         description="Normalização na Fonte dos atos da CEPE (DBF/SEFAZ); hoje, decretos."
     )

@@ -46,6 +46,7 @@ from dbf_cepe.regras.regras_atos import EVIDENCIA_AMOSTRA, EVIDENCIA_PRESUMIDO, 
 
 @dataclass(frozen=True)
 class Programa:
+    """Defina um programa, sua base legal, padrão de reconhecimento e evidência."""
     sigla: str
     nome: str
     base: str  # base legal, só para documentação e relatórios

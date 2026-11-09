@@ -29,6 +29,7 @@ log = logging.getLogger("pipeline")
 
 @dataclass
 class ResumoRelatorio:
+    """Acumule contagens, situações e comparações exibidas no relatório da separação."""
     cadernos: int = 0
     atos: int = 0
     avisos: int = 0  # pontos de atenção (cabeçalho suspeito, fecho ausente, repetido...)

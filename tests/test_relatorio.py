@@ -270,3 +270,5 @@ def test_decreto_reprovado_no_criterio_de_leitura_ganha_aviso(cfg, caplog):
         relatorio_dos_cadernos(cfg, PAGINA_9)
     assert "Decreto 60905.pdf | AVISO: reprovado no critério de leitura (sem fecho) em todos os níveis" in caplog.text
     assert "Decreto 60903.pdf | AVISO: reprovado" not in caplog.text
+
+"""Proteja o relatório da separação e seus avisos sem alterar arquivos indevidamente."""
