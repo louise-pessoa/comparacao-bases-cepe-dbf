@@ -199,6 +199,7 @@ O significado de cada coluna e as regras de escopo estão em [`funcionamento.md`
 ```bash
 python -m ferramentas.localizar_exemplos            # acha erratas, republicações e formatos de edital/portaria
 python -m ferramentas.regressao_separador main      # a separação dos decretos mudou em relação ao commit main?
+python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decreto a decreto
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 ```
 

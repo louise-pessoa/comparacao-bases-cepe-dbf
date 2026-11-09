@@ -48,6 +48,8 @@ python -m ferramentas.regressao_separador main
 
 - [ ] Todas as linhas dizem `IDÊNTICO` e o final é `tudo idêntico ao commit main: True`. Troque `main`
       pelo commit de antes da mudança, se estiver comparando com outro ponto.
+- [ ] Se a mudança devia alterar algum decreto, rode de novo com `--detalhes` e confira, decreto a decreto, as linhas
+      que saíram e entraram e os avisos que mudaram. O resumo final (`Mudanças: ...`) tem de bater com o esperado.
 
 ## 4. Comparação com a base real (precisa do `.env` e da base da DBF)
 
