@@ -10,8 +10,7 @@ import pytest
 
 import medir_criterio as mc
 from conftest import criar_pdf_texto
-from dbf_cepe.leitura.separador import AtoSeparado
-from dbf_cepe.regras.especies import DECRETO
+from dbf_cepe.leitura import criterio
 
 AMOSTRAS_CADERNOS = Path(__file__).parent / "amostras_cadernos"
 
@@ -25,80 +24,6 @@ FECHO = (
 )
 FECHO_ANTIGO = "PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010."
 ASSINATURA = "RAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado"
-
-
-def ato(*partes: str) -> AtoSeparado:
-    return AtoSeparado(DECRETO, "60929", CABECALHO, "\n".join(partes), 1, 1)
-
-
-def bom(*substituir: tuple[str, str]) -> AtoSeparado:
-    partes = [CABECALHO, EMENTA, ABERTURA, CORPO, FECHO, ASSINATURA]
-    for velho, novo in substituir:
-        partes = [novo if p == velho else p for p in partes]
-    return ato(*partes)
-
-
-def test_decreto_completo_e_aprovado():
-    assert mc.motivos(bom(), da_dbf=True) == []
-
-
-@pytest.mark.parametrize(
-    ("ajuste", "motivo"),
-    [
-        ((FECHO, "Recife, 25 de junho de 2026."), mc.SEM_FECHO),
-        ((FECHO, FECHO_ANTIGO), mc.FECHO_ANTIGO),
-        ((FECHO, FECHO + "\n" + FECHO), mc.FECHO_REPETIDO),
-        ((ABERTURA, "no uso das atribuições que lhe são conferidas,"), mc.SEM_ABERTURA),
-        ((CORPO, CORPO + "\nDECRETO Nº 60.930, DE 25 DE JUNHO DE 2026.\nAltera algo."), mc.OUTRO_CABECALHO),
-        ((CORPO, CORPO + "\nSECRETÁRIOS DE ESTADO\nSECRETÁRIA DE ADMINISTRAÇÃO\nFulana"), mc.EXPEDIENTE),
-        ((CORPO, CORPO + "\nCOMPANHIA EDITORA DE PERNAMBUCO\nCNPJ 10.921.252/0001-07"), mc.EXPEDIENTE),
-        ((EMENTA, "Dispõe sobre a fruição de estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."), mc.DBF_SEM_TIPO),
-    ],
-)
-def test_cada_motivo_de_reprovacao(ajuste, motivo):
-    # da_dbf=False isola o motivo: com outro cabeçalho no texto, a identificação também
-    # perde o tipo ("mais de um ato"), o que somaria "DBF sem tipo"
-    assert mc.motivos(bom(ajuste), da_dbf=motivo == mc.DBF_SEM_TIPO) == [motivo]
-
-
-def test_outro_cabecalho_num_decreto_da_dbf_tambem_perde_o_tipo():
-    colado = (CORPO, CORPO + "\nDECRETO Nº 60.930, DE 25 DE JUNHO DE 2026.\nAltera algo.")
-    assert mc.motivos(bom(colado), da_dbf=True) == [mc.OUTRO_CABECALHO, mc.DBF_SEM_TIPO]
-
-
-@pytest.mark.parametrize(
-    "abertura",
-    [
-        "A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO DE GOVERNADORA DO ESTADO, no uso das atribuições,",
-        "A VICE-GOVERNADORA, NO EXERCÍCIO DO CARGO DE GOVERNADORA DO ESTADO, no uso das atribuições,",
-        "O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA DO ESTADO DE PERNAMBUCO, NO EXERCÍCIO DO CARGO DE\n"
-        "GOVERNADOR DO ESTADO, no uso das atribuições,",
-        "O GOVERNADOR DO ESTADO, no uso das atribuições,",
-    ],
-)
-def test_abertura_de_quem_substitui_o_titular_e_aceita(abertura):
-    assert mc.motivos(bom((ABERTURA, abertura)), da_dbf=True) == []
-
-
-def test_sem_tipo_so_reprova_decreto_da_dbf():
-    sem_tipo = (EMENTA, "Abre ao Orçamento Fiscal crédito suplementar.")
-    assert mc.motivos(bom(sem_tipo), da_dbf=False) == []
-    assert mc.motivos(bom(sem_tipo), da_dbf=True) == [mc.DBF_SEM_TIPO]
-
-
-def test_cabecalho_citado_no_meio_da_linha_nao_reprova():
-    citacao = CORPO + "\nconforme o DECRETO Nº 60.930, DE 25 DE JUNHO DE 2026."
-    assert mc.motivos(bom((CORPO, citacao)), da_dbf=False) == []
-
-
-def test_abertura_so_conta_perto_do_cabecalho():
-    longe = "x" * 2000 + "\n" + ABERTURA
-    assert mc.motivos(bom((ABERTURA, longe)), da_dbf=False) == [mc.SEM_ABERTURA]
-
-
-def test_varios_motivos_juntos():
-    reprovado = bom((FECHO, FECHO_ANTIGO), (ABERTURA, "sem abertura aqui,"))
-    assert mc.motivos(reprovado, da_dbf=False) == [mc.FECHO_ANTIGO, mc.SEM_ABERTURA]
 
 
 @pytest.mark.parametrize(
@@ -125,7 +50,7 @@ def test_medir_agrupa_por_ano_e_procura_nas_subpastas(tmp_path):
     assert falhas == []
     assert (anos["2026"].decretos, anos["2026"].reprovados, anos["2026"].dbf) == (2, 0, 2)
     assert (anos["2010"].reprovados, anos["2010"].dbf_reprovados) == (1, 1)
-    assert anos["2010"].motivos == {mc.FECHO_ANTIGO: 1}
+    assert anos["2010"].motivos == {criterio.FECHO_ANTIGO: 1}
     assert anos["2010"].exemplos == ["20100319_PoderExecutivo.pdf p. 1 | Decreto 34716 (DBF) | fecho antigo"]
 
 

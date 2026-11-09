@@ -76,6 +76,7 @@ def test_decreto_usa_exatamente_os_padroes_de_regras_atos():
     assert DECRETO.cabecalho is ra.CABECALHO_DECRETO
     assert DECRETO.fecho is ra.FECHO_DECRETO
     assert DECRETO.abertura_do_corpo is ra.ABERTURA_DO_CORPO_DECRETO
+    assert DECRETO.fechos_anteriores == (ra.FECHO_ANTIGO_DECRETO,)
     assert especies.NOMES_OUTRAS_ESPECIES is ra.NOMES_OUTRAS_ESPECIES
 
 

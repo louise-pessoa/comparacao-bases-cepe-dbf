@@ -199,6 +199,8 @@ def test_numero_repetido_no_caderno_grava_so_o_primeiro(cfg, tmp_path, monkeypat
         "DECRETO Nº 60.777, DE 25 DE JUNHO DE 2026.\nConcede estímulo previsto na Lei nº 11.675, "
         "de 11 de outubro de 1999, que dispõe sobre o PRODEPE, à empresa X.\n"
         "A GOVERNADORA DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Fica concedido.\n"
+        "Palácio do Campo das Princesas, Recife, 25 de junho do ano de 2026, 210º da Revolução "
+        "Republicana Constitucionalista e 204º da Independência do Brasil.\n"
     )
     ato = AtoSeparado(DECRETO, "60777", "DECRETO Nº 60.777", texto, 1, 1)
     monkeypatch.setattr(
@@ -262,3 +264,9 @@ def test_cli_combinacoes_invalidas(argumentos):
     with pytest.raises(SystemExit) as saida:
         main(argumentos)
     assert saida.value.code == 2
+
+def test_decreto_reprovado_no_criterio_de_leitura_ganha_aviso(cfg, caplog):
+    with caplog.at_level(logging.INFO, logger="pipeline"):
+        relatorio_dos_cadernos(cfg, PAGINA_9)
+    assert "Decreto 60905.pdf | AVISO: reprovado no critério de leitura (sem fecho) em todos os níveis" in caplog.text
+    assert "Decreto 60903.pdf | AVISO: reprovado" not in caplog.text

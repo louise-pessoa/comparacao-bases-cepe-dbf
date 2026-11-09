@@ -97,6 +97,14 @@ python -m ferramentas.localizar_exemplos
 - [ ] `dados\exemplos\relatorio.txt` abre com `200 página(s)/trecho(s) para olhar.` e
       `Erratas por ato referido: Despacho 4, Portaria 3, ? 3, Edital 1, Decreto 1, Termo de fomento 1`.
 
+## 7b. Critério da leitura em cascata
+
+```powershell
+python -m ferramentas.medir_criterio dados\cadernos
+```
+
+- [ ] Nos 5 cadernos de referência, a linha `2026` mostra `73` decretos, `0` reprovados e `0` da DBF reprovados.
+
 ## 8. Republicação, em pastas de teste (nunca no G:)
 
 Os decretos 47.206 e 47.207 (PRODEPE) saíram em 19/03/2019 e de novo em 22/03/2019. As variáveis abaixo valem só para

@@ -27,6 +27,7 @@ from dbf_cepe.regras.regras_atos import (
     EVIDENCIA_AMOSTRA,  # noqa: F401 (reexportado: testes importam daqui)
     EVIDENCIA_PRESUMIDO,
     EVIDENCIA_PUBLICADO,  # noqa: F401 (reexportado)
+    FECHO_ANTIGO_DECRETO,
     FECHO_DECRETO,
     NOMES_OUTRAS_ESPECIES,  # noqa: F401 (reexportado: separador e identificador)
     ORGAOS_EDITAL_SEFAZ,
@@ -71,6 +72,9 @@ class Especie:
     tipos: tuple[Tipo, ...] = ()
     # Fecho que encerra o texto do ato, antes das assinaturas (separador).
     fecho: re.Pattern[str] | None = None
+    # Fechos usados em anos anteriores (no decreto, o de até 2010). Hoje só servem para o
+    # critério da leitura em cascata dizer por que um ato reprovou (leitura/criterio.py).
+    fechos_anteriores: tuple[re.Pattern[str], ...] = ()
     # Cargo de quem assina o ato, em linha própria (separador).
     cargo_assinante: re.Pattern[str] | None = None
     # Primeira frase depois da ementa: delimita a ementa (identificador) e
@@ -191,6 +195,7 @@ DECRETO = Especie(
     tipos=TIPOS_DECRETO,
     # "... e a Independência do Brasil." encerra o texto, antes das assinaturas.
     fecho=FECHO_DECRETO,
+    fechos_anteriores=(FECHO_ANTIGO_DECRETO,),
     cargo_assinante=re.compile(r"^Governador(?:a)? do Estado$"),
     # "A GOVERNADORA DO ESTADO, no uso das atribuições..." vem logo após a ementa.
     abertura_do_corpo=ABERTURA_DO_CORPO_DECRETO,
