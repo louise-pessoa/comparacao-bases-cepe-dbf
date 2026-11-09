@@ -28,6 +28,7 @@ from fpdf import FPDF
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.leitura.separador import AtoSeparado
+from dbf_cepe.pipeline.publicacao import Publicacao, metadados
 
 PASTA_FONTES = Path(__file__).resolve().parents[1] / "recursos" / "fontes"
 FONTE_REGULAR = "LiberationSans-Regular.ttf"
@@ -69,6 +70,9 @@ def _montar_pdf(ato: AtoSeparado, pasta_fontes: Path) -> FPDF:
     pdf.add_font("Liberation", "", str(regular))
     pdf.add_font("Liberation", "B", str(negrito))
     pdf.set_title(f"{ato.especie.nome} {ato.numero}")
+    if ato.data_publicacao is not None and ato.caderno:
+        # A data do caderno acompanha o ato até a etapa 5 (ver publicacao.py).
+        pdf.set_keywords(metadados(Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial)))
     pdf.add_page()
     for posicao, linha in enumerate(ato.texto.split("\n")):
         if not linha.strip():
