@@ -133,10 +133,22 @@ CABECALHO_DECRETO = re.compile(
 INICIO_DECRETO = re.compile(r"(?m)^[ \t]*DECRETO\b")
 
 # Primeira frase depois da ementa: delimita a ementa e confirma que o cabeçalho
-# abre um ato e não é uma citação.
-ABERTURA_DO_CORPO_DECRETO = re.compile(r"\b(?:A GOVERNADORA|O GOVERNADOR)\b")
+# abre um ato e não é uma citação. Quem substitui o titular abre com o próprio cargo
+# ("A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO DE GOVERNADORA DO ESTADO", "O PRESIDENTE
+# DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR DO ESTADO"); a
+# abertura começa no artigo ("A"/"O") desse cargo. Decisão de 09/11/2026.
+ABERTURA_DO_CORPO_DECRETO = re.compile(
+    r"\b(?:A GOVERNADORA|O GOVERNADOR"
+    r"|[AO]\s+[A-ZÀ-Ú][A-ZÀ-Ú\s,.-]{0,150}?NO\s+EXERC[ÍI]CIO\s+DO\s+CARGO\s+DE\s+GOVERNADORA?)\b"
+)
 # "... e a Independência do Brasil." encerra o texto do decreto, antes das assinaturas.
 FECHO_DECRETO = re.compile(r"Independência\s+do\s+Brasil\.", re.IGNORECASE)
+# Fecho dos decretos até 2010 (a troca foi entre set/2010 e mar/2012), sem a menção à
+# Independência: "PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.".
+FECHO_ANTIGO_DECRETO = re.compile(
+    r"PAL[ÁA]CIO\s+DO\s+CAMPO\s+DAS\s+PRINCESAS,\s+em\s+\d{1,2}\s*[º°o]?\s+de\s+[a-zç]+\s+de\s+\d{4}\.",
+    re.IGNORECASE,
+)
 
 
 def _inicio(expressao: str) -> re.Pattern[str]:

@@ -160,3 +160,21 @@ def test_pdf_com_mais_de_um_ato_vai_para_revisao():
 
 def test_normalizar_espacos():
     assert normalizar_espacos("  a \n\n b\t c ") == "a b c"
+
+
+def test_ementa_termina_na_abertura_de_quem_substitui_o_titular():
+    from dbf_cepe.leitura.identificador import identificar
+
+    for abertura in (
+        "A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO DE GOVERNADORA DO ESTADO, no uso das atribuições,",
+        "O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA DO ESTADO DE PERNAMBUCO, NO EXERCÍCIO DO CARGO DE\n"
+        "GOVERNADOR DO ESTADO, no uso das atribuições,",
+    ):
+        texto = (
+            "DECRETO Nº 58.252, DE 17 DE MARÇO DE 2025.\nAutoriza a utilização do incentivo do PROIND.\n"
+            f"{abertura}\nDECRETA:\nArt. 1º Fica autorizado."
+        )
+        ident = identificar(texto)
+        assert ident.tipo is not None and ident.tipo.nome == "AUTORIZACAO_PROIND"
+        assert ident.detalhe.startswith("ementa: 'Autoriza a utilização do incentivo do PROIND.")
+        assert "VICE" not in ident.detalhe and "PRESIDENTE" not in ident.detalhe

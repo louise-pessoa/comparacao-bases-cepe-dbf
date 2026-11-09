@@ -109,8 +109,9 @@ O lote decide o nome final de novo, com a base daquele momento. **Caderno sem da
 base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
-fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada e programa
-citado só no corpo do decreto.
+fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
+citado só no corpo do decreto e decreto reprovado no critério da leitura em cascata (`reprovado no critério de leitura
+(sem fecho) em todos os níveis; revisão manual`; ver [`funcionamento.md`](funcionamento.md#leitura-em-cascata)).
 
 ### `--comparar`
 
@@ -208,7 +209,8 @@ python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano
 - `regressao_separador` extrai um commit antigo e compara, caderno a caderno, os decretos separados. Sai com código 1 se
   algum diferir.
 - `medir_criterio` só lê. Procura PDFs nas pastas (e subpastas) dadas, aplica o critério de aprovação da leitura em
-  cascata a cada decreto e mostra, por ano do caderno, quantos reprovam e por quê (`fecho antigo`, `sem fecho`,
+  cascata a cada decreto e mostra, por ano do caderno, quantos foram recuperados por um nível da cascata e quantos
+  reprovam, e por quê (`fecho antigo`, `sem fecho`,
   `fecho repetido`, `sem abertura`, `outro cabeçalho`, `expediente`, `DBF sem tipo`), com alguns exemplos. `--json
   ARQUIVO` grava tudo; `--exemplos N` muda quantos exemplos aparecem por ano. Sai com código 1 se algum caderno não
   puder ser lido. Critério e motivos: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).

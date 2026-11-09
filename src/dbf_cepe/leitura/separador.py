@@ -64,6 +64,37 @@ PADROES_TOPO_DE_PAGINA: tuple[re.Pattern[str], ...] = (
 )
 LINHAS_DE_TOPO = 4
 
+# Expediente do Diário: o quadro com governador(a), vice, secretários, preços de
+# publicação e endereço da CEPE, impresso uma vez por caderno. Quando ele divide a página
+# com um decreto, o texto do quadro entra no meio do decreto (em todos os anos, até 2026).
+# Ele é localizado pelas linhas típicas abaixo e removido pela POSIÇÃO: toda linha da
+# página que cai dentro do retângulo dessas linhas sai do texto. Só age se a página tiver
+# pelo menos `MINIMO_DE_MARCAS_DO_EXPEDIENTE` tipos de marca (de 7), entre eles o nome da CEPE e
+# o cargo de governador(a) em linha própria; o rodapé de certificação digital da capa
+# ("COMPANHIA EDITORA DE PERNAMBUCO" com o texto da MP 2.200-2) não basta.
+MARCAS_DO_EXPEDIENTE: dict[str, re.Pattern[str]] = {
+    "governador": re.compile(r"^\s*GOVERNADORA?\s*$"),
+    "vice": re.compile(r"^\s*VICE[- ]?GOVERNADORA?\s*$"),
+    "secretarios": re.compile(r"^\s*SECRET\S{1,2}RIOS\s+DE\s+ESTADO\s*$"),
+    "cepe": re.compile(r"^\s*COMPANHIA\s+EDITORA\s+DE\s+PERNAMBUCO\s*$"),
+    "contato": re.compile(r"(?:ouvidoria|cepecom|comercial)@cepe\.com\.br", re.IGNORECASE),
+    "diretoria": re.compile(r"^\s*DIRETORA?\s+PRESIDENTE\s*$"),
+    # Título do quadro, em maiúsculas (o cabeçalho de página é "Diário Oficial do Estado de
+    # Pernambuco - Poder Executivo", em minúsculas, e já sai antes).
+    "titulo": re.compile(r"^\s*DI\S{1,2}RIO\s+OFICIAL\s*-\s*PODER\s+EXECUTIVO\s*$"),
+}
+MINIMO_DE_MARCAS_DO_EXPEDIENTE = 4
+_ATE_O_VICE = 3  # linhas entre "GOVERNADOR(A)" e "VICE-GOVERNADOR(A)" no quadro (o nome fica no meio)
+# Trechos que só existem no expediente: se algum sobrar no texto de um ato (quadro não
+# removido), o critério da leitura em cascata reprova o ato (leitura/criterio.py). São
+# linhas inteiras em maiúsculas, como no quadro: "Secretários de Estado" e "Diretor
+# Presidente da EPTI" no corpo de um decreto não contam.
+TRECHO_DO_EXPEDIENTE = re.compile(
+    r"^[ \t]*(?:COMPANHIA\s+EDITORA\s+DE\s+PERNAMBUCO|SECRET\S{1,2}RIOS\s+DE\s+ESTADO|DIRETOR\s+PRESIDENTE)[ \t]*$"
+    r"|Quaisquer\s+reclama[çc][õo]es\s+sobre\s+mat[ée]rias\s+publicadas",
+    re.MULTILINE,
+)
+
 # Linha de assinatura: nome em maiúsculas. O cargo de quem assina (no decreto,
 # "Governadora do Estado") é da espécie: `Especie.cargo_assinante`.
 _LINHA_ASSINATURA = re.compile(r"^[A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-Þ'’.\- ]{2,}$")
@@ -112,6 +143,10 @@ class AtoSeparado:
     # do caderno. None quando o ato não veio de um caderno com data no nome.
     data_publicacao: date | None = None
     caderno: str | None = None
+    # Leitura em cascata (leitura/cascata.py): o nível que aprovou o ato (1 = leitura
+    # atual) ou None se nenhum aprovou; nesse caso, `reprovacao` diz por quê.
+    nivel_de_leitura: int | None = 1
+    reprovacao: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,11 +165,56 @@ def _regex_marcadores(especies: tuple[Especie, ...]) -> re.Pattern[str]:
     return re.compile(rf"(?m)^[ \t]*(?:{alternativas})\b")
 
 
+def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
+    """As linhas da página sem as que caem no quadro do expediente do Diário (ver
+    MARCAS_DO_EXPEDIENTE). Sem expediente, ou se a posição das linhas não puder ser
+    conferida, devolve as linhas como vieram."""
+    if not any(MARCAS_DO_EXPEDIENTE["cepe"].match(linha) for linha in linhas):
+        return linhas  # atalho: quase nenhuma página tem o quadro
+    # (texto da linha, caixa da linha, caixa do bloco de texto em que ela está)
+    itens = [
+        ("".join(trecho["text"] for trecho in linha["spans"]), linha["bbox"], bloco["bbox"])
+        for bloco in pagina.get_text("dict")["blocks"]
+        if bloco["type"] == 0
+        for linha in bloco["lines"]
+    ]
+    if [texto for texto, _, _ in itens] != linhas:
+        return linhas  # a posição não corresponde ao texto extraído: não arrisca
+    marcadas = {
+        marca: [i for i, (texto, _, _) in enumerate(itens) if padrao.search(texto)]
+        for marca, padrao in MARCAS_DO_EXPEDIENTE.items()
+    }
+    # "GOVERNADOR(A)" sozinho na linha também aparece na assinatura de outros atos; no
+    # quadro, ele vem seguido (até 3 linhas depois) de "VICE-GOVERNADOR(A)". Só esse par conta.
+    vice = set(marcadas["vice"])
+    marcadas["governador"] = [
+        i for i in marcadas["governador"] if any(j in vice for j in range(i + 1, i + 1 + _ATE_O_VICE))
+    ]
+    marcadas["vice"] = [
+        j for j in marcadas["vice"] if any(j - k in marcadas["governador"] for k in range(1, 1 + _ATE_O_VICE))
+    ]
+    tipos = sum(bool(posicoes) for posicoes in marcadas.values())
+    if tipos < MINIMO_DE_MARCAS_DO_EXPEDIENTE or not marcadas["cepe"] or not marcadas["governador"]:
+        return linhas
+    # O quadro é o retângulo dos BLOCOS de texto das marcas: as linhas das marcas são
+    # curtas e deixariam de fora preços e avisos que ficam ao lado delas.
+    caixas = [itens[i][2] for posicoes in marcadas.values() for i in posicoes]
+    x0, y0 = min(c[0] for c in caixas), min(c[1] for c in caixas)
+    x1, y1 = max(c[2] for c in caixas), max(c[3] for c in caixas)
+
+    def dentro(caixa: tuple[float, float, float, float]) -> bool:
+        cx, cy = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
+        return x0 <= cx <= x1 and y0 <= cy <= y1
+
+    return [texto for texto, caixa, _ in itens if not dentro(caixa)]
+
+
 def _linhas_da_pagina(pagina: pymupdf.Page) -> list[str]:
     linhas = pagina.get_text("text").split("\n")
     # `get_text` termina com "\n": o último elemento é vazio.
     if linhas and linhas[-1] == "":
         linhas.pop()
+    linhas = _sem_expediente(pagina, linhas)
     topo = [
         i
         for i, linha in enumerate(linhas[:LINHAS_DE_TOPO])

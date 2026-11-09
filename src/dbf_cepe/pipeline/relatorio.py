@@ -19,6 +19,7 @@ from dbf_cepe.pipeline.publicacao import Publicacao, hash_do_texto
 from dbf_cepe.pipeline.registro import Registro
 from dbf_cepe.pipeline.republicacao import Acao, planejar
 from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
+from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
 from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, separar_caderno
@@ -76,7 +77,9 @@ def _relatar_caderno(
     comparar: bool = False,
     contexto: ContextoDaGravacao | None = None,
 ) -> None:
-    resultado = separar_caderno(caderno)
+    # Cada ato passa pelo critério da leitura em cascata; o reprovado em todos os níveis
+    # sai com um aviso (revisão manual).
+    resultado = aplicar_cascata(separar_caderno(caderno), caderno)
     log.info(
         "%s: %d página(s), %d ato(s) encontrado(s).",
         caderno.name, resultado.paginas, len(resultado.atos),

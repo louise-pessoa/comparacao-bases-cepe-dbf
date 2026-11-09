@@ -41,6 +41,12 @@ terminam no meio delas.
 - Citações a outros decretos no corpo do texto nunca são confundidas com cabeçalho.
 - Cabeçalhos e rodapés de página do Diário são removidos, e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
   o texto do decreto 60929 extraído do caderno de 26/06/2026 é idêntico ao do PDF avulso da DBF.
+- O **expediente do Diário** (o quadro com governador(a), vice, secretários, preços e endereço da CEPE, impresso uma vez
+  por caderno) é removido pela posição: o quadro é localizado pelas linhas típicas dele (`MARCAS_DO_EXPEDIENTE`; pelo
+  menos 4 tipos, entre eles o nome da CEPE e o par "GOVERNADOR(A)"/"VICE-GOVERNADOR(A)"), e toda linha da página que
+  cai no retângulo dos blocos dessas linhas sai do texto. Antes, quando ele dividia a página com um decreto, entrava no
+  meio do texto (ex.: Decreto 57.317/2024, da DBF). Nos cadernos de referência de 2026, isso só muda os decretos 61.563
+  e 61.566, fora da DBF. *Decisão de 09/11/2026.*
 - Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o
   nome do caderno. Com `--gravar`, os dois vão nos metadados do PDF de pendentes (campo Keywords) e acompanham o decreto
   até a etapa 5. O `manifesto.json` não é usado para isso.
@@ -207,8 +213,8 @@ pipeline lê corretamente os cadernos de **2020 em diante**; de julho a novembro
 | 2012 a jun/2019 | **Ordem das colunas:** o PyMuPDF entrega o texto fora da ordem de leitura; um decreto é cortado no meio e o final cai no bloco do vizinho | 10% a 20% dos decretos; 2 a 5 da DBF por ano (ex.: Decreto 47.225, 22/03/2019) |
 | até 2010 (mudou entre set/2010 e mar/2012) | **Fecho antigo** `PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.`, sem "Independência do Brasil." | todos os decretos de 2010 |
 | 2010 | **Ementas antigas:** "Introduz modificações no Decreto ..., que concede incentivo do PRODEPE" e "Dispõe sobre a fruição de estímulo ... PRODEPE" | 4 de 36 decretos da DBF sem tipo |
-| todos os anos, até 2026 | **Expediente do Diário** (lista de secretários, preços, endereço da CEPE) entra no texto do decreto da mesma página | 3 a 9 decretos por ano; cerca de 1 da DBF (ex.: Decreto 57.317, 2024) |
-| 2019 e 2025 | Abertura **"A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO..."** | só aviso; o tipo é reconhecido |
+| todos os anos, até 2026 | **Expediente do Diário** (lista de secretários, preços, endereço da CEPE) entrava no texto do decreto da mesma página | resolvido em 09/11/2026 (ver "Separação"); sobram 6 casos em 2014, 2018 e 2019, junto com o problema das colunas |
+| 2012, 2019 e 2025 | Abertura de quem substitui o titular: **"A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO..."**, **"O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR"** | aceita desde 09/11/2026 |
 
 Os buracos na numeração das amostras não são do separador: os números que faltam não aparecem em nenhum caderno
 baixado, o que bate com Extras ausentes do S3.
@@ -217,21 +223,49 @@ baixado, o que bate com Extras ausentes do S3.
 "Dispõe sobre a fruição de estímulo" (Decreto 34.733/2010, que no artigo 1º concede o estímulo) como **concessão**.
 Ainda não aplicadas.
 
-*Decisão de 09/11/2026:* a abertura de quem substitui o titular ("A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO DE
-GOVERNADORA DO ESTADO", "O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR DO ESTADO") é
-aceita. Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU AS
-SEGUINTES PORTARIAS:") vai para revisão manual.
+*Decisões de 09/11/2026:* a abertura de quem substitui o titular é aceita (`ABERTURA_DO_CORPO_DECRETO`, em
+`regras_atos.py`). Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU
+AS SEGUINTES PORTARIAS:") vai para revisão manual. O decreto reprovado em todos os níveis da cascata vai para revisão
+manual.
 
-**Proposta, não implementada:** uma cascata de leituras por decreto. Primeiro a leitura atual; se o decreto reprovar (fecho
-ausente ou repetido, abertura ausente, outro cabeçalho ou expediente dentro, ou tipo não reconhecido sendo da DBF), tenta
-o fecho antigo e depois a leitura por coluna das páginas dele; se nenhuma aprovar, vai para revisão manual. A leitura
-por coluna sozinha corrige o corte (2016 a 2019: de 12 a 14 decretos cortados por ano para 0), mas embaralha ementas e
-muda o texto dos anos bons, então só pode entrar como recuperação.
+### Leitura em cascata
 
-**Medição do critério (etapa A da cascata):** `python -m ferramentas.medir_criterio` aplica o critério à leitura atual.
-Nas amostras de 06/11/2026, de 2020 a 2026 só o expediente reprova (2 decretos em 73 nos cadernos de referência de
-2026, nenhum da DBF); de 2012 a 2019, 15% a 25% dos decretos reprovam, quase todos por `sem fecho` ou `fecho repetido`
-(colunas fora de ordem); em 2010, todos reprovam por `fecho antigo`.
+Cada decreto passa por um **critério de aprovação** (`leitura/criterio.py`); se reprovar, é relido no nível seguinte
+(`leitura/cascata.py`), até algum aprovar. O decreto aprovado no nível 1 sai exatamente como o separador o entrega.
+
+Critério (um decreto só passa se cumprir tudo):
+
+- o fecho da espécie aparece exatamente uma vez. Sem ele, o motivo é `fecho antigo` se houver o fecho de até 2010
+  (`Especie.fechos_anteriores`), senão `sem fecho`; duas ou mais vezes, `fecho repetido`;
+- a abertura do corpo vem nos primeiros 1.800 caracteres;
+- não há outro cabeçalho da espécie no início de uma linha do texto (`outro cabeçalho`);
+- não sobra trecho do expediente do Diário (`expediente`: linhas inteiras em maiúsculas do quadro, como "COMPANHIA
+  EDITORA DE PERNAMBUCO" ou "SECRETÁRIOS DE ESTADO"; "Secretários de Estado" no corpo do ato não conta);
+- se for de programa da DBF, o tipo é reconhecido (`DBF sem tipo`).
+
+| Nível | Leitura | Situação |
+|---|---|---|
+| 1 | leitura atual do separador | implementado (etapa B) |
+| 2 | fecho de até 2010 | etapa C |
+| 3 | leitura por coluna, só nas páginas do decreto | etapa D |
+| — | nenhum aprovou | o decreto fica com `nivel_de_leitura=None`, os motivos em `reprovacao` e o aviso "reprovado no critério de leitura (...) em todos os níveis; revisão manual" |
+
+Hoje (etapa B) a cascata só marca: o `--separar` mostra o aviso, mas o reprovado ainda segue para pendentes com
+`--gravar`. A etapa E muda isso.
+
+`python -m ferramentas.medir_criterio` aplica o critério e os níveis e mostra, por ano, quantos decretos foram
+recuperados e quantos ficam reprovados. Medição de 09/11/2026 nas amostras da sondagem:
+
+| Ano | Decretos | Reprovados | Da DBF reprovados | Motivos |
+|---|---|---|---|---|
+| 2020 a 2026 | 1.195 | 0 | 0 | — |
+| 2019 | 263 | 16 | 5 | sem fecho 11, fecho repetido 3, sem abertura 1, expediente 1 |
+| 2014 a 2018 | 408 | 73 | 13 | sem fecho 51, fecho repetido 20, expediente 5, sem abertura 2 |
+| 2012 | 104 | 22 | 3 | sem fecho 20, fecho repetido 2 |
+| 2010 | 145 | 145 | 36 | fecho antigo 143, DBF sem tipo 4, sem fecho 2, sem abertura 1 |
+
+A leitura por coluna sozinha corrige o corte (2016 a 2019: de 12 a 14 decretos cortados por ano para 0), mas embaralha
+ementas e muda o texto dos anos bons, então só pode entrar como nível de recuperação.
 
 ### Modelos e evidência dos tipos
 
