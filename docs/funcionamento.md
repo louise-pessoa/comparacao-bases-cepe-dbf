@@ -41,6 +41,9 @@ terminam no meio delas.
 - Citações a outros decretos no corpo do texto nunca são confundidas com cabeçalho.
 - Cabeçalhos e rodapés de página do Diário são removidos, e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
   o texto do decreto 60929 extraído do caderno de 26/06/2026 é idêntico ao do PDF avulso da DBF.
+- Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o
+  nome do caderno. Com `--gravar`, os dois vão nos metadados do PDF de pendentes (campo Keywords) e acompanham o decreto
+  até a etapa 5. O `manifesto.json` não é usado para isso.
 - Como o recorte de página não serve, o PDF de cada decreto é gerado de novo a partir do texto, em Liberation Sans, só
   com título e linhas. Antes de ser guardado, ele é relido, e o texto e o número precisam bater, senão nada é gravado.
   Esse PDF é intermediário; o layout da DBF vem na etapa 4.
@@ -80,24 +83,26 @@ Não foi alterado, para a comparação com a base não regredir; o catálogo mar
 - PDF com cabeçalho em texto (20 caracteres ou mais) e corpo em imagem não é detectado como digitalizado: é lido como
   texto, não casa com nenhum cabeçalho e vai para `dados/erros`.
 
-### Etapa 3: duplicidade
+### Etapa 3: duplicidade e republicação
 
-- O arquivo é comparado com a pasta da DBF pelo nome `Decreto {numero}.pdf` (número sem separador de milhar). Se já
-  existir, o PDF temporário é descartado.
+- PDF **com** data de publicação (veio de `--separar --gravar` com caderno datado): vale a regra de republicação (seção
+  [Republicação](#republicação)). Uma republicação nunca é descartada só por ter o número de um arquivo da base.
+- PDF **sem** data (posto à mão em pendentes): regra antiga. O nome `Decreto {numero}.pdf` (número sem separador de
+  milhar) é comparado com a pasta da DBF; se já existir, o PDF é descartado. Um PDF repetido no mesmo lote vai para
+  revisão manual.
 - A base é tratada como pasta plana (sem subpastas). Maiúsculas e minúsculas não diferenciam nomes, porque a base fica
   no Windows.
-- Um PDF inédito repetido no mesmo lote vai para revisão manual.
 
 **Limitações:**
 
-- Decretos republicados ou com errata têm o mesmo número do original. Pela regra atual (comparação estrita por número),
-  a republicação seria tratada como duplicada e descartada.
+- Errata continua fora: tem o número do ato referido, mas não é separada como decreto.
 - A checagem de pastas sobrepostas compara caminhos já resolvidos, sem diferenciar maiúsculas. A mesma pasta acessada por
   dois caminhos de natureza diferente (por exemplo, `G:` e um caminho de rede UNC) não é detectada.
 
 ### Etapa 4: normalização
 
-Cada decreto inédito é recriado em `dados/normalizados/Decreto {numero}.pdf` com o layout dos decretos da DBF:
+Cada decreto inédito é recriado em `dados/normalizados/` (com o nome final, que numa republicação tem sufixo) com o
+layout dos decretos da DBF:
 
 - fonte de 12 pontos, Liberation Serif (mesmas medidas da Times New Roman, que é proprietária e não pode ser
   versionada);
@@ -133,10 +138,90 @@ O PDF normalizado vai para a pasta da DBF como `Decreto {numero}.pdf`:
    sobrescrito. O arquivo final é relido.
 4. O original de `dados/pendentes` e a cópia de `dados/normalizados` só são apagados depois dessa conferência.
 
-- Se alguém salvou o mesmo decreto durante o lote, o original é descartado como duplicado.
+- Numa republicação, o nome final pode ter sufixo (`Decreto N (republicação).pdf`), e a conferência do passo 1 compara
+  o número lido do texto com o nome sem sufixo. Se for preciso renomear arquivos da base antes (publicação mais
+  antiga que a gravada), as renomeações vêm antes do passo 2 e são desfeitas se qualquer passo falhar.
+- Se alguém salvou o mesmo decreto durante o lote, o original é descartado como duplicado (PDF sem data). Com data, o
+  PDF fica em pendentes para o próximo lote, porque o nome tomado não prova que é a mesma publicação.
 - Se o conteúdo gravado não conferir, o arquivo sai da base e o original vai para `dados/erros`.
 - O `.part` é o único arquivo temporário na pasta sincronizada com o Drive e só existe durante a cópia.
 - Falhas de acesso e o que fazer: [`uso.md`](uso.md#lote-etapas-2-a-5).
+
+## Republicação
+
+Um decreto pode sair mais de uma vez com o mesmo número ("republicado por haver saído com incorreção", ou repetido na
+Extra). *Decisões de 06/11/2026:*
+
+| Situação | Resultado |
+|---|---|
+| Número que a base não tem | `Decreto N.pdf` |
+| Publicação mais nova de um número já gravado, texto diferente | `Decreto N (republicação).pdf`; a próxima, `Decreto N (republicação 2).pdf`, e assim por diante |
+| Publicação mais antiga que a já gravada | os arquivos da base são renomeados um passo adiante e a que chega fica com `Decreto N.pdf` |
+| Texto idêntico ao de uma publicação já gravada (qualquer data) | duplicata: não grava, só anota no registro |
+| Mesmo dia, edição normal e Extra | a normal conta como a mais antiga; no mesmo caderno, vale a página |
+| Arquivo da base sem registro, texto idêntico (critério de `comparacao.py`) | duplicata |
+| Arquivo da base sem registro, texto diferente | PDF normalizado em `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`; nada muda na base |
+| A mesma publicação (data, caderno e página) já no registro | ignorada: rodar o lote de novo não muda nada |
+
+- **Duas passagens no lote.** A primeira lê a data de publicação de cada PDF de pendentes e ordena o lote; a segunda
+  decide o nome (`pipeline/republicacao.py`) antes de gerar e gravar.
+- **Texto idêntico** = mesmo hash do texto normalizado (`pipeline/publicacao.py`), que usa os mesmos elementos da
+  comparação: espaços, quebras de linha, ligaduras e aspas curvas não contam.
+- **Arquivo "do número" na base** inclui nomes fora do padrão que começam pelo nome padrão (`Decreto 61055 (1).pdf`,
+  `Decreto 61055-A.pdf`, mas não `Decreto 610551.pdf`). Como não constam do registro, caem na conferência manual.
+- **Nomes parametrizáveis:** os sufixos ficam na `Especie` (`sufixo_republicacao`, `sufixo_republicacao_n`,
+  `sufixo_conferir`).
+
+### Registro de publicações
+
+`dados/registro_publicacoes.json` (fora do Git; `REGISTRO_PUBLICACOES` no `.env`) guarda, para cada publicação que passou
+pela etapa 3 com data: espécie, número, data de publicação, caderno, página, hash do texto, nome do arquivo e situação
+(`gravado`, `duplicata` ou `conferir duplicata`). É com ele que o lote sabe a data de cada arquivo da base.
+
+- Escrita atômica (arquivo `.tmp`, gravação forçada no disco e troca de nome): uma queda no meio deixa o registro
+  anterior.
+- Registro ilegível interrompe o programa sem tocar em nada, até alguém restaurar ou apagar o arquivo.
+- Antes de renomear ou gravar na base, a operação é anotada no registro (`operacao_em_andamento`). Na próxima execução,
+  o programa compara os arquivos da base com cada passo da operação: se tudo foi feito, conclui o registro; se parou no
+  meio, desfaz as renomeações; se nada confere, pede conferência manual.
+
+**Limitações:**
+
+- Um texto idêntico mais antigo que chega depois de um mais novo é descartado, e o arquivo gravado fica com a data da
+  publicação mais nova.
+- Texto cortado ou com o expediente do Diário misturado (seção seguinte) muda o hash e pode gerar uma republicação ou um
+  "conferir" falso.
+- O registro é local: duas máquinas rodando lotes teriam registros diferentes.
+- Duplicata idêntica ao arquivo da base, barrada já no `--separar --gravar`, não entra no registro (só as descartadas
+  pelo lote entram).
+- O mesmo número duas vezes na mesma página de um caderno colide em pendentes.
+
+## Cadernos antigos (ano-limite)
+
+Sondagem de 06/11/2026: amostra do S3 (Executivo e Extra), duas janelas de 10 dias úteis por ano, de 2010 a 2025. O
+pipeline lê corretamente os cadernos de **2020 em diante**; de julho a novembro de 2019 a amostra também saiu limpa, mas
+é pequena.
+
+| Período | Problema | Na amostra |
+|---|---|---|
+| 2012 a jun/2019 | **Ordem das colunas:** o PyMuPDF entrega o texto fora da ordem de leitura; um decreto é cortado no meio e o final cai no bloco do vizinho | 10% a 20% dos decretos; 2 a 5 da DBF por ano (ex.: Decreto 47.225, 22/03/2019) |
+| até 2010 (mudou entre set/2010 e mar/2012) | **Fecho antigo** `PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.`, sem "Independência do Brasil." | todos os decretos de 2010 |
+| 2010 | **Ementas antigas:** "Introduz modificações no Decreto ..., que concede incentivo do PRODEPE" e "Dispõe sobre a fruição de estímulo ... PRODEPE" | 4 de 36 decretos da DBF sem tipo |
+| todos os anos, até 2026 | **Expediente do Diário** (lista de secretários, preços, endereço da CEPE) entra no texto do decreto da mesma página | 3 a 9 decretos por ano; cerca de 1 da DBF (ex.: Decreto 57.317, 2024) |
+| 2019 e 2025 | Abertura **"A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO..."** | só aviso; o tipo é reconhecido |
+
+Os buracos na numeração das amostras não são do separador: os números que faltam não aparecem em nenhum caderno
+baixado, o que bate com Extras ausentes do S3.
+
+*Decisões de 06/11/2026:* "Introduz modificações no Decreto ..., que concede incentivo" conta como **alteração**, e
+"Dispõe sobre a fruição de estímulo" (Decreto 34.733/2010, que no artigo 1º concede o estímulo) como **concessão**.
+Ainda não aplicadas.
+
+**Proposta, não implementada:** uma cascata de leituras por decreto. Primeiro a leitura atual; se o decreto reprovar (fecho
+ausente ou repetido, abertura ausente, outro cabeçalho ou expediente dentro, ou tipo não reconhecido sendo da DBF), tenta
+o fecho antigo e depois a leitura por coluna das páginas dele; se nenhuma aprovar, vai para revisão manual. A leitura
+por coluna sozinha corrige o corte (2016 a 2019: de 12 a 14 decretos cortados por ano para 0), mas embaralha ementas e
+muda o texto dos anos bons, então só pode entrar como recuperação.
 
 ### Modelos e evidência dos tipos
 
