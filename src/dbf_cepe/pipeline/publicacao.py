@@ -36,6 +36,8 @@ class Publicacao:
     data: date  # data do caderno
     caderno: str  # nome do arquivo do caderno, ex.: "20260715_ResumoDiario.pdf"
     pagina: int  # página do caderno onde o ato começa (base 1)
+    # O caderno marca o ato como republicação ("(REPUBLICADO ...)"); não entra na ordem.
+    marcada_como_republicacao: bool = False
 
     @property
     def extra(self) -> bool:
@@ -51,7 +53,10 @@ class Publicacao:
         return self.chave == outra.chave
 
     def para_dict(self) -> dict[str, object]:
-        return {"data": self.data.isoformat(), "caderno": self.caderno, "pagina": self.pagina}
+        dados: dict[str, object] = {"data": self.data.isoformat(), "caderno": self.caderno, "pagina": self.pagina}
+        if self.marcada_como_republicacao:
+            dados["republicado"] = True
+        return dados
 
     @classmethod
     def de_dict(cls, dados: dict[str, object]) -> Publicacao:
@@ -61,7 +66,7 @@ class Publicacao:
         caderno = dados["caderno"]
         if not isinstance(caderno, str) or not caderno:
             raise ValueError(f"caderno inválido: {caderno!r}")
-        return cls(date.fromisoformat(str(dados["data"])), caderno, pagina)
+        return cls(date.fromisoformat(str(dados["data"])), caderno, pagina, dados.get("republicado") is True)
 
     def __str__(self) -> str:
         return f"{self.data:%d/%m/%Y}, {self.caderno}, p. {self.pagina}"

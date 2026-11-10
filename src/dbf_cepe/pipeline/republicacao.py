@@ -16,6 +16,11 @@ o lote):
      registro existir): texto idêntico (mesmo critério de `comparacao.py`) é
      duplicata; diferente vai para conferência manual, numa pasta LOCAL, com
      `(conferir duplicata)` no nome. Nunca se grava nem se renomeia na base nesse caso.
+     Se o PDF da base for imagem (digitalizado, sem texto para comparar), a publicação
+     conta como já existente (`Acao.BASE_IMAGEM`), a não ser que haja sinal de
+     republicação: a marca "(REPUBLICADO ...)" no caderno, outra publicação do mesmo
+     número com texto diferente no registro ou no mesmo lote. Com sinal, vai para
+     conferência. Decisão de 10/11/2026.
   5. A mesma publicação (mesma data, caderno e página) já registrada é ignorada:
      rodar o mesmo lote de novo não muda nada.
 
@@ -39,6 +44,7 @@ from dbf_cepe.regras.especies import Especie
 class Acao(Enum):
     JA_REGISTRADA = "publicação já registrada"
     DUPLICATA = "duplicata (texto idêntico)"
+    BASE_IMAGEM = "já existe (base é imagem; não comparado)"
     CONFERIR = "conferir duplicata"
     GRAVAR = "gravar"
 
@@ -85,11 +91,14 @@ def planejar(
     hash_texto: str,
     registro: Registro,
     nomes_na_base: Iterable[str],
-    identico_ao_da_base: Callable[[str], bool],
+    identico_ao_da_base: Callable[[str], bool | None],
     ano: str | None = None,
+    outra_publicacao_no_lote: bool = False,
 ) -> Plano:
     """Decide o que fazer com uma publicação. `identico_ao_da_base(nome)` compara o
-    texto do ato com o arquivo `nome` da base (só é chamado para arquivos sem registro)."""
+    texto do ato com o arquivo `nome` da base (só é chamado para arquivos sem registro):
+    True/False, ou None se o PDF da base não tiver texto legível (imagem).
+    `outra_publicacao_no_lote`: o mesmo número aparece com outro texto no lote em curso."""
     nome_padrao = especie.nome_arquivo(numero, ano)
     ja = registro.ja_registrada(especie.nome, numero, ano, publicacao)
     if ja is not None:
@@ -115,11 +124,34 @@ def planejar(
     registrados = {_chave(e.arquivo) for e in gravadas if e.arquivo}
     sem_registro = sorted(nome for chave, nome in familia.items() if chave not in registrados)
     if sem_registro:
-        identico = next((nome for nome in sem_registro if identico_ao_da_base(nome)), None)
+        resultados = {nome: identico_ao_da_base(nome) for nome in sem_registro}
+        identico = next((nome for nome, igual in resultados.items() if igual), None)
         if identico is not None:
             return Plano(
                 Acao.DUPLICATA,
                 f"{nome_padrao}: texto idêntico ao de {identico} (arquivo da base sem registro)",
+                avisos=tuple(avisos),
+            )
+        if all(igual is None for igual in resultados.values()):
+            sinais = []
+            if publicacao.marcada_como_republicacao:
+                sinais.append("o caderno o marca como republicado")
+            if outra_publicacao_no_lote:
+                sinais.append("o mesmo número aparece com outro texto neste lote")
+            if any(e.hash != hash_texto for e in registro.do_ato(especie.nome, numero, ano)):
+                sinais.append("o registro tem outra publicação deste número com outro texto")
+            if not sinais:
+                return Plano(
+                    Acao.BASE_IMAGEM,
+                    f"{nome_padrao}: a base tem {', '.join(sem_registro)} em imagem (sem texto para "
+                    "comparar) e não há sinal de republicação",
+                    avisos=tuple(avisos),
+                )
+            return Plano(
+                Acao.CONFERIR,
+                f"{nome_padrao}: a base tem {', '.join(sem_registro)} em imagem e {'; '.join(sinais)}; "
+                "o PDF vai para conferência manual",
+                nome_final=especie.nome_conferir_duplicata(numero, ano),
                 avisos=tuple(avisos),
             )
         return Plano(

@@ -172,6 +172,7 @@ Extra). *Decisões de 06/11/2026:*
 | Mesmo dia, edição normal e Extra | a normal conta como a mais antiga; no mesmo caderno, vale a página |
 | Arquivo da base sem registro, texto idêntico (critério de `comparacao.py`) | duplicata |
 | Arquivo da base sem registro, texto diferente | PDF normalizado em `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`; nada muda na base |
+| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
 | A mesma publicação (data, caderno e página) já no registro | ignorada: rodar o lote de novo não muda nada |
 
 - **Duas passagens no lote.** A primeira lê a data de publicação de cada PDF de pendentes e ordena o lote; a segunda
@@ -187,7 +188,7 @@ Extra). *Decisões de 06/11/2026:*
 
 `dados/registro_publicacoes.json` (fora do Git; `REGISTRO_PUBLICACOES` no `.env`) guarda, para cada publicação que passou
 pela etapa 3 com data: espécie, número, data de publicação, caderno, página, hash do texto, nome do arquivo e situação
-(`gravado`, `duplicata` ou `conferir duplicata`). É com ele que o lote sabe a data de cada arquivo da base.
+(`gravado`, `duplicata`, `conferir duplicata` ou `base é imagem (não comparado)`). É com ele que o lote sabe a data de cada arquivo da base.
 
 - Escrita atômica (arquivo `.tmp`, gravação forçada no disco e troca de nome): uma queda no meio deixa o registro
   anterior.

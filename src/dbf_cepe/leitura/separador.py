@@ -51,7 +51,8 @@ from pathlib import Path
 import pymupdf
 
 from dbf_cepe.regras.especies import ESPECIES_ATIVAS, Especie
-from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras  # uma fonte só (só biblioteca padrão)
+from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras
+from dbf_cepe.regras.regras_atos import identificar as identificar_atos  # uma fonte só (só biblioteca padrão)
 from dbf_cepe.leitura.reader import _pagina_digitalizada
 
 # Linhas de cabeçalho/rodapé de página do Diário Oficial de Pernambuco. Só são
@@ -170,6 +171,10 @@ class AtoSeparado:
     # atual) ou None se nenhum aprovou; nesse caso, `reprovacao` diz por quê.
     nivel_de_leitura: int | None = 1
     reprovacao: tuple[str, ...] = ()
+    # O caderno traz a marca de republicação ligada a este ato ("(REPUBLICADO POR HAVER
+    # SAÍDO COM INCORREÇÃO NO ORIGINAL)" depois das assinaturas), pela mesma regra do
+    # catálogo (regras_atos.identificar). A marca fica fora de `texto`.
+    marcado_como_republicacao: bool = False
 
 
 @dataclass(frozen=True)
@@ -432,7 +437,18 @@ def separar_caderno(
     atos, avisos = separar_texto(texto, inicios, especies)
     nome = Path(caminho).name  # aceita também o caminho como texto
     publicado_em = data_do_caderno(nome)
-    atos = [replace(ato, data_publicacao=publicado_em, caderno=nome) for ato in atos]
+    marcados = {
+        (achado.especie, achado.numero, achado.pagina)
+        for achado in identificar_atos(texto, inicios)
+        if achado.republicacao
+    }
+    atos = [
+        replace(
+            ato, data_publicacao=publicado_em, caderno=nome,
+            marcado_como_republicacao=(ato.especie.nome, ato.numero, ato.pagina_inicial) in marcados,
+        )
+        for ato in atos
+    ]
     if digitalizadas:
         avisos.append(
             f"páginas digitalizadas {list(digitalizadas)}: atos nelas não foram "

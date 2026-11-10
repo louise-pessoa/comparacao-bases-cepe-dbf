@@ -103,6 +103,7 @@ mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs se
 | `ANTERIOR À DA BASE (gravado em pendentes: ...; antes, renomear ...)` | publicação mais antiga que a gravada: o lote renomeia o arquivo da base para abrir lugar |
 | `CONFERIR DUPLICATA (gravado em pendentes: ...)` | a base tem o número sem registro e com texto diferente; o lote manda para conferência manual |
 | `já existe na DBF (texto idêntico)` | não grava |
+| `já existe na DBF (PDF da base é imagem; não comparado)` | não grava: o PDF da base é digitalizado e não há sinal de republicação (marca "REPUBLICADO" no caderno ou outro texto do mesmo número no lote) |
 | `já registrado (mesma publicação)` | não grava (mesma data, caderno e página já no registro) |
 
 O lote decide o nome final de novo, com a base daquele momento. **Caderno sem data no nome:** regra antiga (só o que a

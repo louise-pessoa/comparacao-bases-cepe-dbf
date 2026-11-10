@@ -72,7 +72,10 @@ def _montar_pdf(ato: AtoSeparado, pasta_fontes: Path) -> FPDF:
     pdf.set_title(f"{ato.especie.nome} {ato.numero}")
     if ato.data_publicacao is not None and ato.caderno:
         # A data do caderno acompanha o ato até a etapa 5 (ver publicacao.py).
-        pdf.set_keywords(metadados(Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial)))
+        publicacao = Publicacao(
+            ato.data_publicacao, ato.caderno, ato.pagina_inicial, ato.marcado_como_republicacao
+        )
+        pdf.set_keywords(metadados(publicacao))
     pdf.add_page()
     for posicao, linha in enumerate(ato.texto.split("\n")):
         if not linha.strip():
