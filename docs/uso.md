@@ -120,7 +120,8 @@ mesma publicação ou uma possível republicação. Só lê.
 
 - A comparação é elemento por elemento: palavras, números e cada sinal de pontuação. Maiúsculas, acentos e pontuação
   contam.
-- Espaços e quebras de linha não contam. Ligaduras, aspas e apóstrofos curvos e travessões são padronizados: "Recife/ PE"
+- Espaços, quebras de linha e pontilhado (três ou mais pontos seguidos, reticências) não contam. O pontilhado marca,
+  nos decretos de alteração, o trecho não alterado; a base de 2020 não o guarda. Ligaduras, aspas e apóstrofos curvos e travessões são padronizados: "Recife/ PE"
   e "Recife/PE" são iguais.
 - Cada linha diz "texto idêntico ao da base" ou dá a similaridade, quantos elementos estão só no caderno ou só na base e
   as 8 primeiras diferenças, com contexto.

@@ -16,6 +16,13 @@ Medida em 29/10/2026 nos 30 decretos de 26/06 que a DBF já tinha: sem desconsid
 espaços, 10 deles pareciam diferentes (99,39% a 99,98%), todos por espaço depois de
 "/" ou de hífen, aspas curvas e apóstrofo curvo. Eram só diferenças de layout.
 
+Pontilhado também não conta: três ou mais pontos seguidos (com ou sem espaço entre eles)
+e reticências. São as linhas que, nos decretos de alteração, marcam o trecho não
+alterado (".......... (AC)", "Parágrafo único ........"); o Diário as imprime e os PDFs
+da base de 2020 não as têm. Contado ponto a ponto, um pontilhado pesava como uma frase
+e derrubava a similaridade de decretos iguais para 86% a 94% (Decreto 48.584,
+janeiro de 2020). Medido em 10/11/2026.
+
 Só LÊ o PDF da base.
 """
 
@@ -31,6 +38,7 @@ from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.leitura.separador import limpar_ligaduras
 
 _ELEMENTO = re.compile(r"\w+|[^\w\s]")
+_PONTILHADO = re.compile(r"(?:\.\s*){3,}|…+")
 _PADRONIZAR = str.maketrans(
     {
         "\u2019": "'", "\u2018": "'", "\u00b4": "'", "`": "'",
@@ -41,8 +49,10 @@ _PADRONIZAR = str.maketrans(
 
 
 def palavras(texto: str) -> list[str]:
-    """Texto do ato como lista de elementos (palavras, números e sinais), sem o layout."""
-    return _ELEMENTO.findall(normalizar_espacos(limpar_ligaduras(texto)).translate(_PADRONIZAR))
+    """Texto do ato como lista de elementos (palavras, números e sinais), sem o layout
+    (espaços, quebras de linha e pontilhado)."""
+    limpo = normalizar_espacos(limpar_ligaduras(texto)).translate(_PADRONIZAR)
+    return _ELEMENTO.findall(_PONTILHADO.sub(" ", limpo))
 
 
 @dataclass(frozen=True)

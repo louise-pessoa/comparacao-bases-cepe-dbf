@@ -284,3 +284,30 @@ def test_relatorio_sem_diferenca_nao_mostra_trechos(cfg, caplog):
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
     assert "diferença:" not in caplog.text
+
+@pytest.mark.parametrize(
+    ("caderno", "base"),
+    [
+        # linhas pontilhadas dos decretos de alteração (Decreto 48.584, jan/2020): o Diário
+        # as imprime, o PDF da base não
+        ("Art. 1º ...\n. . . . . . . . . . . . . . . . . . (AC)\nParágrafo único . . . . . . . . .", "Art. 1º (AC)\nParágrafo único"),
+        ("inciso I ..........................................................; (AC)", "inciso I; (AC)"),
+        ("conforme o texto (...) citado", "conforme o texto () citado"),
+        ("conforme o texto (…) citado", "conforme o texto () citado"),
+    ],
+)
+def test_pontilhado_nao_conta(caderno, base):
+    assert comparar_textos(caderno, base).identico
+
+
+@pytest.mark.parametrize(
+    ("caderno", "base"),
+    [
+        ("R$ 1.000.000,00", "R$ 1000000,00"),  # os pontos de milhar continuam contando
+        ("item 1.1.1. Fica", "item 1.1.1 Fica"),
+        ("concedido.", "concedido"),
+        ("art. 1º", "art 1º"),
+    ],
+)
+def test_pontos_isolados_continuam_contando(caderno, base):
+    assert not comparar_textos(caderno, base).identico
