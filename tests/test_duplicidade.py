@@ -52,3 +52,4 @@ def test_pasta_vazia_aborta_por_padrao(tmp_path):
 
 def test_pasta_vazia_permitida_explicitamente(tmp_path):
     assert carregar_indice(tmp_path, permitir_vazia=True) == set()
+"""Proteja o índice da base e a recusa de pasta vazia por padrão."""

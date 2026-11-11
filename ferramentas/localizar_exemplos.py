@@ -63,6 +63,7 @@ PREFIXO_CABECALHO = "cabecalho-"  # ex.: "cabecalho-edital"
 
 @dataclass(frozen=True)
 class Achado:
+    """Registre uma página que merece investigação de uma regra do catálogo."""
     caderno: Path
     pagina: int  # 1 = primeira página
     tipo: str
@@ -203,6 +204,7 @@ def _especie_do_referente(referente: str) -> str:
 
 
 def montar_relatorio(achados: list[Achado], avisos: list[str]) -> str:
+    """Formate os achados e avisos, incluindo as fórmulas encontradas na última busca."""
     linhas = [f"{len(achados)} página(s)/trecho(s) para olhar.", ""]
     erratas = Counter(_especie_do_referente(a.referente) for a in achados if a.tipo == ERRATA)
     if erratas:
@@ -232,6 +234,7 @@ def montar_relatorio(achados: list[Achado], avisos: list[str]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Investigue cadernos fora do pipeline e grave exemplos sem sobrescrever arquivos."""
     parser = argparse.ArgumentParser(
         description="Acha erratas, republicações e decretos repetidos nos cadernos baixados."
     )

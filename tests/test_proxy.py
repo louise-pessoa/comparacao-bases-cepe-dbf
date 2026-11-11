@@ -192,3 +192,4 @@ def test_capturar_nao_avisa_quando_nao_ha_sobreposicao(cfg_auto, capturas, monke
     with caplog.at_level(logging.WARNING, logger="pipeline"):
         main.capturar(cfg_auto, date(2026, 10, 21), date(2026, 10, 21))
     assert "Remove-Item" not in caplog.text
+"""Proteja a resolução de proxy do Windows e a precedência do ambiente."""

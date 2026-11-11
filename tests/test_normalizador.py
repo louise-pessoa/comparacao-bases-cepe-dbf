@@ -555,3 +555,4 @@ def test_decreto_longo_quebra_de_pagina(tmp_path):
     ident = identificar(ler_pdf(pdf).texto)
     gerado = gerar_pdf_normalizado(pdf, ident, tmp_path / "saida")
     assert len(pymupdf.open(gerado)) >= 3
+"""Proteja o layout aprovado, a recuperação de parágrafos e os anexos."""

@@ -746,6 +746,7 @@ def test_localizar_exemplos_usa_as_mesmas_regex_de_regras_atos():
 def test_ato_referido_da_errata_traz_numero_ano_e_destino():
     ref = ra.ato_referido_da_errata("ERRATA No art. 4º do Decreto nº 61.560, de 19 de outubro de 2026")
     assert (ref.especie, ref.numero, ref.ano, ref.destino, ref.rotulo) == ("Decreto", "61560", "2026", "decreto", "Decreto 61.560")
+"""Proteja as expressões compartilhadas de cabeçalho, fecho e catalogação."""
 
 
 def test_alteracao_do_decreto_do_proind_e_alteracao_da_norma():

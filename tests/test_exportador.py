@@ -109,6 +109,8 @@ def test_fontes_versionadas_e_licenca_presentes():
     assert (exportador.PASTA_FONTES / exportador.FONTE_NEGRITO).is_file()
     licenca = (exportador.PASTA_FONTES / "LICENCA-LiberationSans.txt").read_text(encoding="utf-8")
     assert "SIL OPEN FONT LICENSE" in licenca.upper()
+"""Proteja que o exportador produza PDF intermediário, não saída final da etapa 4."""
+
 
 def test_linha_de_pontos_longa_quebrada_pelo_gerador_passa_na_conferencia(tmp_path):
     """Decreto 48.526/2020: o pontilhado de um decreto de alteração não cabe na largura da

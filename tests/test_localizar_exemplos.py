@@ -290,3 +290,4 @@ def test_main_cabecalhos_vazio_desliga_o_levantamento(tmp_path):
     criar_pdf_texto(entrada / "c.pdf", "EDITAL DBF Nº 12/2026")
     assert lx.main([str(entrada), "--saida", str(saida), "--cabecalhos", ""]) == 0
     assert list(saida.glob("*.pdf")) == []
+"""Proteja os padrões investigativos usados para levantar exemplos do Diário."""

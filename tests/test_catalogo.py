@@ -480,3 +480,4 @@ def test_com_base_sem_catalogar_e_erro():
     with pytest.raises(SystemExit) as saida:
         main.main(["--com-base"])
     assert saida.value.code == 2
+"""Proteja o catálogo somente para leitura e suas decisões de escopo."""

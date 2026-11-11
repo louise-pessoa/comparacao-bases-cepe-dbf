@@ -23,6 +23,7 @@ _TAMANHO_EMENTA_PADRAO = 600
 
 
 class StatusIdentificacao(Enum):
+    """Descreva se o texto identifica um ato ativo, outra espécie ou caso de revisão."""
     IDENTIFICADO = "identificado"
     OUTRA_ESPECIE = "outra_especie"
     SEM_CORRESPONDENCIA = "sem_correspondencia"
@@ -31,6 +32,7 @@ class StatusIdentificacao(Enum):
 
 @dataclass(frozen=True)
 class Identificacao:
+    """Resultado da identificação, com espécie, número e tipo quando disponíveis."""
     status: StatusIdentificacao
     especie: Especie | None = None
     numero: str | None = None  # sem separador de milhar, ex.: "60929"
@@ -76,6 +78,11 @@ def _classificar(especie: Especie, ementa: str) -> Tipo | None:
 def identificar(
     texto_bruto: str, especies: tuple[Especie, ...] = ESPECIES_ATIVAS
 ) -> Identificacao:
+    """Identifique um único ato no início do texto e classifique sua ementa.
+
+    Cabeçalhos ausentes, espécies não ativas e múltiplos números são devolvidos como
+    status explícito para revisão; a função não escolhe silenciosamente um ato.
+    """
     texto = normalizar_espacos(texto_bruto)
     if not texto:
         return Identificacao(

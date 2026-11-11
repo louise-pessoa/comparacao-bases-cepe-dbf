@@ -160,6 +160,7 @@ def test_pdf_com_mais_de_um_ato_vai_para_revisao():
 
 def test_normalizar_espacos():
     assert normalizar_espacos("  a \n\n b\t c ") == "a b c"
+"""Proteja a identificação por cabeçalho, número e status explícito de revisão."""
 
 
 def test_ementa_termina_na_abertura_de_quem_substitui_o_titular():

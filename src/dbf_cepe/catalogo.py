@@ -63,6 +63,7 @@ _AVISOS_INFORMATIVOS = ("data lida da linha 'Recife", "órgão não consta no ca
 
 @dataclass(frozen=True)
 class LinhaDoCatalogo:
+    """Represente uma linha reconhecida ou pendente de conferência no catálogo."""
     especie: str
     numero: str
     ano: str
@@ -82,11 +83,13 @@ class LinhaDoCatalogo:
     programas: tuple[str, ...] = ()
 
     def como_linha(self) -> list[str]:
+        """Converta os campos públicos na ordem e no formato do CSV."""
         return [str(getattr(self, coluna)) for coluna in COLUNAS]
 
 
 @dataclass
 class ResultadoDoCatalogo:
+    """Acumule linhas, avisos e falhas do catálogo de uma ou mais edições."""
     linhas: list[LinhaDoCatalogo] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
     cadernos: int = 0
@@ -94,6 +97,7 @@ class ResultadoDoCatalogo:
 
     @property
     def nao_reconhecidos(self) -> list[LinhaDoCatalogo]:
+        """Retorne as linhas que exigem conferência humana."""
         return [linha for linha in self.linhas if linha.motivo]
 
 
@@ -238,6 +242,7 @@ def catalogar_caderno(caminho: Path) -> tuple[list[LinhaDoCatalogo], list[str]]:
 
 
 def listar_cadernos(caminho: Path) -> list[Path]:
+    """Liste um PDF ou os PDFs de uma pasta, recusando entrada inexistente ou vazia."""
     if caminho.is_dir():
         cadernos = sorted(p for p in caminho.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
         if not cadernos:
@@ -320,6 +325,7 @@ def catalogar(caminho: Path, indice_da_base: set[str] | None = None) -> Resultad
 
 
 def gravar_csv(linhas: list[LinhaDoCatalogo], destino: Path) -> None:
+    """Grave as linhas em CSV separado por ponto e vírgula, com BOM para o Excel."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     with destino.open("w", encoding="utf-8-sig", newline="") as arquivo:
         escritor = csv.writer(arquivo, delimiter=";")
@@ -328,6 +334,7 @@ def gravar_csv(linhas: list[LinhaDoCatalogo], destino: Path) -> None:
 
 
 def resumo_em_texto(resultado: ResultadoDoCatalogo, destino: Path | None = None) -> str:
+    """Resuma no terminal as quantidades reconhecidas e os avisos do catálogo."""
     linhas = resultado.linhas
     saida = [
         f"Catálogo: {resultado.cadernos} caderno(s), {len(linhas)} linha(s)"

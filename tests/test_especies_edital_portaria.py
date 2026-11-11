@@ -99,3 +99,4 @@ def test_marcadores_de_ato_do_separador_e_de_regras_atos_coincidem():
     assert [m.group(0).strip() for m in nomes_do_separador.finditer(texto)] == [
         m.group(0).strip() for m in ra.MARCADOR_DE_ATO.finditer(texto)
     ]
+"""Proteja o reconhecimento catalográfico de edital, portaria e seus limites."""

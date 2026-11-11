@@ -311,3 +311,5 @@ def test_pontilhado_nao_conta(caderno, base):
 )
 def test_pontos_isolados_continuam_contando(caderno, base):
     assert not comparar_textos(caderno, base).identico
+
+"""Proteja a normalização fechada e o critério de igualdade da comparação."""

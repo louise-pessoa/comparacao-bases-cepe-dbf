@@ -115,3 +115,27 @@ tests/               testes automatizados
 - [`docs/uso.md`](docs/uso.md): como rodar cada modo, o que ele mostra, e problemas de rede e de base.
 - [`docs/funcionamento.md`](docs/funcionamento.md): como funciona por dentro, decisões e limitações.
 - [`docs/roteiro_de_testes.md`](docs/roteiro_de_testes.md): o que conferir antes de aceitar uma mudança.
+
+## Como ler o código
+
+Cada módulo Python começa com quatro blocos: o que faz, em que etapa entra, o que
+recebe e devolve, e quais decisões ou limites mantém. Funções e classes públicas
+explicam somente argumentos não óbvios, retornos, exceções e efeitos em disco.
+Assim, a corrente principal pode ser lida de fora para dentro:
+
+1. [`main.py`](main.py) encaminha a CLI; [`src/dbf_cepe/cli.py`](src/dbf_cepe/cli.py)
+   escolhe captura, separação, lote ou catálogo.
+2. [`src/dbf_cepe/regras/especies.py`](src/dbf_cepe/regras/especies.py) e
+   [`src/dbf_cepe/regras/programas.py`](src/dbf_cepe/regras/programas.py) concentram
+   as regras de domínio, com evidência `amostra`, `publicado` ou `presumido`.
+3. [`src/dbf_cepe/leitura/`](src/dbf_cepe/leitura/) separa, lê e identifica; a
+   comparação e a duplicidade só confirmam o que já existe, sem análise semântica.
+4. [`src/dbf_cepe/pipeline/normalizador.py`](src/dbf_cepe/pipeline/normalizador.py)
+   reconstrói o PDF e [`src/dbf_cepe/pipeline/armazenamento.py`](src/dbf_cepe/pipeline/armazenamento.py)
+   só apaga os temporários depois da cópia, SHA-256 e releitura confirmadas.
+
+Os comentários de linha ficam reservados a decisões que não são evidentes no
+código, como tolerâncias de layout, ligaduras do Diário e o motivo de
+`SSL_ESTRITO=nao`. As ferramentas em [`ferramentas/`](ferramentas/) investigam ou
+fazem regressão; não são etapas do pipeline. A suíte em [`tests/`](tests/) protege
+as regras de negócio, os limites de segurança e as transições entre etapas.

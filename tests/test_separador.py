@@ -293,6 +293,8 @@ def test_pdf_de_texto_simples_com_um_decreto(tmp_path):
     pdf = criar_pdf_texto(tmp_path / "um.pdf", decreto("60.013"))
     resultado = separar_caderno(pdf)
     assert [a.numero for a in resultado.atos] == ["60013"]
+"""Proteja a separação por texto, limpeza de cabeçalho/rodapé e limites de OCR."""
+
 
 @pytest.mark.parametrize(
     "linha",

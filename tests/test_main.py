@@ -229,3 +229,4 @@ def test_pasta_temporaria_igual_a_da_dbf_nao_apaga_nada(ambiente):
 
     assert sorted(arquivo.name for arquivo in base.iterdir()) == antes
     assert not cfg.pasta_erros.exists()
+"""Proteja os códigos de saída e os efeitos observáveis da CLI."""
