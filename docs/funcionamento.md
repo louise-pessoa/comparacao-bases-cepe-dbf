@@ -278,7 +278,8 @@ ementas e muda o texto dos anos bons, então só pode entrar como nível de recu
 - O modelo de cada tipo é o decreto indicado em `regras/especies.py`: concessão 60929, alteração 60951, prorrogação
   60950, renovação 60945, transferência 60505 e terceirização 60233. Segunda prorrogação/renovação usa o modelo da
   prorrogação/renovação.
-- Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650"),
+- Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650",
+  "Modifica o Decreto nº 44.766", o regulamento do PROIND, incluído em 11/11/2026),
   revogação e PROIND ainda não têm modelo.
 - Cada tipo e cada programa tem o campo `evidencia`: `amostra` (ato real da DBF em mãos), `publicado` (ato real publicado
   na Alepe ou na SEFAZ) ou `presumido` (deduzido da legislação, a confirmar). O padrão da ementa de segunda

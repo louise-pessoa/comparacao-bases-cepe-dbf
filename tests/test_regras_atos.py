@@ -746,3 +746,28 @@ def test_localizar_exemplos_usa_as_mesmas_regex_de_regras_atos():
 def test_ato_referido_da_errata_traz_numero_ano_e_destino():
     ref = ra.ato_referido_da_errata("ERRATA No art. 4º do Decreto nº 61.560, de 19 de outubro de 2026")
     assert (ref.especie, ref.numero, ref.ano, ref.destino, ref.rotulo) == ("Decreto", "61560", "2026", "decreto", "Decreto 61.560")
+
+
+def test_alteracao_do_decreto_do_proind_e_alteracao_da_norma():
+    """Decreto 48.526/2020: modifica o 44.766/2017, que institui o PROIND (regra do programa,
+    sem empresa). Incluído na lista de decretos de programa em 11/11/2026."""
+    from dbf_cepe.leitura.identificador import identificar as identificar_tipo
+
+    texto = (
+        "DECRETO Nº 48.526, DE 9 DE JANEIRO DE 2020.\nModifica o Decreto nº 44.766, de 20 de julho de 2017, que\n"
+        "institui o Programa de Estímulo à Indústria do Estado de\nPernambuco – Proind, relativamente a condições para\n"
+        "fruição do benefício fiscal.\nO GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Fica alterado.\n"
+    )
+    assert _unico(texto, "Decreto").tipo == "ALTERACAO_NORMA"
+    assert identificar_tipo(texto).tipo.nome == "ALTERACAO_NORMA"
+
+
+def test_alteracao_do_decreto_de_uma_empresa_do_proind_continua_alteracao():
+    from dbf_cepe.leitura.identificador import identificar as identificar_tipo
+
+    texto = (
+        "DECRETO Nº 60.951, DE 25 DE JUNHO DE 2026.\nIntroduz alterações no Decreto nº 50.135, de 2021, que autoriza\n"
+        "a utilização do incentivo do PROIND pela empresa X.\nA GOVERNADORA DO ESTADO, no uso das atribuições,\n"
+        "DECRETA:\nArt. 1º Fica alterado.\n"
+    )
+    assert identificar_tipo(texto).tipo.nome == "ALTERACAO"

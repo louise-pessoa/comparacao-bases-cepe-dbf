@@ -101,9 +101,11 @@ _DISPOE_SOBRE_A = r"Disp[õo]e\s+sobre\s+(?:a|as)\s+"
 # "Decreto nº" com as variantes de grafia do "nº".
 _DECRETO_N = r"Decreto\s+n\s*\.?\s*[ºo°]\.?\s*"
 # Decretos que regulamentam os programas da DBF: PRODEPE (21.959/1999), PEAP
-# (34.560/2010) e RICMS-PE (44.650/2017). Alterar um deles é alterar a NORMA,
-# não o ato de uma empresa.
-_DECRETOS_DE_PROGRAMA = rf"{_DECRETO_N}(?:21\.?959|34\.?560|44\.?650)\b"
+# (34.560/2010), RICMS-PE (44.650/2017) e PROIND (44.766/2017, incluído em 11/11/2026:
+# Decreto 48.526/2020, "Modifica o Decreto nº 44.766 [...] relativamente a condições para
+# fruição do benefício fiscal"). Alterar um deles é alterar a NORMA, não o ato de uma
+# empresa.
+_DECRETOS_DE_PROGRAMA = rf"{_DECRETO_N}(?:21\.?959|34\.?560|44\.?650|44\.?766)\b"
 
 # "Nº", "N°", "N.º", "Nº." e também "n°" (minúsculo). Sem letra colada antes
 # ("PE" + "Nº" colados valem só com o símbolo º/°) nem depois ("NOTIFICAÇÃO" não é "No").
