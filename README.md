@@ -56,12 +56,34 @@ python main.py --separar dados/cadernos --comparar          # compara o texto co
 python main.py --separar dados/cadernos --gravar            # grava os inéditos e as republicações em dados/pendentes
 python main.py --simular                                     # lote (etapas 2 a 5): mostra o que faria
 python main.py                                               # lote de verdade: grava na base da DBF
+python main.py --conferir [--simular]                       # revisa a pasta "conferir duplicata" pelo terminal
 python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
 ```
 
 Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. Rode os lotes em **ordem cronológica** (dos
 cadernos mais antigos para os mais novos). O registro de cada decisão fica em
 `logs/pipeline.log`. Opções, mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
+
+### Lote histórico (meses anteriores a 2026)
+
+Um mês por vez, em ordem cronológica, cada mês na própria pasta e **sempre com `--fonte s3`**: o site atual da CEPE
+(a fonte padrão) só foi conferido para 2026, e o S3 tem os cadernos de 2005 a 2025. Exemplo, fevereiro de 2020
+(PowerShell):
+
+```powershell
+$mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
+$pasta = "dados\historico\$mes"
+$env:PASTA_CADERNOS = $pasta                                 # baixa na pasta do mês, não em dados\cadernos
+python main.py --baixar --fonte s3 --de $de --ate $ate
+Remove-Item Env:PASTA_CADERNOS
+python main.py --separar $pasta --comparar                   # lista e compara com a base (só lê)
+python main.py --separar $pasta --gravar
+python main.py --simular
+python main.py
+python main.py --conferir                                    # decide os que foram para "conferir duplicata"
+```
+
+Passo a passo, o que conferir em cada etapa e o ano-limite (2020): [`docs/uso.md`](docs/uso.md#lote-histórico).
 
 ## Testes
 
@@ -79,7 +101,7 @@ request.
 ```
 main.py              atalho: python main.py ... roda a linha de comando sem instalar
 src/dbf_cepe/        o pacote: cli, config, proxy, captura, catalogo
-  regras/            RegEx dos atos (regras_atos.py, só biblioteca padrão), espécies e programas da DBF
+  regras/            RegEx dos atos (regras_atos.py, fonte única das regras), espécies e programas da DBF
   leitura/           leitura do PDF, separação dos atos do caderno e identificação
   pipeline/          duplicidade, normalização, gravação, comparação e os modos lote e relatório
   recursos/fontes/   fontes Liberation (SIL OFL)

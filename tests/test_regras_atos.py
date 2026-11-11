@@ -4,10 +4,6 @@ republicação. As frases são curtas e vêm dos cadernos reais de 25/04, 26/06,
 
 from __future__ import annotations
 
-import ast
-import re
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -22,37 +18,138 @@ def _unico(texto: str, especie: str):
 
 
 # ---------------------------------------------------------------------------
-# O módulo é enviado à CEPE: só biblioteca padrão
+# Tabela de exemplos (entrada -> resultado esperado)
 # ---------------------------------------------------------------------------
 
+# Cada item: (texto curto, (campos esperados do 1º achado, do 2º achado, ...)). O texto
+# tem de gerar EXATAMENTE tantos achados quantos dicionários houver; só os campos citados
+# são conferidos. Trechos de cadernos de 25/04, 26/06, 15/07, 21/10 e 22/10/2026.
+ASSINATURAS_DO_DECRETO = (
+    "Independência do Brasil.\nRAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado\n"
+    "FABRÍCIO MARQUES SANTOS\n"
+)
+EXEMPLOS: tuple[tuple[str, tuple[dict[str, object], ...]], ...] = (
+    # Decreto: número sem ponto, ano, data do cabeçalho e tipo pelo início da ementa.
+    (
+        "DECRETO Nº 60.929, DE 25 DE JUNHO DE 2026.\n"
+        "Concede estímulo previsto na Lei nº 11.675, de 11 de outubro de 1999.\n"
+        "A GOVERNADORA DO ESTADO, no uso das atribuições\n",
+        (
+            {"especie": "Decreto", "numero": "60929", "ano": "2026",
+             "data_do_ato": "2026-06-25", "tipo": "CONCESSAO"},
+        ),
+    ),
+    # Decreto de alteração da NORMA do programa (cita o decreto do PRODEPE).
+    (
+        "DECRETO Nº 52.040, DE 3 DE MARÇO DE 2021.\n"
+        "Modifica o Decreto nº 44.650, de 30 de junho de 2017.\n"
+        "A GOVERNADORA DO ESTADO\n",
+        ({"especie": "Decreto", "numero": "52040", "tipo": "ALTERACAO_NORMA"},),
+    ),
+    # Citação de decreto no corpo do texto não é ato.
+    ("Considerando o Decreto nº 21.959, de 27 de dezembro de 1999, que institui o PRODEPE\n", ()),
+    # Edital da DBF: o cabeçalho não traz data; ela vem da linha "Recife, ..." do fecho.
+    (
+        "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO RELATIVO À CONCESSÃO DE BENEFÍCIO FISCAL DO ICMS\n"
+        "A Diretoria de Benefícios Fiscais - DBF, resolve credenciar\nRecife, 21 de outubro de 2026.\n",
+        (
+            {"especie": "Edital", "numero": "063", "ano": "2026", "orgao": "DBF",
+             "tipo": "CREDENCIAMENTO", "sefaz": True, "data_do_ato": "2026-10-21"},
+        ),
+    ),
+    # Edital sem órgão no cabeçalho: fica "a confirmar" (sefaz None).
+    (
+        "EDITAL Nº 43/2026\nCREDENCIAMENTO PARA FRUIÇÃO DO BENEFÍCIO DE CRÉDITO PRESUMIDO\n",
+        ({"especie": "Edital", "numero": "43", "ano": "2026", "orgao": None, "sefaz": None},),
+    ),
+    # Edital com código composto no lugar do número.
+    (
+        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
+        ({"especie": "Edital", "numero": "0014.2026.PNE", "ano": "2026", "tipo": "CREDENCIAMENTO"},),
+    ),
+    # Edital sem órgão no cabeçalho: o órgão vem do título em maiúsculas acima (pista de baixa
+    # confiança, em `orgao_do_titulo`; `orgao` continua vazio). Outro órgão = fora do escopo.
+    (
+        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\n"
+        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
+        (
+            {"especie": "Edital", "numero": "0014.2026.PNE", "orgao": None,
+             "orgao_do_titulo": "SECRETARIA DE ADMINISTRAÇÃO", "sefaz": False, "republicacao": "sim"},
+        ),
+    ),
+    # Edital sem número: não some, sai com aviso.
+    (
+        "EDITAL DE CONVOCAÇÃO\nSINDICATO DOS FISIOTERAPEUTAS\n",
+        ({"especie": "Edital", "numero": None, "tipo": "CONVOCACAO"},),
+    ),
+    # Portaria da SEFAZ (sigla SF): data e ano vêm do cabeçalho; tipo = primeiro verbo operativo.
+    (
+        "PORTARIA SF Nº 200, DE 20.10.2026\nO SECRETÁRIO DA FAZENDA, RESOLVE:\n"
+        "Art. 1° Declarar a perda por renúncia ao incentivo do PRODEPE\n",
+        (
+            {"especie": "Portaria", "numero": "200", "ano": "2026", "orgao": "SF", "sefaz": True,
+             "data_do_ato": "2026-10-20", "tipo": "PERDA_INCENTIVO"},
+        ),
+    ),
+    # Portaria de outro órgão: reconhecida, fora do escopo SEFAZ.
+    (
+        "PORTARIA SES/PE N° 609, de 21 de Outubro de 2026\nInstitui o Núcleo de Segurança do Paciente\n",
+        ({"especie": "Portaria", "numero": "609", "orgao": "SES/PE", "sefaz": False},),
+    ),
+    # Portaria sem número no cabeçalho: sai com aviso.
+    (
+        "PORTARIA SEE/SEGP DE 20 DE OUTUBRO DE 2026. A SECRETARIA EXECUTIVA\n",
+        ({"especie": "Portaria", "numero": None, "orgao": "SEE/SEGP", "data_do_ato": "2026-10-20"},),
+    ),
+    # Errata: a chave é o ato referido (espécie, número, ano) e o destino.
+    (
+        "ERRATA\nNo art. 4º do Decreto nº 61.560, de 19 de outubro de 2026, que redenomina o cargo\n",
+        (
+            {"especie": "Errata", "destino": "decreto", "ato_referido": "Decreto 61.560",
+             "ref_numero": "61560", "ref_ano": "2026"},
+        ),
+    ),
+    (
+        "Errata ao Edital do Chamamento Público nº 010/2026, Processo nº 047/CPL/2026\n",
+        ({"especie": "Errata", "destino": "edital", "ref_numero": "010", "ref_ano": "2026"},),
+    ),
+    (
+        "ERRATA\nNa Portaria SJDH nº 126, publicada no Diário Oficial do Estado em 30 de setembro de 2026\n",
+        ({"especie": "Errata", "destino": "portaria", "ref_numero": "126", "ref_ano": "2026"},),
+    ),
+    (
+        "ERRATA DO DESPACHO SECOGE DE 18/06/2026, PUBLICADO NO DOE DE 19/06/2026.\n",
+        ({"especie": "Errata", "destino": "outro", "ato_referido": "Despacho"},),
+    ),
+    # Republicação: o rodapé "(REPUBLICADO ...)" vem DEPOIS das assinaturas e se liga ao decreto.
+    (
+        "DECRETO Nº 61.055, DE 13 DE JULHO DE 2026.\nAbre ao Orçamento Fiscal crédito suplementar\n"
+        "A GOVERNADORA DO ESTADO\n" + ASSINATURAS_DO_DECRETO
+        + "(REPUBLICADO POR HAVER SAÍDO COM INCORREÇÃO NO ORIGINAL)\nANEXO I\n",
+        ({"especie": "Decreto", "numero": "61055", "republicacao": "sim"},),
+    ),
+    # Republicação em título, acima do edital.
+    (
+        "AVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\nEDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\n",
+        ({"especie": "Edital", "numero": "0014.2026.PNE", "republicacao": "sim"},),
+    ),
+    # Republicação dentro de lista de atos de outra espécie: não se liga a nada.
+    (
+        "ATO DO DIA 16 DE OUTUBRO DE 2026.\nNº 5538 - Nomear X para exercer o cargo em comissão.\n"
+        "(REPUBLICADO POR HAVER SAÍDO COM INCORREÇÃO NO ORIGINAL).\n",
+        ({"especie": "Republicação"},),
+    ),
+    # "republicado no DOE" dentro de texto normativo NÃO é republicação.
+    ("o Decreto nº 56.378, republicado no DOE de 06/06/2024, dispõe sobre\n", ()),
+)
 
-def test_regras_atos_importa_so_a_biblioteca_padrao():
-    fonte = Path(ra.__file__).read_text(encoding="utf-8")
-    importados = set()
-    for no in ast.walk(ast.parse(fonte)):
-        if isinstance(no, ast.Import):
-            importados |= {n.name.split(".")[0] for n in no.names}
-        elif isinstance(no, ast.ImportFrom) and no.module:
-            importados.add(no.module.split(".")[0])
-    assert importados <= set(sys.stdlib_module_names), importados - set(sys.stdlib_module_names)
 
-
-def test_regras_atos_nao_cita_caminho_servidor_nem_email():
-    fonte = Path(ra.__file__).read_text(encoding="utf-8")
-    # letra de unidade (G:\ ou G:/), montagem WSL (/mnt/g/) e e-mail
-    assert not re.search(r"\b[A-Za-z]:[\\/]|/mnt/[a-z]/|[\w.-]+@[\w-]+\.[\w.]+", fonte)
-
-
-def test_tabela_de_exemplos_confere():
-    assert ra.EXEMPLOS, "a tabela EXEMPLOS não pode ficar vazia"
-    assert ra.conferir_exemplos() == []
-
-
-def test_exemplos_nao_trazem_nomes_de_pessoas_nem_cnpj():
-    # Os exemplos viajam para a equipe externa: só trechos curtos, sem dados pessoais.
-    for texto, _ in ra.EXEMPLOS:
-        assert len(texto) < 600
-        assert not re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\bCPF\b|matr[ií]cula", texto, re.IGNORECASE)
+@pytest.mark.parametrize(("texto", "esperados"), EXEMPLOS, ids=[f"exemplo {i}" for i in range(1, len(EXEMPLOS) + 1)])
+def test_tabela_de_exemplos(texto, esperados):
+    achados = ra.identificar(texto)
+    assert len(achados) == len(esperados), achados
+    for achado, esperado in zip(achados, esperados):
+        assert {campo: getattr(achado, campo) for campo in esperado} == esperado
 
 
 # ---------------------------------------------------------------------------
@@ -649,3 +746,28 @@ def test_localizar_exemplos_usa_as_mesmas_regex_de_regras_atos():
 def test_ato_referido_da_errata_traz_numero_ano_e_destino():
     ref = ra.ato_referido_da_errata("ERRATA No art. 4º do Decreto nº 61.560, de 19 de outubro de 2026")
     assert (ref.especie, ref.numero, ref.ano, ref.destino, ref.rotulo) == ("Decreto", "61560", "2026", "decreto", "Decreto 61.560")
+
+
+def test_alteracao_do_decreto_do_proind_e_alteracao_da_norma():
+    """Decreto 48.526/2020: modifica o 44.766/2017, que institui o PROIND (regra do programa,
+    sem empresa). Incluído na lista de decretos de programa em 11/11/2026."""
+    from dbf_cepe.leitura.identificador import identificar as identificar_tipo
+
+    texto = (
+        "DECRETO Nº 48.526, DE 9 DE JANEIRO DE 2020.\nModifica o Decreto nº 44.766, de 20 de julho de 2017, que\n"
+        "institui o Programa de Estímulo à Indústria do Estado de\nPernambuco – Proind, relativamente a condições para\n"
+        "fruição do benefício fiscal.\nO GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Fica alterado.\n"
+    )
+    assert _unico(texto, "Decreto").tipo == "ALTERACAO_NORMA"
+    assert identificar_tipo(texto).tipo.nome == "ALTERACAO_NORMA"
+
+
+def test_alteracao_do_decreto_de_uma_empresa_do_proind_continua_alteracao():
+    from dbf_cepe.leitura.identificador import identificar as identificar_tipo
+
+    texto = (
+        "DECRETO Nº 60.951, DE 25 DE JUNHO DE 2026.\nIntroduz alterações no Decreto nº 50.135, de 2021, que autoriza\n"
+        "a utilização do incentivo do PROIND pela empresa X.\nA GOVERNADORA DO ESTADO, no uso das atribuições,\n"
+        "DECRETA:\nArt. 1º Fica alterado.\n"
+    )
+    assert identificar_tipo(texto).tipo.nome == "ALTERACAO"

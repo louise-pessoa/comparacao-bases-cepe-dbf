@@ -109,3 +109,39 @@ def test_fontes_versionadas_e_licenca_presentes():
     assert (exportador.PASTA_FONTES / exportador.FONTE_NEGRITO).is_file()
     licenca = (exportador.PASTA_FONTES / "LICENCA-LiberationSans.txt").read_text(encoding="utf-8")
     assert "SIL OPEN FONT LICENSE" in licenca.upper()
+
+def test_linha_de_pontos_longa_quebrada_pelo_gerador_passa_na_conferencia(tmp_path):
+    """Decreto 48.526/2020: o pontilhado de um decreto de alteração não cabe na largura da
+    página, o gerador o quebra em duas linhas e a releitura traz um espaço no meio. Não é
+    diferença de texto."""
+    from dbf_cepe.leitura.separador import AtoSeparado
+    from dbf_cepe.regras.especies import DECRETO
+    from dbf_cepe.pipeline.exportador import gravar_pdf_do_ato
+
+    texto = (
+        "DECRETO Nº 48.526, DE 9 DE JANEIRO DE 2020.\nModifica o Decreto nº 44.766, de 2017.\n"
+        "O GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\n"
+        "Art. 1º O Decreto passa a vigorar com as seguintes modificações:\n“Art. 5º " + "." * 260 + "\n"
+        "Parágrafo único " + "." * 180 + " (AC)”\n"
+    )
+    ato = AtoSeparado(DECRETO, "48526", "DECRETO Nº 48.526", texto, 1, 1)
+    assert gravar_pdf_do_ato(ato, tmp_path / "x.pdf").exists()
+
+
+def test_palavra_trocada_continua_reprovando_a_conferencia(tmp_path, monkeypatch):
+    from dbf_cepe.leitura.separador import AtoSeparado
+    from dbf_cepe.regras.especies import DECRETO
+    from dbf_cepe.pipeline import exportador
+
+    texto = "DECRETO Nº 48.526, DE 9 DE JANEIRO DE 2020.\nConcede.\nO GOVERNADOR DO ESTADO\nDECRETA:\nArt. 1º Fica concedido."
+    ato = AtoSeparado(DECRETO, "48526", "DECRETO Nº 48.526", texto, 1, 1)
+    original = exportador.ler_pdf
+
+    def relido_com_troca(caminho):
+        lido = original(caminho)
+        return type(lido)(**{**lido.__dict__, "texto": lido.texto.replace("concedido", "negado")})
+
+    monkeypatch.setattr(exportador, "ler_pdf", relido_com_troca)
+    with pytest.raises(exportador.ErroExportacao, match="decreto: concedido \\| PDF: negado"):
+        exportador.gravar_pdf_do_ato(ato, tmp_path / "x.pdf")
+    assert not (tmp_path / "x.pdf").exists()

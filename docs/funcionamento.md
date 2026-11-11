@@ -39,12 +39,17 @@ terminam no meio delas.
 - Cada decreto vai do cabeçalho `DECRETO Nº ...` (em maiúsculas, no início da linha) até as assinaturas que seguem o
   fecho, ou até o fim do anexo, se houver.
 - Citações a outros decretos no corpo do texto nunca são confundidas com cabeçalho.
-- Cabeçalhos e rodapés de página do Diário são removidos, e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
+- Cabeçalhos e rodapés de página do Diário são removidos (nas 4 primeiras linhas de cada página: "Recife, 26 de junho de
+  2026", "Ano CX Ć NÀ 114 - 9", "Diário Oficial do Estado de Pernambuco..."; desde 09/11/2026 também as variantes do dia
+  1º e da edição Extra, "Recife, 1À de outubro de 2026" e "CX Ć NÀ 31 3", e as dos anos antigos, com dia da semana,
+  travessão, sem o "Ano" ou com o título na mesma linha), e as ligaduras (`ﬁ cam`) são convertidas (`ficam`). Com isso,
   o texto do decreto 60929 extraído do caderno de 26/06/2026 é idêntico ao do PDF avulso da DBF.
 - O **expediente do Diário** (o quadro com governador(a), vice, secretários, preços e endereço da CEPE, impresso uma vez
   por caderno) é removido pela posição: o quadro é localizado pelas linhas típicas dele (`MARCAS_DO_EXPEDIENTE`; pelo
   menos 4 tipos, entre eles o nome da CEPE e o par "GOVERNADOR(A)"/"VICE-GOVERNADOR(A)"), e toda linha da página que
-  cai no retângulo dos blocos dessas linhas sai do texto. Antes, quando ele dividia a página com um decreto, entrava no
+  cai no retângulo dos blocos dessas linhas sai do texto. O "GOVERNADOR(A)" só conta seguido de "VICE-GOVERNADOR(A)"
+  (sozinho, pode ser a assinatura de outro ato), e o quadro cresce para baixo com os blocos de cargo ("SECRETÁRIO DE
+  DEFESA SOCIAL") alinhados à lista de secretários, que às vezes desce além da última marca. Antes, quando ele dividia a página com um decreto, entrava no
   meio do texto (ex.: Decreto 57.317/2024, da DBF). Nos cadernos de referência de 2026, isso só muda os decretos 61.563
   e 61.566, fora da DBF. *Decisão de 09/11/2026.*
 - Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o
@@ -167,6 +172,7 @@ Extra). *Decisões de 06/11/2026:*
 | Mesmo dia, edição normal e Extra | a normal conta como a mais antiga; no mesmo caderno, vale a página |
 | Arquivo da base sem registro, texto idêntico (critério de `comparacao.py`) | duplicata |
 | Arquivo da base sem registro, texto diferente | PDF normalizado em `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`; nada muda na base |
+| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
 | A mesma publicação (data, caderno e página) já no registro | ignorada: rodar o lote de novo não muda nada |
 
 - **Duas passagens no lote.** A primeira lê a data de publicação de cada PDF de pendentes e ordena o lote; a segunda
@@ -182,7 +188,8 @@ Extra). *Decisões de 06/11/2026:*
 
 `dados/registro_publicacoes.json` (fora do Git; `REGISTRO_PUBLICACOES` no `.env`) guarda, para cada publicação que passou
 pela etapa 3 com data: espécie, número, data de publicação, caderno, página, hash do texto, nome do arquivo e situação
-(`gravado`, `duplicata` ou `conferir duplicata`). É com ele que o lote sabe a data de cada arquivo da base.
+(`gravado`, `duplicata`, `conferir duplicata` ou `base é imagem (não comparado)`). O `--conferir` acrescenta a decisão
+(`decisao`, `decidido_em`): "mantida a base", ou "substituída pelo Diário", que passa a publicação a `gravado`. É com ele que o lote sabe a data de cada arquivo da base.
 
 - Escrita atômica (arquivo `.tmp`, gravação forçada no disco e troca de nome): uma queda no meio deixa o registro
   anterior.
@@ -272,7 +279,8 @@ ementas e muda o texto dos anos bons, então só pode entrar como nível de recu
 - O modelo de cada tipo é o decreto indicado em `regras/especies.py`: concessão 60929, alteração 60951, prorrogação
   60950, renovação 60945, transferência 60505 e terceirização 60233. Segunda prorrogação/renovação usa o modelo da
   prorrogação/renovação.
-- Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650"),
+- Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650",
+  "Modifica o Decreto nº 44.766", o regulamento do PROIND, incluído em 11/11/2026),
   revogação e PROIND ainda não têm modelo.
 - Cada tipo e cada programa tem o campo `evidencia`: `amostra` (ato real da DBF em mãos), `publicado` (ato real publicado
   na Alepe ou na SEFAZ) ou `presumido` (deduzido da legislação, a confirmar). O padrão da ementa de segunda
@@ -281,9 +289,16 @@ ementas e muda o texto dos anos bons, então só pode entrar como nível de recu
 ## Catálogo
 
 Reconhece decretos, editais, portarias, erratas e republicações no texto dos cadernos. As RegEx ficam em
-`regras/regras_atos.py`, só com a biblioteca padrão, para poder ir sozinho à equipe da CEPE: o cabeçalho do arquivo
-explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`,
-`programas.py` e a ferramenta de levantamento importam dele.
+`regras/regras_atos.py`, a fonte única das regras de reconhecimento: `especies.py`, `separador.py`, `programas.py` e a
+ferramenta de levantamento importam dele. A tabela de exemplos (entrada -> resultado esperado) fica em
+`tests/test_regras_atos.py`.
+
+*Decisão de 11/11/2026:* não há mais envio de arquivos à CEPE. O `regras_atos.py` deixou de ser mantido só com a
+biblioteca padrão para poder ir sozinho a terceiros.
+
+**Dívida técnica:** o separador (pipeline) e o `identificar` do `regras_atos.py` (catálogo) reconhecem o decreto cada um
+do seu jeito. Eram dois porque o `regras_atos.py` precisava rodar sozinho; hoje poderiam ser unificados, mas o separador
+acaba de ser validado contra a base e a mudança fica para depois das etapas da leitura em cascata.
 
 ### Colunas
 

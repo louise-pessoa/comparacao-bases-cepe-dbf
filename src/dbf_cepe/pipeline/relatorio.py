@@ -22,7 +22,7 @@ from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
 from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
-from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, separar_caderno
+from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, ResultadoSeparacao, separar_caderno
 
 log = logging.getLogger("pipeline")
 
@@ -66,6 +66,9 @@ class ContextoDaGravacao:
 
     registro: Registro
     nomes_na_base: set[str]
+    # Textos (hash) de cada número nos cadernos desta execução: dois textos diferentes do
+    # mesmo número são sinal de republicação (ver republicacao.planejar).
+    textos_no_lote: dict[tuple[str, str], set[str]] = field(default_factory=dict)
 
 
 def _relatar_caderno(
@@ -76,10 +79,12 @@ def _relatar_caderno(
     resumo: ResumoRelatorio,
     comparar: bool = False,
     contexto: ContextoDaGravacao | None = None,
+    resultado: ResultadoSeparacao | None = None,
 ) -> None:
     # Cada ato passa pelo critério da leitura em cascata; o reprovado em todos os níveis
     # sai com um aviso (revisão manual).
-    resultado = aplicar_cascata(separar_caderno(caderno), caderno)
+    if resultado is None:
+        resultado = _separar(caderno)
     log.info(
         "%s: %d página(s), %d ato(s) encontrado(s).",
         caderno.name, resultado.paginas, len(resultado.atos),
@@ -179,6 +184,18 @@ def nome_em_pendentes(nome: str, ato: AtoSeparado) -> str:
     return f"{raiz} - {caderno} p{ato.pagina_inicial}.{extensao}"
 
 
+def _separar(caderno: Path) -> ResultadoSeparacao:
+    return aplicar_cascata(separar_caderno(caderno), caderno)
+
+
+def _textos_no_lote(resultados: list[ResultadoSeparacao]) -> dict[tuple[str, str], set[str]]:
+    textos: dict[tuple[str, str], set[str]] = {}
+    for resultado in resultados:
+        for ato in resultado.atos:
+            textos.setdefault((ato.especie.nome, ato.numero), set()).add(hash_do_texto(ato.texto))
+    return textos
+
+
 def _gravar_publicacao(
     cfg: Configuracao,
     ato: AtoSeparado,
@@ -190,11 +207,16 @@ def _gravar_publicacao(
     segue para pendentes (o lote decide o nome final de novo, com a base daquele momento)."""
     assert contexto is not None and cfg.pasta_dbf is not None and ato.data_publicacao and ato.caderno
     pasta_dbf = cfg.pasta_dbf
-    publicacao = Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial)
+    publicacao = Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial, ato.marcado_como_republicacao)
+
+    def identico(nome_base: str) -> bool | None:
+        comparado = comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base)
+        return comparado.identico if comparado.lido else None
+
+    outros_textos = contexto.textos_no_lote.get((ato.especie.nome, ato.numero), set())
     plano = planejar(
         ato.especie, ato.numero, publicacao, hash_do_texto(ato.texto), contexto.registro,
-        contexto.nomes_na_base,
-        lambda nome_base: comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base).identico,
+        contexto.nomes_na_base, identico, outra_publicacao_no_lote=len(outros_textos) > 1,
     )
     for aviso in plano.avisos:
         log.warning("%s | AVISO: %s", nome, aviso)
@@ -202,6 +224,8 @@ def _gravar_publicacao(
         return "já registrado (mesma publicação)"
     if plano.acao is Acao.DUPLICATA:
         return "já existe na DBF (texto idêntico)"
+    if plano.acao is Acao.BASE_IMAGEM:
+        return "já existe na DBF (PDF da base é imagem; não comparado)"
     rotulo = (
         "CONFERIR DUPLICATA" if plano.acao is Acao.CONFERIR
         else "REPUBLICAÇÃO" if plano.republicacao
@@ -271,8 +295,13 @@ def relatorio_dos_cadernos(
             log.warning("O registro tem uma operação interrompida; o próximo lote a desfaz ou conclui.")
         contexto = ContextoDaGravacao(registro, listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia))
     resumo = ResumoRelatorio()
-    for caderno in cadernos:
-        _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar, contexto)
+    # Primeiro separa todos os cadernos: com --gravar, a decisão de cada ato depende de o
+    # mesmo número aparecer com outro texto em outro caderno do lote.
+    resultados = [_separar(caderno) for caderno in cadernos]
+    if contexto is not None:
+        contexto.textos_no_lote = _textos_no_lote(resultados)
+    for caderno, resultado in zip(cadernos, resultados):
+        _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar, contexto, resultado)
     log.info("Total: %d caderno(s), %d ato(s).", resumo.cadernos, resumo.atos)
     for situacao, quantidade in resumo.situacoes.most_common():
         log.info("  %3d  %s", quantidade, situacao)

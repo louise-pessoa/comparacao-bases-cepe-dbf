@@ -5,10 +5,10 @@ definir uma nova `Especie`, com seu cabeçalho, seu padrão de nomenclatura e se
 tipos, e incluí-la em `ESPECIES_ATIVAS`. Nenhuma outra etapa do pipeline precisa
 ser reescrita.
 
-As RegEx (cabeçalhos e tipos) NÃO ficam aqui: moram em `regras_atos.py`, arquivo
-só com a biblioteca padrão que também é enviado à equipe da CEPE. Este arquivo as
-importa e acrescenta o que é do pipeline (modelo de decreto, nome de arquivo,
-escopo por programa, estrutura do texto). EDITAL e PORTARIA estão definidos, mas
+As RegEx (cabeçalhos e tipos) NÃO ficam aqui: moram em `regras_atos.py`, a fonte única
+das regras de reconhecimento, que também serve o catálogo. Este arquivo as importa e
+acrescenta o que é do pipeline (modelo de decreto, nome de arquivo, escopo por programa,
+estrutura do texto). EDITAL e PORTARIA estão definidos, mas
 NÃO ativos: só entram em `ESPECIES_ATIVAS` por decisão da DBF.
 """
 

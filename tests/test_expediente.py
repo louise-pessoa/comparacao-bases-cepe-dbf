@@ -129,3 +129,40 @@ def test_diretora_presidente_conta_como_marca(tmp_path):
     quatro = "GOVERNADOR\nEduardo Campos\nVICE-GOVERNADOR\nJoão Lyra Neto\nDIRETORA PRESIDENTE\nFulana\nCOMPANHIA EDITORA DE PERNAMBUCO"
     texto = separar_caderno(pagina_com_expediente(tmp_path / "c.pdf", quatro)).atos[0].texto
     assert "COMPANHIA EDITORA DE PERNAMBUCO" not in texto and "João Lyra Neto" not in texto
+
+
+def _pagina_com_lista_longa(caminho: Path, margem_do_cargo: float, altura_do_cargo: float = 480) -> Path:
+    """O quadro termina na CEPE (outra coluna, mais acima), mas a lista de secretários desce
+    além dela, como em 2022: o cargo de baixo só entra se estiver alinhado à lista."""
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    pagina.insert_textbox(pymupdf.Rect(30, 400, 210, 520), "GOVERNADOR\nPaulo Câmara\nVICE-GOVERNADORA\nLuciana Santos\nSECRETÁRIOS DE ESTADO", fontsize=7)
+    pagina.insert_textbox(pymupdf.Rect(400, 400, 580, 470), "DIRETOR PRESIDENTE\nFulano\nCOMPANHIA EDITORA DE PERNAMBUCO", fontsize=7)
+    pagina.insert_textbox(
+        pymupdf.Rect(margem_do_cargo, altura_do_cargo, margem_do_cargo + 180, altura_do_cargo + 40),
+        "SECRETÁRIO DE DEFESA SOCIAL\nHumberto Freire", fontsize=7,
+    )
+    pagina.insert_textbox(pymupdf.Rect(30, 600, 580, 800), DECRETO_1 + "\n" + DECRETO_2, fontsize=7)
+    doc.save(caminho)
+    doc.close()
+    return caminho
+
+
+def test_lista_de_secretarios_que_desce_alem_das_marcas_tambem_sai(tmp_path):
+    with pymupdf.open(_pagina_com_lista_longa(tmp_path / "c.pdf", 30)) as doc:
+        linhas = separador._linhas_da_pagina(doc[0])
+    assert "SECRETÁRIO DE DEFESA SOCIAL" not in linhas and "Humberto Freire" not in linhas
+    assert "Art. 1º Fica aberto o crédito." in linhas
+
+
+def test_cargo_fora_do_alinhamento_da_lista_nao_estica_o_quadro(tmp_path):
+    with pymupdf.open(_pagina_com_lista_longa(tmp_path / "c.pdf", 120)) as doc:
+        linhas = separador._linhas_da_pagina(doc[0])
+    assert "SECRETÁRIO DE DEFESA SOCIAL" in linhas and "Humberto Freire" in linhas
+
+
+def test_cargo_alinhado_mas_longe_do_quadro_fica(tmp_path):
+    # um título de ato em maiúsculas, mais abaixo na mesma margem, não é a lista do quadro
+    with pymupdf.open(_pagina_com_lista_longa(tmp_path / "c.pdf", 30, altura_do_cargo=820)) as doc:
+        linhas = separador._linhas_da_pagina(doc[0])
+    assert "SECRETÁRIO DE DEFESA SOCIAL" in linhas and "Humberto Freire" in linhas

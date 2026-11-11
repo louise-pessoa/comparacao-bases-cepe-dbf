@@ -7,7 +7,9 @@ normalizado, nome do arquivo e situação:
   - "gravado": está na base da DBF com o nome `arquivo`;
   - "duplicata": texto idêntico a outra publicação já na base; não foi gravada;
   - "conferir duplicata": a base tinha um arquivo deste número sem registro e com
-    texto diferente; o PDF foi para a pasta local de conferência (`arquivo`).
+    texto diferente; o PDF foi para a pasta local de conferência (`arquivo`);
+  - "base é imagem (não comparado)": a base tinha o número num PDF digitalizado, sem
+    texto para comparar, e não havia sinal de republicação; não foi gravada.
 
 É com ele que a regra de republicação sabe a data de cada arquivo da base. Arquivos
 da base gravados antes deste registro existir não constam dele (ver
@@ -38,7 +40,10 @@ VERSAO = 1
 GRAVADO = "gravado"
 DUPLICATA = "duplicata"
 CONFERIR = "conferir duplicata"
-SITUACOES = (GRAVADO, DUPLICATA, CONFERIR)
+# A base tem o número, mas o PDF dela é imagem (digitalizado): não há texto para comparar.
+# Sem sinal de republicação, conta como já existente (decisão de 10/11/2026).
+BASE_IMAGEM = "base é imagem (não comparado)"
+SITUACOES = (GRAVADO, DUPLICATA, CONFERIR, BASE_IMAGEM)
 
 
 class ErroRegistro(Exception):
@@ -55,6 +60,9 @@ class Entrada:
     arquivo: str | None  # nome na base (gravado) ou na pasta de conferência
     situacao: str
     registrado_em: str = ""
+    # Decisão tomada no `--conferir` ("mantida a base", "substituída pelo Diário ...") e quando.
+    decisao: str = ""
+    decidido_em: str = ""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +76,7 @@ class Entrada:
             "arquivo": self.arquivo,
             "situacao": self.situacao,
             "registrado_em": self.registrado_em,
+            **({"decisao": self.decisao, "decidido_em": self.decidido_em} if self.decisao else {}),
         }
 
     @classmethod
@@ -79,7 +88,7 @@ class Entrada:
             if not isinstance(dados[chave], str) or not dados[chave]:
                 raise ValueError(f"{chave} inválido: {dados[chave]!r}")
         arquivo = dados.get("arquivo")
-        if situacao != DUPLICATA and (not isinstance(arquivo, str) or not arquivo):
+        if situacao not in (DUPLICATA, BASE_IMAGEM) and (not isinstance(arquivo, str) or not arquivo):
             raise ValueError(f"arquivo inválido: {arquivo!r}")
         return cls(
             especie=dados["especie"],
@@ -92,6 +101,8 @@ class Entrada:
             arquivo=arquivo,
             situacao=situacao,
             registrado_em=str(dados.get("registrado_em") or ""),
+            decisao=str(dados.get("decisao") or ""),
+            decidido_em=str(dados.get("decidido_em") or ""),
         )
 
     def do_ato(self, especie: str, numero: str, ano: str | None) -> bool:
@@ -168,6 +179,20 @@ class Registro:
         if not entrada.registrado_em:
             entrada = replace(entrada, registrado_em=datetime.now().isoformat(timespec="seconds"))
         self.entradas.append(entrada)
+
+    def entrada_da_conferencia(self, arquivo: str) -> Entrada | None:
+        """A publicação mandada para conferência com o PDF `arquivo` (ainda sem decisão)."""
+        return next(
+            (e for e in self.entradas if e.situacao == CONFERIR and e.arquivo == arquivo and not e.decisao), None
+        )
+
+    def decidir(self, entrada: Entrada, situacao: str, arquivo: str | None, decisao: str) -> None:
+        """Anota a decisão do `--conferir` na entrada (só em memória; `salvar` grava)."""
+        posicao = self.entradas.index(entrada)
+        self.entradas[posicao] = replace(
+            entrada, situacao=situacao, arquivo=arquivo, decisao=decisao,
+            decidido_em=datetime.now().isoformat(timespec="seconds"),
+        )
 
     def renomear(self, especie: str, numero: str, ano: str | None, de: str, para: str) -> None:
         """Atualiza o nome de um arquivo gravado (depois de renomeado na base)."""

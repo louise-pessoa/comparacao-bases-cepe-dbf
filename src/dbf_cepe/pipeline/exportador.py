@@ -25,9 +25,10 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.leitura.separador import AtoSeparado
+from dbf_cepe.pipeline.comparacao import comparar_textos, palavras
 from dbf_cepe.pipeline.publicacao import Publicacao, metadados
 
 PASTA_FONTES = Path(__file__).resolve().parents[1] / "recursos" / "fontes"
@@ -72,7 +73,10 @@ def _montar_pdf(ato: AtoSeparado, pasta_fontes: Path) -> FPDF:
     pdf.set_title(f"{ato.especie.nome} {ato.numero}")
     if ato.data_publicacao is not None and ato.caderno:
         # A data do caderno acompanha o ato até a etapa 5 (ver publicacao.py).
-        pdf.set_keywords(metadados(Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial)))
+        publicacao = Publicacao(
+            ato.data_publicacao, ato.caderno, ato.pagina_inicial, ato.marcado_como_republicacao
+        )
+        pdf.set_keywords(metadados(publicacao))
     pdf.add_page()
     for posicao, linha in enumerate(ato.texto.split("\n")):
         if not linha.strip():
@@ -96,9 +100,13 @@ def _conferir(parcial: Path, ato: AtoSeparado) -> None:
             f"PDF gerado foi identificado como {ident.numero!r} ({ident.status.value}), "
             f"esperado {ato.numero!r}"
         )
-    if normalizar_espacos(leitura.texto) != normalizar_espacos(ato.texto):
+    # Mesmos elementos da comparação com a base: espaços, quebras de linha e pontilhado não
+    # contam (uma linha de pontos longa é quebrada pelo gerador e volta com um espaço no meio).
+    if palavras(leitura.texto) != palavras(ato.texto):
+        diferenca = comparar_textos(ato.texto, leitura.texto).trechos[:1]
         raise ErroExportacao(
-            "o texto do PDF gerado difere do texto do decreto (caractere sem glifo na fonte?)"
+            "o texto do PDF gerado difere do texto do decreto (caractere sem glifo na fonte?): "
+            + (diferenca[0].replace("caderno:", "decreto:").replace("base:", "PDF:") if diferenca else "")
         )
 
 

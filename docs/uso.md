@@ -70,6 +70,52 @@ nenhum decreto chega duas vezes.
 - **Caderno republicado no mesmo endereço** não é baixado de novo, porque o manifesto só guarda o que já veio. Para
   rebaixar, apague a entrada dele no manifesto.
 
+## Lote histórico
+
+Para gravar na base os decretos de meses anteriores a 2026:
+
+- **Um mês por vez, em ordem cronológica** (do mais antigo para o mais novo), para a publicação original chegar
+  antes da republicação.
+- **Sempre `--fonte s3`.** O site atual da CEPE, a fonte padrão, só foi conferido para 2026. O S3 tem os cadernos
+  de 2005 a 2025, mas o pipeline só lê corretamente a partir de **2020**
+  ([`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite)).
+- **Cada mês na própria pasta** (`dados\historico\AAAA-MM`), com `PASTA_CADERNOS` definido só para o download. Assim
+  o mês não se mistura com `dados\cadernos`, e cada pasta tem o próprio manifesto.
+
+Em PowerShell, para fevereiro de 2020:
+
+```powershell
+$mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
+$pasta = "dados\historico\$mes"
+
+$env:PASTA_CADERNOS = $pasta
+python main.py --baixar --fonte s3 --de $de --ate $ate
+Remove-Item Env:PASTA_CADERNOS
+
+python main.py --separar $pasta --comparar
+python main.py --separar $pasta | Select-String "reprovado no crit"
+python main.py --separar $pasta --gravar
+python main.py --simular
+python main.py
+python main.py --conferir --simular
+python main.py --conferir
+```
+
+O que conferir em cada passo:
+
+| Passo | O que olhar |
+|---|---|
+| `--baixar` | o resumo: "baixado" e "sem edição nesse dia" (feriados, domingos, segundas e dias sem Extra). Nenhum baixado no mês inteiro é problema de rede ou de proxy (ver "Problemas de rede") |
+| `--separar --comparar` | o bloco "Comparação com a base": idênticos, de 99% a menos de 100% (vão para conferência), abaixo de 95% (investigar antes de gravar) e "PDF da base não lido" (base em imagem) |
+| `Select-String "reprovado no crit"` | nenhuma linha. Se aparecer um decreto reprovado que não esteja "fora do escopo da DBF", apague o PDF dele em `dados\pendentes` depois do `--gravar`. A busca é sem acento por causa da codificação do console |
+| `--gravar` | nenhum "não puderam ser gravados em pendentes" |
+| `--simular` | o que vai para a base ("normalizado e armazenado na DBF") e o que vai para conferência |
+| `--conferir` | decidir cada PDF (usar o Diário ou manter a base) |
+
+Para o console mostrar os acentos, rode antes, na mesma janela: `$env:PYTHONUTF8 = "1"` e
+`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`. Os cadernos do mês podem ser apagados à mão depois do
+`--conferir`; o manifesto da pasta guarda o que foi baixado.
+
 ## Etapa 1b: separar os decretos (`--separar`)
 
 ```bash
@@ -103,6 +149,7 @@ mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs se
 | `ANTERIOR À DA BASE (gravado em pendentes: ...; antes, renomear ...)` | publicação mais antiga que a gravada: o lote renomeia o arquivo da base para abrir lugar |
 | `CONFERIR DUPLICATA (gravado em pendentes: ...)` | a base tem o número sem registro e com texto diferente; o lote manda para conferência manual |
 | `já existe na DBF (texto idêntico)` | não grava |
+| `já existe na DBF (PDF da base é imagem; não comparado)` | não grava: o PDF da base é digitalizado e não há sinal de republicação (marca "REPUBLICADO" no caderno ou outro texto do mesmo número no lote) |
 | `já registrado (mesma publicação)` | não grava (mesma data, caderno e página já no registro) |
 
 O lote decide o nome final de novo, com a base daquele momento. **Caderno sem data no nome:** regra antiga (só o que a
@@ -120,7 +167,8 @@ mesma publicação ou uma possível republicação. Só lê.
 
 - A comparação é elemento por elemento: palavras, números e cada sinal de pontuação. Maiúsculas, acentos e pontuação
   contam.
-- Espaços e quebras de linha não contam. Ligaduras, aspas e apóstrofos curvos e travessões são padronizados: "Recife/ PE"
+- Espaços, quebras de linha e pontilhado (três ou mais pontos seguidos, reticências) não contam. O pontilhado marca,
+  nos decretos de alteração, o trecho não alterado; a base de 2020 não o guarda. Ligaduras, aspas e apóstrofos curvos e travessões são padronizados: "Recife/ PE"
   e "Recife/PE" são iguais.
 - Cada linha diz "texto idêntico ao da base" ou dá a similaridade, quantos elementos estão só no caderno ou só na base e
   as 8 primeiras diferenças, com contexto.
@@ -171,6 +219,33 @@ substituído na próxima gravação do mesmo decreto, mas pode ser apagado à m�
   desfaz ou conclui antes de tudo, com um aviso no log. Com `--simular`, o programa só avisa e para. Se os arquivos da
   base não conferirem com nenhum passo da operação, ele pede conferência manual e não mexe em nada.
 
+## Conferência (`--conferir`)
+
+```bash
+python main.py --conferir --simular   # só mostra as diferenças de cada PDF, sem perguntar nem mexer em nada
+python main.py --conferir             # pergunta, PDF a PDF, o que fazer
+```
+
+Revisa os PDFs de `dados/conferir duplicata`: publicações do Diário cujo número a base já tinha (gravado antes do
+registro de publicações existir) com texto diferente. Para cada PDF, mostra a publicação (data, caderno, página), a
+similaridade e as diferenças para o arquivo da base, no formato `...contexto [Diário: X | base: Y] contexto...`, e
+pergunta:
+
+| Resposta | O que acontece |
+|---|---|
+| `d` | **usa o texto do Diário**: o arquivo da base vai para `dados/substituidos` (com data e hora no nome) e o PDF do Diário entra no lugar dele, conferido; se algo falhar depois da troca, o antigo volta. O PDF sai da conferência e o registro passa a "gravado" |
+| `b` | **mantém a base**: o PDF sai da conferência; a base não é tocada |
+| `v` | mostra todas as diferenças (a tela mostra as 3 primeiras) |
+| `p` ou Enter | pula: o PDF fica para a próxima vez |
+
+- A decisão e a data ficam no registro de publicações (`decisao`, `decidido_em`). Uma publicação já decidida não volta
+  para a conferência.
+- Quando o PDF da base é imagem, a tela avisa que não há texto para comparar; o texto do Diário está no PDF da
+  conferência.
+- Se o número não tiver mais arquivo na base, a opção `d` não aparece.
+- A pasta das cópias pode ser trocada com `PASTA_SUBSTITUIDOS` no `.env`. As cópias nunca são apagadas pelo programa.
+- Para registro ilegível ou com uma operação do lote pela metade, o comando para sem mexer em nada (rode o lote antes).
+
 ## Catálogo (`--catalogar`)
 
 ```bash
@@ -199,6 +274,7 @@ O significado de cada coluna e as regras de escopo estão em [`funcionamento.md`
 ```bash
 python -m ferramentas.localizar_exemplos            # acha erratas, republicações e formatos de edital/portaria
 python -m ferramentas.regressao_separador main      # a separação dos decretos mudou em relação ao commit main?
+python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decreto a decreto
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 ```
 

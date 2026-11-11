@@ -40,7 +40,7 @@ from dbf_cepe.pipeline.armazenamento import (
 from dbf_cepe.pipeline.duplicidade import chave_nome, ja_existe, listar_nomes
 from dbf_cepe.pipeline.normalizador import ErroNormalizacao
 from dbf_cepe.pipeline.publicacao import Publicacao, hash_do_texto, ler_do_pdf
-from dbf_cepe.pipeline.registro import CONFERIR, DUPLICATA, GRAVADO, Entrada, ErroRegistro, Registro
+from dbf_cepe.pipeline.registro import BASE_IMAGEM, CONFERIR, DUPLICATA, GRAVADO, Entrada, ErroRegistro, Registro
 from dbf_cepe.pipeline.republicacao import Acao, Plano, planejar
 
 log = logging.getLogger("pipeline")
@@ -168,8 +168,9 @@ def _com_publicacao(
     pasta_dbf = cfg.pasta_dbf
     assert pasta_dbf is not None
 
-    def identico(nome: str) -> bool:
-        return comparacao.comparar_com_base(texto, pasta_dbf / nome).identico
+    def identico(nome: str) -> bool | None:
+        comparado = comparacao.comparar_com_base(texto, pasta_dbf / nome)
+        return comparado.identico if comparado.lido else None
 
     plano = planejar(
         especie, numero, publicacao, hash_texto, estado.registro, estado.nomes_na_base, identico
@@ -182,8 +183,8 @@ def _com_publicacao(
 
     if plano.acao is Acao.JA_REGISTRADA:
         return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, plano.motivo, simular)
-    if plano.acao is Acao.DUPLICATA:
-        estado.registro.adicionar(entrada(DUPLICATA, None))
+    if plano.acao in (Acao.DUPLICATA, Acao.BASE_IMAGEM):
+        estado.registro.adicionar(entrada(DUPLICATA if plano.acao is Acao.DUPLICATA else BASE_IMAGEM, None))
         _salvar(estado.registro, simular)
         return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, plano.motivo, simular)
     if ident.tipo is None:
