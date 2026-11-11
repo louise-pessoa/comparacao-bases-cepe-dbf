@@ -70,6 +70,52 @@ nenhum decreto chega duas vezes.
 - **Caderno republicado no mesmo endereço** não é baixado de novo, porque o manifesto só guarda o que já veio. Para
   rebaixar, apague a entrada dele no manifesto.
 
+## Lote histórico
+
+Para gravar na base os decretos de meses anteriores a 2026:
+
+- **Um mês por vez, em ordem cronológica** (do mais antigo para o mais novo), para a publicação original chegar
+  antes da republicação.
+- **Sempre `--fonte s3`.** O site atual da CEPE, a fonte padrão, só foi conferido para 2026. O S3 tem os cadernos
+  de 2005 a 2025, mas o pipeline só lê corretamente a partir de **2020**
+  ([`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite)).
+- **Cada mês na própria pasta** (`dados\historico\AAAA-MM`), com `PASTA_CADERNOS` definido só para o download. Assim
+  o mês não se mistura com `dados\cadernos`, e cada pasta tem o próprio manifesto.
+
+Em PowerShell, para fevereiro de 2020:
+
+```powershell
+$mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
+$pasta = "dados\historico\$mes"
+
+$env:PASTA_CADERNOS = $pasta
+python main.py --baixar --fonte s3 --de $de --ate $ate
+Remove-Item Env:PASTA_CADERNOS
+
+python main.py --separar $pasta --comparar
+python main.py --separar $pasta | Select-String "reprovado no crit"
+python main.py --separar $pasta --gravar
+python main.py --simular
+python main.py
+python main.py --conferir --simular
+python main.py --conferir
+```
+
+O que conferir em cada passo:
+
+| Passo | O que olhar |
+|---|---|
+| `--baixar` | o resumo: "baixado" e "sem edição nesse dia" (feriados, domingos, segundas e dias sem Extra). Nenhum baixado no mês inteiro é problema de rede ou de proxy (ver "Problemas de rede") |
+| `--separar --comparar` | o bloco "Comparação com a base": idênticos, de 99% a menos de 100% (vão para conferência), abaixo de 95% (investigar antes de gravar) e "PDF da base não lido" (base em imagem) |
+| `Select-String "reprovado no crit"` | nenhuma linha. Se aparecer um decreto reprovado que não esteja "fora do escopo da DBF", apague o PDF dele em `dados\pendentes` depois do `--gravar`. A busca é sem acento por causa da codificação do console |
+| `--gravar` | nenhum "não puderam ser gravados em pendentes" |
+| `--simular` | o que vai para a base ("normalizado e armazenado na DBF") e o que vai para conferência |
+| `--conferir` | decidir cada PDF (usar o Diário ou manter a base) |
+
+Para o console mostrar os acentos, rode antes, na mesma janela: `$env:PYTHONUTF8 = "1"` e
+`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`. Os cadernos do mês podem ser apagados à mão depois do
+`--conferir`; o manifesto da pasta guarda o que foi baixado.
+
 ## Etapa 1b: separar os decretos (`--separar`)
 
 ```bash

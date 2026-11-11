@@ -64,6 +64,27 @@ Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. Rode os
 cadernos mais antigos para os mais novos). O registro de cada decisão fica em
 `logs/pipeline.log`. Opções, mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
 
+### Lote histórico (meses anteriores a 2026)
+
+Um mês por vez, em ordem cronológica, cada mês na própria pasta e **sempre com `--fonte s3`**: o site atual da CEPE
+(a fonte padrão) só foi conferido para 2026, e o S3 tem os cadernos de 2005 a 2025. Exemplo, fevereiro de 2020
+(PowerShell):
+
+```powershell
+$mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
+$pasta = "dados\historico\$mes"
+$env:PASTA_CADERNOS = $pasta                                 # baixa na pasta do mês, não em dados\cadernos
+python main.py --baixar --fonte s3 --de $de --ate $ate
+Remove-Item Env:PASTA_CADERNOS
+python main.py --separar $pasta --comparar                   # lista e compara com a base (só lê)
+python main.py --separar $pasta --gravar
+python main.py --simular
+python main.py
+python main.py --conferir                                    # decide os que foram para "conferir duplicata"
+```
+
+Passo a passo, o que conferir em cada etapa e o ano-limite (2020): [`docs/uso.md`](docs/uso.md#lote-histórico).
+
 ## Testes
 
 ```bash
