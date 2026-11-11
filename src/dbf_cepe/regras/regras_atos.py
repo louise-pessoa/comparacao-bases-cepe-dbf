@@ -1,8 +1,9 @@
 """Regras para reconhecer atos no texto do Diário Oficial de Pernambuco.
 
-Arquivo único, SÓ com a biblioteca padrão do Python (sem PyMuPDF, sem o resto
-do projeto): pode ser copiado e rodado sozinho. Reconhece, em texto já extraído
-do PDF de um caderno, estas espécies:
+É a fonte única das expressões regulares do projeto: o que é específico de cada espécie
+em `especies.py` (cabeçalho, abertura, fecho e tipos do decreto) vem daqui, e o separador,
+o identificador, o catálogo e as ferramentas usam estas regras. Reconhece, em texto já
+extraído do PDF de um caderno, estas espécies:
 
     Decreto, Edital, Portaria      -> cabeçalho, número, ano, órgão, tipo, data do ato
     Errata                         -> ato referido (espécie, número, ano) e destino
@@ -14,8 +15,7 @@ Uso mínimo:
     for achado in identificar(texto_do_caderno):
         print(achado.especie, achado.numero, achado.tipo, achado.data_do_ato)
 
-Rodar `python regras_atos.py` confere a tabela EXEMPLOS (entrada -> resultado
-esperado) e diz se alguma regra deixou de funcionar.
+A tabela de exemplos (entrada -> resultado esperado) fica em tests/test_regras_atos.py.
 
 O que o código pressupõe sobre o texto (ver `limpar_texto`):
   - uma linha do Diário por linha do texto (as quebras do PDF são mantidas);
@@ -39,6 +39,9 @@ Evidência de cada padrão (mesma convenção do projeto): "amostra" = conferido
 caderno real; "publicado" = conferido em ato publicado, sem caderno versionado;
 "presumido" = deduzido, falta amostra. Os tipos de edital e portaria nasceram
 dos cadernos de 25/04, 26/06, 15/07, 21/10 e 22/10/2026.
+
+Histórico: até 11/11/2026 este arquivo era mantido só com a biblioteca padrão, para poder
+ser enviado sozinho à equipe da CEPE. Não há mais envio (decisão de 11/11/2026).
 """
 
 from __future__ import annotations
@@ -963,156 +966,3 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
     achados = atos + erratas + orfaos
     achados.sort(key=lambda a: a.posicao)
     return achados
-
-
-# ----------------------------------------------------------------------------
-# 11. Exemplos (entrada -> resultado esperado), para a equipe rodar sozinha
-# ----------------------------------------------------------------------------
-
-# Cada item: (texto curto, (campos esperados do 1º achado, do 2º achado, ...)).
-# O texto tem de gerar EXATAMENTE tantos achados quantos dicionários houver; só os
-# campos citados são conferidos. Para propor um caso novo, acrescente um item aqui
-# com o trecho real (curto, sem nomes de pessoas) e o resultado que o Diário pede.
-# Trechos de cadernos de 25/04, 26/06, 15/07, 21/10 e 22/10/2026.
-_ASSINATURAS_DO_DECRETO = (
-    "Independência do Brasil.\nRAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado\n"
-    "FABRÍCIO MARQUES SANTOS\n"
-)
-EXEMPLOS: tuple[tuple[str, tuple[dict[str, object], ...]], ...] = (
-    # Decreto: número sem ponto, ano, data do cabeçalho e tipo pelo início da ementa.
-    (
-        "DECRETO Nº 60.929, DE 25 DE JUNHO DE 2026.\n"
-        "Concede estímulo previsto na Lei nº 11.675, de 11 de outubro de 1999.\n"
-        "A GOVERNADORA DO ESTADO, no uso das atribuições\n",
-        (
-            {"especie": "Decreto", "numero": "60929", "ano": "2026",
-             "data_do_ato": "2026-06-25", "tipo": "CONCESSAO"},
-        ),
-    ),
-    # Decreto de alteração da NORMA do programa (cita o decreto do PRODEPE).
-    (
-        "DECRETO Nº 52.040, DE 3 DE MARÇO DE 2021.\n"
-        "Modifica o Decreto nº 44.650, de 30 de junho de 2017.\n"
-        "A GOVERNADORA DO ESTADO\n",
-        ({"especie": "Decreto", "numero": "52040", "tipo": "ALTERACAO_NORMA"},),
-    ),
-    # Citação de decreto no corpo do texto não é ato.
-    ("Considerando o Decreto nº 21.959, de 27 de dezembro de 1999, que institui o PRODEPE\n", ()),
-    # Edital da DBF: o cabeçalho não traz data; ela vem da linha "Recife, ..." do fecho.
-    (
-        "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO RELATIVO À CONCESSÃO DE BENEFÍCIO FISCAL DO ICMS\n"
-        "A Diretoria de Benefícios Fiscais - DBF, resolve credenciar\nRecife, 21 de outubro de 2026.\n",
-        (
-            {"especie": "Edital", "numero": "063", "ano": "2026", "orgao": "DBF",
-             "tipo": "CREDENCIAMENTO", "sefaz": True, "data_do_ato": "2026-10-21"},
-        ),
-    ),
-    # Edital sem órgão no cabeçalho: fica "a confirmar" (sefaz None).
-    (
-        "EDITAL Nº 43/2026\nCREDENCIAMENTO PARA FRUIÇÃO DO BENEFÍCIO DE CRÉDITO PRESUMIDO\n",
-        ({"especie": "Edital", "numero": "43", "ano": "2026", "orgao": None, "sefaz": None},),
-    ),
-    # Edital com código composto no lugar do número.
-    (
-        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
-        ({"especie": "Edital", "numero": "0014.2026.PNE", "ano": "2026", "tipo": "CREDENCIAMENTO"},),
-    ),
-    # Edital sem órgão no cabeçalho: o órgão vem do título em maiúsculas acima (pista de baixa
-    # confiança, em `orgao_do_titulo`; `orgao` continua vazio). Outro órgão = fora do escopo.
-    (
-        "SECRETARIA DE ADMINISTRAÇÃO\nAVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\n"
-        "EDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\nPROCESSO DE INEXIGIBILIDADE\n",
-        (
-            {"especie": "Edital", "numero": "0014.2026.PNE", "orgao": None,
-             "orgao_do_titulo": "SECRETARIA DE ADMINISTRAÇÃO", "sefaz": False, "republicacao": "sim"},
-        ),
-    ),
-    # Edital sem número: não some, sai com aviso.
-    (
-        "EDITAL DE CONVOCAÇÃO\nSINDICATO DOS FISIOTERAPEUTAS\n",
-        ({"especie": "Edital", "numero": None, "tipo": "CONVOCACAO"},),
-    ),
-    # Portaria da SEFAZ (sigla SF): data e ano vêm do cabeçalho; tipo = primeiro verbo operativo.
-    (
-        "PORTARIA SF Nº 200, DE 20.10.2026\nO SECRETÁRIO DA FAZENDA, RESOLVE:\n"
-        "Art. 1° Declarar a perda por renúncia ao incentivo do PRODEPE\n",
-        (
-            {"especie": "Portaria", "numero": "200", "ano": "2026", "orgao": "SF", "sefaz": True,
-             "data_do_ato": "2026-10-20", "tipo": "PERDA_INCENTIVO"},
-        ),
-    ),
-    # Portaria de outro órgão: reconhecida, fora do escopo SEFAZ.
-    (
-        "PORTARIA SES/PE N° 609, de 21 de Outubro de 2026\nInstitui o Núcleo de Segurança do Paciente\n",
-        ({"especie": "Portaria", "numero": "609", "orgao": "SES/PE", "sefaz": False},),
-    ),
-    # Portaria sem número no cabeçalho: sai com aviso.
-    (
-        "PORTARIA SEE/SEGP DE 20 DE OUTUBRO DE 2026. A SECRETARIA EXECUTIVA\n",
-        ({"especie": "Portaria", "numero": None, "orgao": "SEE/SEGP", "data_do_ato": "2026-10-20"},),
-    ),
-    # Errata: a chave é o ato referido (espécie, número, ano) e o destino.
-    (
-        "ERRATA\nNo art. 4º do Decreto nº 61.560, de 19 de outubro de 2026, que redenomina o cargo\n",
-        (
-            {"especie": "Errata", "destino": "decreto", "ato_referido": "Decreto 61.560",
-             "ref_numero": "61560", "ref_ano": "2026"},
-        ),
-    ),
-    (
-        "Errata ao Edital do Chamamento Público nº 010/2026, Processo nº 047/CPL/2026\n",
-        ({"especie": "Errata", "destino": "edital", "ref_numero": "010", "ref_ano": "2026"},),
-    ),
-    (
-        "ERRATA\nNa Portaria SJDH nº 126, publicada no Diário Oficial do Estado em 30 de setembro de 2026\n",
-        ({"especie": "Errata", "destino": "portaria", "ref_numero": "126", "ref_ano": "2026"},),
-    ),
-    (
-        "ERRATA DO DESPACHO SECOGE DE 18/06/2026, PUBLICADO NO DOE DE 19/06/2026.\n",
-        ({"especie": "Errata", "destino": "outro", "ato_referido": "Despacho"},),
-    ),
-    # Republicação: o rodapé "(REPUBLICADO ...)" vem DEPOIS das assinaturas e se liga ao decreto.
-    (
-        "DECRETO Nº 61.055, DE 13 DE JULHO DE 2026.\nAbre ao Orçamento Fiscal crédito suplementar\n"
-        "A GOVERNADORA DO ESTADO\n" + _ASSINATURAS_DO_DECRETO
-        + "(REPUBLICADO POR HAVER SAÍDO COM INCORREÇÃO NO ORIGINAL)\nANEXO I\n",
-        ({"especie": "Decreto", "numero": "61055", "republicacao": "sim"},),
-    ),
-    # Republicação em título, acima do edital.
-    (
-        "AVISO DE ABERTURA – 2ª REPUBLICAÇÃO DE EDITAL\nEDITAL DE CREDENCIAMENTO N° 0014.2026.PNE\n",
-        ({"especie": "Edital", "numero": "0014.2026.PNE", "republicacao": "sim"},),
-    ),
-    # Republicação dentro de lista de atos de outra espécie: não se liga a nada.
-    (
-        "ATO DO DIA 16 DE OUTUBRO DE 2026.\nNº 5538 - Nomear X para exercer o cargo em comissão.\n"
-        "(REPUBLICADO POR HAVER SAÍDO COM INCORREÇÃO NO ORIGINAL).\n",
-        ({"especie": "Republicação"},),
-    ),
-    # "republicado no DOE" dentro de texto normativo NÃO é republicação.
-    ("o Decreto nº 56.378, republicado no DOE de 06/06/2024, dispõe sobre\n", ()),
-)
-
-
-def conferir_exemplos() -> list[str]:
-    """Roda a tabela EXEMPLOS e devolve as divergências (lista vazia = tudo certo)."""
-    erros: list[str] = []
-    for indice, (texto, esperados) in enumerate(EXEMPLOS, start=1):
-        achados = identificar(texto)
-        if len(achados) != len(esperados):
-            erros.append(f"exemplo {indice}: {len(achados)} achado(s), esperado(s) {len(esperados)}")
-            continue
-        for achado, esperado in zip(achados, esperados):
-            for campo, valor in esperado.items():
-                obtido = getattr(achado, campo)
-                if obtido != valor:
-                    erros.append(f"exemplo {indice}: {campo} = {obtido!r}, esperado {valor!r}")
-    return erros
-
-
-if __name__ == "__main__":
-    divergencias = conferir_exemplos()
-    if divergencias:
-        print("\n".join(divergencias))
-        raise SystemExit(1)
-    print(f"{len(EXEMPLOS)} exemplo(s) conferido(s): tudo certo.")

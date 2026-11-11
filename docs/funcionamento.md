@@ -287,9 +287,16 @@ ementas e muda o texto dos anos bons, então só pode entrar como nível de recu
 ## Catálogo
 
 Reconhece decretos, editais, portarias, erratas e republicações no texto dos cadernos. As RegEx ficam em
-`regras/regras_atos.py`, só com a biblioteca padrão, para poder ir sozinho à equipe da CEPE: o cabeçalho do arquivo
-explica o formato de texto esperado e `python regras_atos.py` confere a tabela de exemplos. `especies.py`, `separador.py`,
-`programas.py` e a ferramenta de levantamento importam dele.
+`regras/regras_atos.py`, a fonte única das regras de reconhecimento: `especies.py`, `separador.py`, `programas.py` e a
+ferramenta de levantamento importam dele. A tabela de exemplos (entrada -> resultado esperado) fica em
+`tests/test_regras_atos.py`.
+
+*Decisão de 11/11/2026:* não há mais envio de arquivos à CEPE. O `regras_atos.py` deixou de ser mantido só com a
+biblioteca padrão para poder ir sozinho a terceiros.
+
+**Dívida técnica:** o separador (pipeline) e o `identificar` do `regras_atos.py` (catálogo) reconhecem o decreto cada um
+do seu jeito. Eram dois porque o `regras_atos.py` precisava rodar sozinho; hoje poderiam ser unificados, mas o separador
+acaba de ser validado contra a base e a mudança fica para depois das etapas da leitura em cascata.
 
 ### Colunas
 

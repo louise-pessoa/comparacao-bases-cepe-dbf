@@ -1,5 +1,5 @@
 """EDITAL e PORTARIA: definidos em especies.py, mas NÃO ativos; e a sincronia entre
-especies.py / separador.py e o arquivo regras_atos.py enviado à CEPE."""
+especies.py / separador.py e regras_atos.py (fonte única das regras)."""
 
 from __future__ import annotations
 
@@ -89,17 +89,6 @@ def test_tipos_de_decreto_mantem_ordem_padrao_e_evidencia_de_regras_atos():
 def test_todo_tipo_de_decreto_tem_modelo_declarado():
     assert {t.nome for t in especies.TIPOS_DECRETO} == set(especies._MODELO_POR_TIPO)
 
-
-def test_separador_e_regras_atos_limpam_as_ligaduras_do_mesmo_jeito():
-    amostras = [
-        "beneﬁ ciário e ﬁ scal",
-        "modiﬁ cações do ﬂ uxo, eﬀ ectivo, ofﬁ cial",
-        "ﬃ e ﬄ sem espaço",
-        "texto limpo, sem nada",
-        "",
-    ]
-    for texto in amostras:
-        assert separador.limpar_ligaduras(texto) == ra.limpar_ligaduras(texto), texto
 
 
 def test_marcadores_de_ato_do_separador_e_de_regras_atos_coincidem():

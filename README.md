@@ -79,7 +79,7 @@ request.
 ```
 main.py              atalho: python main.py ... roda a linha de comando sem instalar
 src/dbf_cepe/        o pacote: cli, config, proxy, captura, catalogo
-  regras/            RegEx dos atos (regras_atos.py, só biblioteca padrão), espécies e programas da DBF
+  regras/            RegEx dos atos (regras_atos.py, fonte única das regras), espécies e programas da DBF
   leitura/           leitura do PDF, separação dos atos do caderno e identificação
   pipeline/          duplicidade, normalização, gravação, comparação e os modos lote e relatório
   recursos/fontes/   fontes Liberation (SIL OFL)

@@ -51,8 +51,8 @@ from pathlib import Path
 import pymupdf
 
 from dbf_cepe.regras.especies import ESPECIES_ATIVAS, Especie
-from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras
-from dbf_cepe.regras.regras_atos import identificar as identificar_atos  # uma fonte só (só biblioteca padrão)
+from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras  # uma fonte só
+from dbf_cepe.regras.regras_atos import identificar as identificar_atos
 from dbf_cepe.leitura.reader import _pagina_digitalizada
 
 # Linhas de cabeçalho/rodapé de página do Diário Oficial de Pernambuco. Só são
