@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pymupdf
+
 from dbf_cepe.leitura import cascata, criterio
 from dbf_cepe.leitura.cascata import Nivel, avaliar, separar_em_cascata
 from dbf_cepe.leitura.separador import AtoSeparado, separar_caderno
@@ -72,7 +74,7 @@ def test_sem_niveis_de_recuperacao_o_reprovado_so_ganha_o_aviso():
 
 
 def test_niveis_de_recuperacao_hoje():
-    assert cascata.NIVEIS == ()  # etapa B: só a leitura atual; os níveis 2 e 3 vêm nas etapas C e D
+    assert [(n.numero, n.aceita_fechos_anteriores) for n in cascata.NIVEIS] == [(2, True), (3, True)]
 
 
 def test_caderno_real_de_2026_passa_inteiro_no_nivel_1():
@@ -91,3 +93,71 @@ def test_decreto_cortado_pelo_fim_da_amostra_reprova():
 def test_niveis_passados_na_chamada_valem_no_lugar_dos_padrao():
     atos = {a.numero: a for a in separar_em_cascata(PAGINA_9, niveis=(nivel(2, None),)).atos}
     assert atos["60905"].nivel_de_leitura is None
+
+
+# ----------------------------------------------------------------------------
+# Níveis reais, com cadernos sintéticos
+# ----------------------------------------------------------------------------
+
+ANTIGO = (
+    "DECRETO Nº 34.700, DE 5 DE MAIO DE 2010.\nConcede incentivo do PRODEPE à empresa Exemplo Ltda.\n"
+    "O GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Fica concedido o incentivo.\n"
+    "Art. 2º Este Decreto entra em vigor na data de sua publicação.\n"
+    "PALÁCIO DO CAMPO DAS PRINCESAS, em 5 de maio de 2010.\nEDUARDO HENRIQUE ACCIOLY CAMPOS"
+)
+ESQUERDA = (
+    "DECRETO Nº 47.200, DE 3 DE MARÇO DE 2019.\nConcede incentivo do PRODEPE à empresa Exemplo Ltda.\n"
+    "O GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Fica concedido o incentivo."
+)
+DIREITA = (
+    "Art. 2º Este Decreto entra em vigor na data de sua publicação.\n"
+    "Palácio do Campo das Princesas, Recife, 3 de março do ano de 2019, 203º da Revolução Republicana "
+    "Constitucionalista e 197º da Independência do Brasil.\nPAULO HENRIQUE SARAIVA CÂMARA"
+)
+
+
+def _caderno(caminho: Path, *caixas: tuple[tuple[float, float, float, float], str]) -> Path:
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    for retangulo, texto in caixas:  # a ordem das caixas é a ordem em que o PDF guarda o texto
+        pagina.insert_textbox(pymupdf.Rect(*retangulo), texto, fontsize=9)
+    doc.save(caminho)
+    return caminho
+
+
+def test_nivel_2_recupera_o_decreto_com_o_fecho_de_ate_2010(tmp_path):
+    caminho = _caderno(tmp_path / "2010.pdf", ((40, 40, 560, 800), ANTIGO))
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 2 and lido.reprovacao == ()
+    assert lido.texto.rstrip().endswith("EDUARDO HENRIQUE ACCIOLY CAMPOS")
+    assert lido.avisos[-1].startswith("lido no nível 2 (fecho de até 2010): a leitura atual reprovou (fecho antigo)")
+
+
+def test_nivel_3_le_por_coluna_a_pagina_guardada_com_a_coluna_da_direita_primeiro(tmp_path):
+    caminho = _caderno(tmp_path / "2019.pdf", ((310, 40, 570, 800), DIREITA), ((40, 40, 300, 800), ESQUERDA))
+    (direto,) = separar_caderno(caminho).atos
+    assert criterio.motivos_de_reprovacao(direto)  # a leitura atual mistura as colunas
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 3 and lido.reprovacao == ()
+    assert lido.texto.index("Art. 1º") < lido.texto.index("Art. 2º") < lido.texto.index("Palácio")
+
+
+def test_sem_fecho_em_nenhuma_leitura_vai_para_revisao_manual(tmp_path):
+    caminho = _caderno(tmp_path / "2009.pdf", ((40, 40, 560, 800), ANTIGO.split("\nPALÁCIO")[0]))
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura is None and lido.reprovacao == (criterio.SEM_FECHO,)
+
+
+def test_releitura_de_caderno_que_nao_abre_nao_acha_o_ato(tmp_path):
+    falso = tmp_path / "falso.pdf"
+    falso.write_bytes(b"nao e pdf")
+    assert cascata.NIVEIS[0].reler(falso, ato(CORTADO)) is None
+    assert cascata.NIVEIS[1].reler(tmp_path / "nao_existe.pdf", ato(CORTADO)) is None
+
+
+def test_especie_sem_fecho_anterior_fica_como_esta():
+    sem_anterior = replace(DECRETO, fechos_anteriores=())
+    assert cascata.com_fechos_anteriores(sem_anterior) is sem_anterior
+    assert cascata.com_fechos_anteriores(replace(DECRETO, fecho=None)).fecho is None
+    juntos = cascata.com_fechos_anteriores(DECRETO).fecho
+    assert juntos.search("PALÁCIO DO CAMPO DAS PRINCESAS, em 5 de maio de 2010.")

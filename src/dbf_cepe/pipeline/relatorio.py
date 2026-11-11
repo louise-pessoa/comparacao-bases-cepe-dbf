@@ -118,6 +118,10 @@ def _relatar_caderno(
                     "confira se não é um ato da DBF", nome,
                 )
                 resumo.avisos += 1
+        elif gravar and ato.nivel_de_leitura is None:
+            # Nenhum nível da leitura em cascata aprovou o texto (cortado ou misturado):
+            # não vai para pendentes, para não chegar à base com texto errado.
+            situacao = f"REVISÃO MANUAL (reprovado no critério de leitura: {', '.join(ato.reprovacao)}; não gravado)"
         elif gravar and indice is not None and ato.data_publicacao is not None and ato.caderno:
             situacao = _gravar_publicacao(cfg, ato, nome, contexto, resumo)
         elif indice is not None and ja_existe(indice, nome):

@@ -40,13 +40,19 @@ def da_dbf(ato: AtoSeparado) -> bool:
     return em_escopo(ato.especie, programas_do_ato(ato.texto, ato.especie))
 
 
-def motivos_de_reprovacao(ato: AtoSeparado, e_da_dbf: bool | None = None) -> list[str]:
+def motivos_de_reprovacao(
+    ato: AtoSeparado, e_da_dbf: bool | None = None, aceitar_fechos_anteriores: bool = False
+) -> list[str]:
     """Por que o ato reprova no critério; lista vazia = aprovado. `e_da_dbf` evita
-    recalcular o escopo quando quem chama já o sabe."""
+    recalcular o escopo quando quem chama já o sabe. Com `aceitar_fechos_anteriores`
+    (níveis 2 e 3 da cascata), o fecho de outra época (`Especie.fechos_anteriores`) conta
+    como fecho."""
     especie, texto = ato.especie, ato.texto
     motivos: list[str] = []
     if especie.fecho is not None:
         fechos = len(especie.fecho.findall(texto))
+        if aceitar_fechos_anteriores:
+            fechos += sum(len(f.findall(texto)) for f in especie.fechos_anteriores)
         if fechos == 0:
             antigo = any(f.search(texto) for f in especie.fechos_anteriores)
             motivos.append(FECHO_ANTIGO if antigo else SEM_FECHO)

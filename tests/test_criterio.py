@@ -45,7 +45,7 @@ def test_decreto_completo_e_aprovado():
         ((CORPO, CORPO + "\nDECRETO Nº 60.930, DE 25 DE JUNHO DE 2026.\nAltera algo."), criterio.OUTRO_CABECALHO),
         ((CORPO, CORPO + "\nSECRETÁRIOS DE ESTADO\nSECRETÁRIA DE ADMINISTRAÇÃO\nFulana"), criterio.EXPEDIENTE),
         ((CORPO, CORPO + "\nCOMPANHIA EDITORA DE PERNAMBUCO\nCNPJ 10.921.252/0001-07"), criterio.EXPEDIENTE),
-        ((EMENTA, "Dispõe sobre a fruição de estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."), criterio.DBF_SEM_TIPO),
+        ((EMENTA, "Estabelece condições para o estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."), criterio.DBF_SEM_TIPO),
     ],
 )
 def test_cada_motivo_de_reprovacao(ajuste, motivo):
@@ -97,7 +97,7 @@ def test_varios_motivos_juntos():
 def test_motivo_dbf_calculado_quando_nao_informado():
     assert criterio.da_dbf(bom()) is True
     assert criterio.motivos_de_reprovacao(bom()) == []
-    sem_tipo = bom((EMENTA, "Dispõe sobre a fruição de estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."))
+    sem_tipo = bom((EMENTA, "Estabelece condições para o estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."))
     assert criterio.motivos_de_reprovacao(sem_tipo) == [criterio.DBF_SEM_TIPO]
 
 

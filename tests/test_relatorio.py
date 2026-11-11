@@ -146,7 +146,8 @@ def test_gravar_cria_pdf_so_dos_ineditos_da_dbf(cfg):
 
 def test_gravar_inclui_o_proind_sem_modelo(cfg):
     relatorio_dos_cadernos(cfg, PAGINA_9, gravar=True)
-    assert nomes(cfg.pasta_temp) == ["Decreto 60903.pdf", "Decreto 60904.pdf", "Decreto 60905.pdf"]
+    # o 60.905 continua na página 10, fora do recorte: texto cortado, revisão manual
+    assert nomes(cfg.pasta_temp) == ["Decreto 60903.pdf", "Decreto 60904.pdf"]
 
 
 def test_gravar_de_novo_nao_duplica_nem_sobrescreve(cfg, caplog):
@@ -277,3 +278,12 @@ def test_decreto_reprovado_no_criterio_de_leitura_ganha_aviso(cfg, caplog):
 def test_resumo_lista_os_decretos_da_dbf_reprovados_no_criterio(cfg):
     resumo = relatorio_dos_cadernos(cfg, PAGINA_9)
     assert resumo.reprovados_dbf == ["Decreto 60905.pdf (Caderno 2026-06-26 (pagina 9).pdf, p. 1): sem fecho"]
+
+
+def test_gravar_nao_manda_para_pendentes_o_reprovado_em_todos_os_niveis(cfg, caplog):
+    with caplog.at_level(logging.INFO, logger="pipeline"):
+        resumo = relatorio_dos_cadernos(cfg, PAGINA_9, gravar=True)
+    assert "Decreto 60905.pdf | p. 1 | " in caplog.text and "REVISÃO MANUAL (reprovado no critério de leitura: sem fecho" in caplog.text
+    assert resumo.situacoes["REVISÃO MANUAL"] == 1
+    assert not any(p.name.startswith("Decreto 60905") for p in cfg.pasta_temp.glob("*.pdf"))
+    assert {p.name for p in cfg.pasta_temp.glob("*.pdf")} == {"Decreto 60903.pdf", "Decreto 60904.pdf"}

@@ -195,23 +195,24 @@ def _regex_marcadores(especies: tuple[Especie, ...]) -> re.Pattern[str]:
     return re.compile(rf"(?m)^[ \t]*(?:{alternativas})\b")
 
 
-def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
-    """As linhas da página sem as que caem no quadro do expediente do Diário (ver
-    MARCAS_DO_EXPEDIENTE). Sem expediente, ou se a posição das linhas não puder ser
-    conferida, devolve as linhas como vieram."""
-    if not any(MARCAS_DO_EXPEDIENTE["cepe"].match(linha) for linha in linhas):
-        return linhas  # atalho: quase nenhuma página tem o quadro
-    # (texto da linha, caixa da linha, caixa do bloco de texto em que ela está)
-    itens = [
-        ("".join(trecho["text"] for trecho in linha["spans"]), linha["bbox"], bloco["bbox"])
-        for bloco in pagina.get_text("dict")["blocks"]
+# Uma linha da página com a posição: (texto, caixa da linha, caixa do bloco, nº do bloco).
+_Linha = tuple[str, tuple[float, float, float, float], tuple[float, float, float, float], int]
+
+
+def _itens_da_pagina(pagina: pymupdf.Page) -> list[_Linha]:
+    return [
+        ("".join(trecho["text"] for trecho in linha["spans"]), linha["bbox"], bloco["bbox"], numero)
+        for numero, bloco in enumerate(pagina.get_text("dict")["blocks"])
         if bloco["type"] == 0
         for linha in bloco["lines"]
     ]
-    if [texto for texto, _, _ in itens] != linhas:
-        return linhas  # a posição não corresponde ao texto extraído: não arrisca
+
+
+def _quadro_do_expediente(itens: list[_Linha]) -> tuple[float, float, float, float] | None:
+    """Retângulo do quadro do expediente (ver MARCAS_DO_EXPEDIENTE), ou None se a página
+    não o tiver."""
     marcadas = {
-        marca: [i for i, (texto, _, _) in enumerate(itens) if padrao.search(texto)]
+        marca: [i for i, item in enumerate(itens) if padrao.search(item[0])]
         for marca, padrao in MARCAS_DO_EXPEDIENTE.items()
     }
     # "GOVERNADOR(A)" sozinho na linha também aparece na assinatura de outros atos; no
@@ -225,7 +226,7 @@ def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
     ]
     tipos = sum(bool(posicoes) for posicoes in marcadas.values())
     if tipos < MINIMO_DE_MARCAS_DO_EXPEDIENTE or not marcadas["cepe"] or not marcadas["governador"]:
-        return linhas
+        return None
     # O quadro é o retângulo dos BLOCOS de texto das marcas: as linhas das marcas são
     # curtas e deixariam de fora preços e avisos que ficam ao lado delas.
     caixas = [itens[i][2] for posicoes in marcadas.values() for i in posicoes]
@@ -233,7 +234,7 @@ def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
     x1, y1 = max(c[2] for c in caixas), max(c[3] for c in caixas)
     margens = {itens[i][2][0] for i in marcadas["secretarios"]}
     cargos = [
-        bloco for texto, _, bloco in itens
+        bloco for texto, _, bloco, _ in itens
         if _CARGO_DO_QUADRO.match(texto) and any(abs(bloco[0] - m) <= _ALINHAMENTO_DA_LISTA for m in margens)
     ]
     cresceu = True
@@ -243,20 +244,30 @@ def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
             if y1 < b[3] and y0 <= b[1] <= y1 + _FOLGA_DO_QUADRO and x0 <= (b[0] + b[2]) / 2 <= x1:
                 y1 = b[3]
                 cresceu = True
-
-    def dentro(caixa: tuple[float, float, float, float]) -> bool:
-        cx, cy = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
-        return x0 <= cx <= x1 and y0 <= cy <= y1
-
-    return [texto for texto, caixa, _ in itens if not dentro(caixa)]
+    return x0, y0, x1, y1
 
 
-def _linhas_da_pagina(pagina: pymupdf.Page) -> list[str]:
-    linhas = pagina.get_text("text").split("\n")
-    # `get_text` termina com "\n": o último elemento é vazio.
-    if linhas and linhas[-1] == "":
-        linhas.pop()
-    linhas = _sem_expediente(pagina, linhas)
+def _dentro(caixa: tuple[float, float, float, float], quadro: tuple[float, float, float, float]) -> bool:
+    cx, cy = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
+    return quadro[0] <= cx <= quadro[2] and quadro[1] <= cy <= quadro[3]
+
+
+def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
+    """As linhas da página sem as que caem no quadro do expediente do Diário (ver
+    MARCAS_DO_EXPEDIENTE). Sem expediente, ou se a posição das linhas não puder ser
+    conferida, devolve as linhas como vieram."""
+    if not any(MARCAS_DO_EXPEDIENTE["cepe"].match(linha) for linha in linhas):
+        return linhas  # atalho: quase nenhuma página tem o quadro
+    itens = _itens_da_pagina(pagina)
+    if [item[0] for item in itens] != linhas:
+        return linhas  # a posição não corresponde ao texto extraído: não arrisca
+    quadro = _quadro_do_expediente(itens)
+    if quadro is None:
+        return linhas
+    return [texto for texto, caixa, _, _ in itens if not _dentro(caixa, quadro)]
+
+
+def _sem_topo(linhas: list[str]) -> list[str]:
     topo = [
         i
         for i, linha in enumerate(linhas[:LINHAS_DE_TOPO])
@@ -265,11 +276,76 @@ def _linhas_da_pagina(pagina: pymupdf.Page) -> list[str]:
     return [linha for i, linha in enumerate(linhas) if i not in set(topo)]
 
 
-def _montar_texto(doc: pymupdf.Document) -> tuple[str, list[int], tuple[int, ...]]:
+# Leitura por coluna (nível 3 da leitura em cascata, leitura/cascata.py). Um bloco de texto
+# mais largo que esta fração da página atravessa as colunas (título, tabela larga) e divide
+# a página em trechos; dentro de cada trecho, as colunas são as faixas horizontais ocupadas
+# por blocos (a união das larguras deles, com `_FOLGA_ENTRE_COLUNAS` de tolerância), e os
+# blocos são lidos coluna a coluna, de cima para baixo. A ementa recuada dentro da coluna
+# continua na coluna dela.
+_LARGURA_QUE_ATRAVESSA = 0.6
+_FOLGA_ENTRE_COLUNAS = 2.0
+
+
+def linhas_por_coluna(pagina: pymupdf.Page) -> list[str] | None:
+    """As linhas da página na ordem visual (coluna a coluna), sem o expediente e o topo da
+    página; None se a posição das linhas não corresponder ao texto extraído."""
+    texto = pagina.get_text("text").split("\n")
+    if texto and texto[-1] == "":
+        texto.pop()
+    itens = _itens_da_pagina(pagina)
+    if [item[0] for item in itens] != texto:
+        return None
+    quadro = (
+        _quadro_do_expediente(itens) if any(MARCAS_DO_EXPEDIENTE["cepe"].match(t) for t in texto) else None
+    )
+    blocos: dict[int, tuple[tuple[float, float, float, float], list[str]]] = {}
+    for linha, caixa_da_linha, caixa_do_bloco, numero in itens:
+        if quadro is not None and _dentro(caixa_da_linha, quadro):
+            continue
+        blocos.setdefault(numero, (caixa_do_bloco, []))[1].append(linha)
+    limite = _LARGURA_QUE_ATRAVESSA * pagina.rect.width
+    largos = sorted((b for b in blocos.values() if b[0][2] - b[0][0] > limite), key=lambda b: b[0][1])
+    estreitos = [b for b in blocos.values() if b[0][2] - b[0][0] <= limite]
+    cortes = [b[0][1] for b in largos]
+    trechos: dict[int, list] = {}
+    for bloco in estreitos:
+        trechos.setdefault(sum(1 for c in cortes if c <= bloco[0][1]), []).append(bloco)
+    ordem = []
+    for k in range(len(largos) + 1):
+        if k:
+            ordem.append(largos[k - 1])
+        do_trecho = trechos.get(k, [])
+        colunas: list[list[float]] = []
+        for x0, x1 in sorted((b[0][0], b[0][2]) for b in do_trecho):
+            if colunas and x0 <= colunas[-1][1] + _FOLGA_ENTRE_COLUNAS:
+                colunas[-1][1] = max(colunas[-1][1], x1)
+            else:
+                colunas.append([x0, x1])
+
+        def coluna(bloco, colunas=colunas) -> int:
+            return next(i for i, (x0, x1) in enumerate(colunas) if x0 - _FOLGA_ENTRE_COLUNAS <= bloco[0][0] <= x1)
+
+        ordem += sorted(do_trecho, key=lambda b: (coluna(b), b[0][1]))
+    return _sem_topo([linha for _, linhas in ordem for linha in linhas])
+
+
+def _linhas_da_pagina(pagina: pymupdf.Page) -> list[str]:
+    linhas = pagina.get_text("text").split("\n")
+    # `get_text` termina com "\n": o último elemento é vazio.
+    if linhas and linhas[-1] == "":
+        linhas.pop()
+    return _sem_topo(_sem_expediente(pagina, linhas))
+
+
+def _montar_texto(
+    doc: pymupdf.Document, por_coluna: bool = False
+) -> tuple[str, list[int], tuple[int, ...]]:
     """Texto do caderno sem cabeçalhos de página.
 
     Devolve (texto, início_de_cada_página, páginas_digitalizadas); o segundo
-    item permite descobrir em que página cai qualquer posição do texto.
+    item permite descobrir em que página cai qualquer posição do texto. Com
+    `por_coluna`, cada página é lida na ordem visual (`linhas_por_coluna`; a página
+    em que a posição das linhas não confere sai na ordem do PDF).
     """
     partes: list[str] = []
     inicios: list[int] = []
@@ -278,7 +354,8 @@ def _montar_texto(doc: pymupdf.Document) -> tuple[str, list[int], tuple[int, ...
     for numero, pagina in enumerate(doc, start=1):
         if _pagina_digitalizada(pagina, pagina.get_text("text")):
             digitalizadas.append(numero)
-        trecho = limpar_ligaduras("\n".join(_linhas_da_pagina(pagina)) + "\n")
+        linhas = (linhas_por_coluna(pagina) if por_coluna else None) or _linhas_da_pagina(pagina)
+        trecho = limpar_ligaduras("\n".join(linhas) + "\n")
         inicios.append(posicao)
         partes.append(trecho)
         posicao += len(trecho)
@@ -411,17 +488,18 @@ def separar_texto(
     return atos, avisos_gerais
 
 
-def ler_caderno(caminho: Path) -> tuple[str, list[int], tuple[int, ...], int]:
+def ler_caderno(caminho: Path, por_coluna: bool = False) -> tuple[str, list[int], tuple[int, ...], int]:
     """Abre o caderno e devolve (texto limpo, início de cada página, páginas
     digitalizadas, total de páginas). Só lê; levanta `ErroSeparacao` se o PDF não
-    puder ser aberto. É o mesmo texto que `separar_caderno` usa."""
+    puder ser aberto. É o mesmo texto que `separar_caderno` usa (com `por_coluna`, o
+    texto do nível 3 da leitura em cascata)."""
     try:
         with pymupdf.open(caminho) as doc:
             if doc.needs_pass:
                 raise ErroSeparacao("PDF protegido por senha")
             if doc.page_count == 0:
                 raise ErroSeparacao("PDF sem páginas")
-            texto, inicios, digitalizadas = _montar_texto(doc)
+            texto, inicios, digitalizadas = _montar_texto(doc, por_coluna)
             paginas = doc.page_count
     except ErroSeparacao:
         raise

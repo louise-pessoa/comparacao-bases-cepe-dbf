@@ -28,6 +28,11 @@ from dbf_cepe.regras.especies import DECRETO, EDITAL
 AMOSTRAS_CADERNOS = Path(__file__).parent / "amostras_cadernos"
 TRECHO = AMOSTRAS_CADERNOS / "Caderno 2026-06-26 (paginas 24 a 26).pdf"  # 60928..60937
 
+# Sem o fecho, o critério da leitura em cascata reprova o decreto e o --gravar não o grava.
+FECHO = (
+    "\nPalácio do Campo das Princesas, Recife, 1º de julho do ano de 2026, 210º da Revolução "
+    "Republicana Constitucionalista e 204º da Independência do Brasil."
+)
 CONCESSAO = "Concede estímulo previsto na Lei nº 11.675, de 11 de outubro de 1999, que dispõe sobre o PRODEPE."
 ALTERACAO = "Introduz alterações no Decreto nº 50.135, de 2021, que concede estímulo do PRODEPE."
 
@@ -38,7 +43,7 @@ def pub(dia: str, caderno: str = "ResumoDiario", pagina: int = 3) -> Publicacao:
 
 
 def ato(numero: str, publicacao: Publicacao, ementa: str = CONCESSAO, extra: str = "") -> AtoSeparado:
-    texto = texto_decreto(f"{numero[:2]}.{numero[2:]}", ementa) + extra
+    texto = texto_decreto(f"{numero[:2]}.{numero[2:]}", ementa) + extra + FECHO
     return AtoSeparado(
         DECRETO, numero, f"DECRETO Nº {numero}", texto, publicacao.pagina, publicacao.pagina,
         data_publicacao=publicacao.data, caderno=publicacao.caderno,

@@ -213,13 +213,14 @@ pela etapa 3 com data: espécie, número, data de publicação, caderno, página
 
 Sondagem de 06/11/2026: amostra do S3 (Executivo e Extra), duas janelas de 10 dias úteis por ano, de 2010 a 2025. O
 pipeline lê corretamente os cadernos de **2020 em diante**; de julho a novembro de 2019 a amostra também saiu limpa, mas
-é pequena.
+é pequena. Desde 11/11/2026 a leitura em cascata (abaixo) recupera a maior parte dos decretos de 2010 a 2019, mas o lote
+histórico continua começando em 2020.
 
 | Período | Problema | Na amostra |
 |---|---|---|
-| 2012 a jun/2019 | **Ordem das colunas:** o PyMuPDF entrega o texto fora da ordem de leitura; um decreto é cortado no meio e o final cai no bloco do vizinho | 10% a 20% dos decretos; 2 a 5 da DBF por ano (ex.: Decreto 47.225, 22/03/2019) |
-| até 2010 (mudou entre set/2010 e mar/2012) | **Fecho antigo** `PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.`, sem "Independência do Brasil." | todos os decretos de 2010 |
-| 2010 | **Ementas antigas:** "Introduz modificações no Decreto ..., que concede incentivo do PRODEPE" e "Dispõe sobre a fruição de estímulo ... PRODEPE" | 4 de 36 decretos da DBF sem tipo |
+| 2012 a jun/2019 | **Ordem das colunas:** o PyMuPDF entrega o texto fora da ordem de leitura; um decreto é cortado no meio e o final cai no bloco do vizinho | 10% a 20% dos decretos; 2 a 5 da DBF por ano (ex.: Decreto 47.225, 22/03/2019); recuperados pelo nível 3 da cascata desde 11/11/2026 |
+| até 2010 (mudou entre set/2010 e mar/2012) | **Fecho antigo** `PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.`, sem "Independência do Brasil." | todos os decretos de 2010; recuperados pelo nível 2 desde 11/11/2026 |
+| 2010 | **Ementas antigas:** "Introduz modificações no Decreto ..., que concede incentivo do PRODEPE" e "Dispõe sobre a fruição de estímulo ... PRODEPE" | 4 de 36 decretos da DBF sem tipo; reconhecidas desde 11/11/2026 |
 | todos os anos, até 2026 | **Expediente do Diário** (lista de secretários, preços, endereço da CEPE) entrava no texto do decreto da mesma página | resolvido em 09/11/2026 (ver "Separação"); sobram 6 casos em 2014, 2018 e 2019, junto com o problema das colunas |
 | 2012, 2019 e 2025 | Abertura de quem substitui o titular: **"A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO..."**, **"O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR"** | aceita desde 09/11/2026 |
 
@@ -228,7 +229,8 @@ baixado, o que bate com Extras ausentes do S3.
 
 *Decisões de 06/11/2026:* "Introduz modificações no Decreto ..., que concede incentivo" conta como **alteração**, e
 "Dispõe sobre a fruição de estímulo" (Decreto 34.733/2010, que no artigo 1º concede o estímulo) como **concessão**.
-Ainda não aplicadas.
+Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
+(ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
 
 *Decisões de 09/11/2026:* a abertura de quem substitui o titular é aceita (`ABERTURA_DO_CORPO_DECRETO`, em
 `regras_atos.py`). Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU
@@ -253,26 +255,36 @@ Critério (um decreto só passa se cumprir tudo):
 | Nível | Leitura | Situação |
 |---|---|---|
 | 1 | leitura atual do separador | implementado (etapa B) |
-| 2 | fecho de até 2010 | etapa C |
-| 3 | leitura por coluna, só nas páginas do decreto | etapa D |
+| 2 | ordem do PDF, aceitando o fecho de até 2010 como fim do decreto e no critério | implementado |
+| 3 | leitura por coluna (`separador.linhas_por_coluna`), com os dois fechos aceitos | implementado |
 | — | nenhum aprovou | o decreto fica com `nivel_de_leitura=None`, os motivos em `reprovacao` e o aviso "reprovado no critério de leitura (...) em todos os níveis; revisão manual" |
 
-Hoje (etapa B) a cascata só marca: o `--separar` mostra o aviso, mas o reprovado ainda segue para pendentes com
-`--gravar`. A etapa E muda isso.
+O decreto recuperado nos níveis 2 ou 3 sai com o texto desse nível e o aviso "lido no nível N (...): a leitura atual
+reprovou (...); confira o texto". O reprovado em todos os níveis **não** vai para pendentes: o `--separar --gravar`
+mostra `REVISÃO MANUAL (reprovado no critério de leitura: ...; não gravado)`, e o `lote_historico` para no mês.
+
+Os níveis 2 e 3 releem o caderno inteiro (uma vez por caderno, com cache) e separam de novo só a espécie do decreto
+reprovado; o decreto de mesmo número mais perto da página original é o escolhido.
+
+**Leitura por coluna (nível 3):** em cada página, um bloco de texto mais largo que 60% da página (título, quadro largo)
+divide a página em trechos; dentro de cada trecho, as colunas são as faixas horizontais ocupadas pelos blocos, e os
+blocos são lidos coluna a coluna, de cima para baixo. O expediente e o topo da página saem como no nível 1.
 
 `python -m ferramentas.medir_criterio` aplica o critério e os níveis e mostra, por ano, quantos decretos foram
-recuperados e quantos ficam reprovados. Medição de 09/11/2026 nas amostras da sondagem:
+recuperados e quantos ficam reprovados. Medição de 11/11/2026 nas amostras da sondagem e nos cadernos de 2026, com os
+três níveis:
 
-| Ano | Decretos | Reprovados | Da DBF reprovados | Motivos |
+| Ano | Decretos | Recuperados (nível 2 ou 3) | Reprovados em todos | Da DBF reprovados |
 |---|---|---|---|---|
-| 2020 a 2026 | 1.195 | 0 | 0 | — |
-| 2019 | 263 | 16 | 5 | sem fecho 11, fecho repetido 3, sem abertura 1, expediente 1 |
-| 2014 a 2018 | 408 | 73 | 13 | sem fecho 51, fecho repetido 20, expediente 5, sem abertura 2 |
-| 2012 | 104 | 22 | 3 | sem fecho 20, fecho repetido 2 |
-| 2010 | 145 | 145 | 36 | fecho antigo 143, DBF sem tipo 4, sem fecho 2, sem abertura 1 |
+| 2020 a 2026 | 1.202 | 2 (61396 e 61398, Extra de 2026, colunas fora de ordem) | 0 | 0 |
+| 2019 | 263 | 14 | 2 (sem abertura 1, expediente 1) | 0 |
+| 2014 a 2018 | 408 | 63 | 10 (sem fecho 8, expediente 4, sem abertura 2) | 1 (41105, 2014) |
+| 2012 | 104 | 14 | 8 (sem fecho) | 0 |
+| 2010 | 145 | 144 | 1 (30257, o "BAIXOU AS SEGUINTES PORTARIAS") | 0 |
 
-A leitura por coluna sozinha corrige o corte (2016 a 2019: de 12 a 14 decretos cortados por ano para 0), mas embaralha
-ementas e muda o texto dos anos bons, então só pode entrar como nível de recuperação.
+Na medição anterior (09/11/2026, só o nível 1) eram 23 decretos da DBF reprovados de 2012 a 2019 e todos os 36 de 2010.
+A leitura por coluna sozinha embaralha ementas e muda o texto dos anos bons, por isso só entra como nível de
+recuperação; a regressão do separador (nível 1) segue idêntica.
 
 ### Modelos e evidência dos tipos
 
