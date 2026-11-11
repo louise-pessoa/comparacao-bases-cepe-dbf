@@ -272,3 +272,8 @@ def test_decreto_reprovado_no_criterio_de_leitura_ganha_aviso(cfg, caplog):
     assert "Decreto 60903.pdf | AVISO: reprovado" not in caplog.text
 
 """Proteja o relatório da separação e seus avisos sem alterar arquivos indevidamente."""
+
+
+def test_resumo_lista_os_decretos_da_dbf_reprovados_no_criterio(cfg):
+    resumo = relatorio_dos_cadernos(cfg, PAGINA_9)
+    assert resumo.reprovados_dbf == ["Decreto 60905.pdf (Caderno 2026-06-26 (pagina 9).pdf, p. 1): sem fecho"]

@@ -116,6 +116,34 @@ Para o console mostrar os acentos, rode antes, na mesma janela: `$env:PYTHONUTF8
 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`. Os cadernos do mês podem ser apagados à mão depois do
 `--conferir`; o manifesto da pasta guarda o que foi baixado.
 
+### Vários meses de uma vez (`ferramentas.lote_historico`)
+
+```powershell
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12              # baixa, separa e simula; nada vai para a base
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 --executar   # o mesmo, gravando na base
+python main.py --conferir                                                     # no fim, decide o que foi para conferência
+```
+
+Roda os passos acima mês a mês, em ordem, e **para antes de gravar o mês** no primeiro sinal de problema:
+
+- o download não trouxe nenhum caderno, ou houve falha ou falta de conexão;
+- um decreto da DBF foi reprovado no critério de leitura (texto cortado ou misturado);
+- um decreto da DBF que a base já tem ficou abaixo de 95% de similaridade;
+- algum decreto não pôde ir para `dados\pendentes`;
+- a simulação do lote mandaria algo para erros ou para OCR, ou falharia ao gravar.
+
+Também não começa se `dados\pendentes` tiver sobra de uma rodada anterior. O que vai para "conferir duplicata" não
+para a sequência: fica para o `--conferir`, no fim. A fonte é escolhida sozinha (`s3` até maio de 2026, o site atual
+depois). Ao parar, a ferramenta diz o mês e o motivo; resolva e rode de novo a partir desse mês (`--de`). Os meses já
+gravados são reconhecidos como já registrados.
+
+Sem `--executar`, cada mês é baixado, separado e simulado, e `dados\pendentes` é esvaziado no fim do mês. Como nada é
+gravado, a simulação de um mês não enxerga o que o anterior gravaria: uma republicação entre meses aparece como
+inédita. Isso só afeta a simulação.
+
+No fim, uma linha por mês: cadernos, decretos, inéditos, já existentes, para conferir e gravados na base. O log
+completo fica em `logs\pipeline.log`.
+
 ## Etapa 1b: separar os decretos (`--separar`)
 
 ```bash
@@ -276,6 +304,7 @@ python -m ferramentas.localizar_exemplos            # acha erratas, republicaç�
 python -m ferramentas.regressao_separador main      # a separação dos decretos mudou em relação ao commit main?
 python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decreto a decreto
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # vários meses do lote histórico
 ```
 
 - `localizar_exemplos` só lê `dados/cadernos`. Copia cada página achada, uma por PDF, para `dados/exemplos` (sem

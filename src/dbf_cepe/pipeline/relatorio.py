@@ -36,6 +36,9 @@ class ResumoRelatorio:
     falhas: int = 0  # atos que não puderam ser gravados em dados/pendentes
     situacoes: Counter[str] = field(default_factory=Counter)
     comparacoes: list[tuple[str, comparacao.Comparacao]] = field(default_factory=list)
+    # Decretos de programa da DBF que nenhum nível da leitura em cascata aprovou (revisão
+    # manual): "Decreto N.pdf (caderno, p. X): motivos".
+    reprovados_dbf: list[str] = field(default_factory=list)
 
 
 def _carregar_indice_do_relatorio(
@@ -98,6 +101,10 @@ def _relatar_caderno(
         ident = identificar(ato.texto)
         tipo = ident.tipo.nome if ident.tipo else "tipo não reconhecido"
         programas = programas_do_ato(ato.texto, ato.especie)
+        if ato.nivel_de_leitura is None and em_escopo(ato.especie, programas):
+            resumo.reprovados_dbf.append(
+                f"{nome} ({caderno.name}, p. {ato.pagina_inicial}): {', '.join(ato.reprovacao)}"
+            )
         paginas = (
             f"p. {ato.pagina_inicial}"
             if ato.pagina_inicial == ato.pagina_final
