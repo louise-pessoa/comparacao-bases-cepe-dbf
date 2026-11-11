@@ -82,7 +82,7 @@ def _trecho(a: list[str], b: list[str], i1: int, i2: int, j1: int, j2: int) -> s
     return f"...{antes} [caderno: {no_ato} | base: {na_base}] {depois}..."
 
 
-def comparar_textos(texto_ato: str, texto_base: str) -> Comparacao:
+def comparar_textos(texto_ato: str, texto_base: str, limite: int | None = LIMITE_DE_TRECHOS) -> Comparacao:
     a, b = palavras(texto_ato), palavras(texto_base)
     if not a and not b:
         return Comparacao(lido=True, similaridade=1.0)
@@ -94,7 +94,7 @@ def comparar_textos(texto_ato: str, texto_base: str) -> Comparacao:
         similaridade=2 * casadas / (len(a) + len(b)),
         so_no_ato=len(a) - casadas,
         so_na_base=len(b) - casadas,
-        trechos=tuple(_trecho(a, b, *d) for d in diferencas[:LIMITE_DE_TRECHOS]),
+        trechos=tuple(_trecho(a, b, *d) for d in diferencas[:limite]),
         total_trechos=len(diferencas),
     )
 

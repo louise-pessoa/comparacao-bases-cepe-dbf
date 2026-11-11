@@ -56,6 +56,7 @@ python main.py --separar dados/cadernos --comparar          # compara o texto co
 python main.py --separar dados/cadernos --gravar            # grava os inéditos e as republicações em dados/pendentes
 python main.py --simular                                     # lote (etapas 2 a 5): mostra o que faria
 python main.py                                               # lote de verdade: grava na base da DBF
+python main.py --conferir [--simular]                       # revisa a pasta "conferir duplicata" pelo terminal
 python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
 ```
 

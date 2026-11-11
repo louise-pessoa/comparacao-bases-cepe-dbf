@@ -173,6 +173,33 @@ substituído na próxima gravação do mesmo decreto, mas pode ser apagado à m�
   desfaz ou conclui antes de tudo, com um aviso no log. Com `--simular`, o programa só avisa e para. Se os arquivos da
   base não conferirem com nenhum passo da operação, ele pede conferência manual e não mexe em nada.
 
+## Conferência (`--conferir`)
+
+```bash
+python main.py --conferir --simular   # só mostra as diferenças de cada PDF, sem perguntar nem mexer em nada
+python main.py --conferir             # pergunta, PDF a PDF, o que fazer
+```
+
+Revisa os PDFs de `dados/conferir duplicata`: publicações do Diário cujo número a base já tinha (gravado antes do
+registro de publicações existir) com texto diferente. Para cada PDF, mostra a publicação (data, caderno, página), a
+similaridade e as diferenças para o arquivo da base, no formato `...contexto [Diário: X | base: Y] contexto...`, e
+pergunta:
+
+| Resposta | O que acontece |
+|---|---|
+| `d` | **usa o texto do Diário**: o arquivo da base vai para `dados/substituidos` (com data e hora no nome) e o PDF do Diário entra no lugar dele, conferido; se algo falhar depois da troca, o antigo volta. O PDF sai da conferência e o registro passa a "gravado" |
+| `b` | **mantém a base**: o PDF sai da conferência; a base não é tocada |
+| `v` | mostra todas as diferenças (a tela mostra as 3 primeiras) |
+| `p` ou Enter | pula: o PDF fica para a próxima vez |
+
+- A decisão e a data ficam no registro de publicações (`decisao`, `decidido_em`). Uma publicação já decidida não volta
+  para a conferência.
+- Quando o PDF da base é imagem, a tela avisa que não há texto para comparar; o texto do Diário está no PDF da
+  conferência.
+- Se o número não tiver mais arquivo na base, a opção `d` não aparece.
+- A pasta das cópias pode ser trocada com `PASTA_SUBSTITUIDOS` no `.env`. As cópias nunca são apagadas pelo programa.
+- Para registro ilegível ou com uma operação do lote pela metade, o comando para sem mexer em nada (rode o lote antes).
+
 ## Catálogo (`--catalogar`)
 
 ```bash

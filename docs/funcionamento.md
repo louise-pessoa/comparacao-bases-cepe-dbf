@@ -188,7 +188,8 @@ Extra). *Decisões de 06/11/2026:*
 
 `dados/registro_publicacoes.json` (fora do Git; `REGISTRO_PUBLICACOES` no `.env`) guarda, para cada publicação que passou
 pela etapa 3 com data: espécie, número, data de publicação, caderno, página, hash do texto, nome do arquivo e situação
-(`gravado`, `duplicata`, `conferir duplicata` ou `base é imagem (não comparado)`). É com ele que o lote sabe a data de cada arquivo da base.
+(`gravado`, `duplicata`, `conferir duplicata` ou `base é imagem (não comparado)`). O `--conferir` acrescenta a decisão
+(`decisao`, `decidido_em`): "mantida a base", ou "substituída pelo Diário", que passa a publicação a `gravado`. É com ele que o lote sabe a data de cada arquivo da base.
 
 - Escrita atômica (arquivo `.tmp`, gravação forçada no disco e troca de nome): uma queda no meio deixa o registro
   anterior.

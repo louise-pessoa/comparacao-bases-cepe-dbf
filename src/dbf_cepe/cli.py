@@ -30,6 +30,7 @@ Uso:
     python main.py --separar dados/cadernos --gravar     # grava os inéditos em pendentes
     python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
     python main.py --catalogar dados/cadernos             # grava dados/catalogo_atos.csv
+    python main.py --conferir [--simular]                 # revisa a pasta "conferir duplicata"
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from pathlib import Path
 
 from dbf_cepe import captura
 from dbf_cepe import catalogo
+from dbf_cepe.pipeline import conferencia
 from dbf_cepe import proxy
 from dbf_cepe.config import (
     Configuracao,
@@ -198,6 +200,13 @@ def main(argv: list[str] | None = None) -> int:
         "PDF da base (só leitura; serve para achar republicações)",
     )
     parser.add_argument(
+        "--conferir",
+        action="store_true",
+        help="revisa os PDFs de 'dados/conferir duplicata': mostra as diferenças para a base e "
+        "pergunta se usa o texto do Diário (substitui na base, com cópia) ou mantém a base; "
+        "com --simular, só mostra",
+    )
+    parser.add_argument(
         "--catalogar",
         type=Path,
         metavar="PASTA",
@@ -226,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--catalogar não se combina com outros modos nem com suas opções")
     if args.saida and not args.catalogar:
         parser.error("--saida só vale junto com --catalogar")
+    if args.conferir and (args.separar or args.baixar or args.de or args.ate or args.gravar or args.comparar):
+        parser.error("--conferir só se combina com --simular")
     if args.separar and (args.baixar or args.de or args.ate or args.simular):
         parser.error("--separar não se combina com --baixar, --de, --ate nem --simular")
     if args.gravar and not args.separar:
@@ -243,6 +254,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = carregar_configuracao()
         _configurar_log(cfg.pasta_logs)
+        if args.conferir:
+            conferencia.conferir(cfg, args.simular)
+            return 0
         if args.separar:
             resumo = relatorio_dos_cadernos(
                 cfg, args.separar, args.gravar, args.permitir_pasta_vazia, args.comparar

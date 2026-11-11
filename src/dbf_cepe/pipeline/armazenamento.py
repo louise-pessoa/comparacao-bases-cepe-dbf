@@ -302,3 +302,83 @@ def recuperar_operacao(registro, pasta_dbf: Path) -> str:
     registro.salvar()
     desfeitas = ", ".join(f"{para} -> {de}" for de, para in feitas) or "nenhuma renomeação feita"
     return f"{gravar} não chegou a ser gravado: operação desfeita ({desfeitas})"
+
+
+# ----------------------------------------------------------------------------
+# Conferência (`--conferir`): substituir um arquivo da base pelo texto do Diário
+# ----------------------------------------------------------------------------
+
+
+def _copiar_conferindo(origem: Path, destino_parcial: Path) -> str:
+    """Copia `origem` para `destino_parcial` (gravado no disco) e devolve o SHA-256,
+    conferido contra o da origem."""
+    esperado = _sha256(origem)
+    with open(origem, "rb") as entrada, open(destino_parcial, "wb") as saida:
+        shutil.copyfileobj(entrada, saida, _BLOCO)
+        saida.flush()
+        os.fsync(saida.fileno())
+    if _sha256(destino_parcial) != esperado:
+        raise GravacaoDivergente(f"a cópia de {origem.name} difere do original")
+    return esperado
+
+
+def substituir_na_base(
+    pdf_novo: Path, nome: str, pasta_dbf: Path, pasta_copias: Path, nome_identificado: str | None = None
+) -> Path:
+    """Troca o arquivo `nome` da base pelo `pdf_novo` e devolve a cópia de segurança.
+
+    1. confere que o PDF novo se identifica como o ato esperado;
+    2. copia o arquivo atual da base para `pasta_copias` (nome com data e hora) e confere;
+    3. copia o novo para "<nome>.part" na base, confere o SHA-256 e troca de uma vez
+       (`os.replace`), relendo o resultado;
+    4. se o passo 3 falhar depois da troca, devolve o arquivo antigo a partir da cópia.
+
+    Nunca apaga a cópia de segurança. O `pdf_novo` não é apagado (quem chama decide).
+    """
+    destino = pasta_dbf / nome
+    if not destino.is_file():
+        raise ErroArmazenamento(f"{nome} não está em {pasta_dbf}")
+    esperado_no_texto = nome_identificado or nome
+    _conferir_se_identifica_como(pdf_novo, esperado_no_texto, "o PDF do Diário")
+
+    from datetime import datetime
+
+    pasta_copias.mkdir(parents=True, exist_ok=True)
+    raiz, _, extensao = nome.rpartition(".")
+    copia = pasta_copias / f"{raiz} - substituído em {datetime.now():%Y%m%d-%H%M%S}.{extensao}"
+    try:
+        _copiar_conferindo(destino, copia)
+    except OSError as erro:
+        descartar_se_existir(copia)
+        raise ErroArmazenamento(f"não foi possível guardar a cópia de {nome}: {erro}") from erro
+
+    parcial = destino.with_name(destino.name + ".part")
+    trocado = False
+    try:
+        _copiar_conferindo(pdf_novo, parcial)
+        os.replace(parcial, destino)
+        trocado = True
+        _conferir_se_identifica_como(destino, esperado_no_texto, f"{nome} na base")
+        if _sha256(destino) != _sha256(pdf_novo):
+            raise GravacaoDivergente(f"{nome} na base difere do PDF do Diário")
+    except (ErroArmazenamento, OSError) as erro:
+        descartar_se_existir(parcial)
+        if trocado:
+            _devolver(copia, destino)
+        if isinstance(erro, ErroArmazenamento):
+            raise
+        raise ErroArmazenamento(f"{type(erro).__name__}: {erro}") from erro
+    return copia
+
+
+def _devolver(copia: Path, destino: Path) -> None:
+    """Põe a cópia de segurança de volta no lugar (troca atômica)."""
+    parcial = destino.with_name(destino.name + ".part")
+    try:
+        _copiar_conferindo(copia, parcial)
+        os.replace(parcial, destino)
+    except (ErroArmazenamento, OSError) as erro:
+        descartar_se_existir(parcial)
+        raise ErroArmazenamento(
+            f"a substituição falhou e o arquivo antigo não pôde ser devolvido; ele está em {copia}: {erro}"
+        ) from erro

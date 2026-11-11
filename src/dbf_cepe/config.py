@@ -41,6 +41,12 @@ class Configuracao:
     # e "dados/registro_publicacoes.json" com a configuração padrão).
     pasta_conferir_duplicata: Path | None = None
     arquivo_registro: Path | None = None
+    # `--conferir`: cópia de cada arquivo da base substituído pelo texto do Diário.
+    pasta_substituidos: Path | None = None
+
+    @property
+    def substituidos(self) -> Path:
+        return self.pasta_substituidos or self.pasta_temp.parent / "substituidos"
 
     @property
     def conferir_duplicata(self) -> Path:
@@ -73,6 +79,7 @@ def _pastas_nomeadas(cfg: Configuracao) -> list[tuple[str, Path]]:
         ("PASTA_NORMALIZADOS", cfg.pasta_normalizados),
         ("PASTA_LOGS", cfg.pasta_logs),
         ("PASTA_CONFERIR_DUPLICATA", cfg.conferir_duplicata),
+        ("PASTA_SUBSTITUIDOS", cfg.substituidos),
     ]
     if cfg.pasta_dbf is not None:
         pastas.append(("PASTA_DBF", cfg.pasta_dbf))
@@ -187,6 +194,7 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         pasta_logs=pasta("PASTA_LOGS", "logs"),
         pasta_conferir_duplicata=pasta("PASTA_CONFERIR_DUPLICATA", "dados/conferir duplicata"),
         arquivo_registro=pasta("REGISTRO_PUBLICACOES", "dados/registro_publicacoes.json"),
+        pasta_substituidos=pasta("PASTA_SUBSTITUIDOS", "dados/substituidos"),
         pasta_dbf=_resolver_caminho("PASTA_DBF", bruto_dbf) if bruto_dbf else None,
         proxy_https=_ler_proxy(valores.get("HTTPS_PROXY") or ""),
         ssl_estrito=_ler_booleano("SSL_ESTRITO", valores.get("SSL_ESTRITO") or "", True),
