@@ -233,6 +233,12 @@ baixado, o que bate com Extras ausentes do S3.
 Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
 (ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
 
+*Decisão de 12/11/2026:* o decreto que cita o programa só nos considerandos (não na ementa) e cuja ementa não tem
+tipo reconhecido fica **fora do escopo da DBF**, com o aviso "cita um programa da DBF só nos considerandos e a ementa
+não tem tipo reconhecido; tratado como fora do escopo, confira" (`criterio.da_dbf`). Caso que motivou: o Decreto
+34.519/2010, que altera o decreto do parcelamento de débitos do ICMS e não está na base. Nos 454 cadernos medidos, foi o
+único a mudar. Não vale para o texto com cabeçalho de outro ato (misturado): esse continua reprovando.
+
 *Decisões de 09/11/2026:* a abertura de quem substitui o titular é aceita (`ABERTURA_DO_CORPO_DECRETO`, em
 `regras_atos.py`). Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU
 AS SEGUINTES PORTARIAS:") vai para revisão manual. O decreto reprovado em todos os níveis da cascata vai para revisão

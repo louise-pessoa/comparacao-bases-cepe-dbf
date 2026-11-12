@@ -186,7 +186,8 @@ base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
 fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
-citado só no corpo do decreto, decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
+citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
+decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
 coluna): ...; confira o texto`) e decreto reprovado no critério da leitura em cascata (`reprovado no critério de leitura
 (sem fecho) em todos os níveis; revisão manual`; ver [`funcionamento.md`](funcionamento.md#leitura-em-cascata)).
 

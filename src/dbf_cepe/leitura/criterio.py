@@ -13,16 +13,18 @@ só é aprovado se cumprir tudo:
     "O GOVERNADOR" ou quem está "NO EXERCÍCIO DO CARGO DE GOVERNADOR(A)");
   - nenhum outro cabeçalho da espécie no início de uma linha do texto;
   - nenhum trecho do expediente do Diário no texto;
-  - ato de programa da DBF: tipo reconhecido.
+  - ato de programa da DBF: tipo reconhecido. Como o ato que cita o programa só nos
+    considerandos e não tem tipo já fica fora da DBF (`da_dbf`), este motivo só aparece
+    quando a ementa cita o programa.
 
 Espécie sem fecho ou sem abertura definidos não é cobrada por eles.
 """
 
 from __future__ import annotations
 
-from dbf_cepe.leitura.identificador import identificar
+from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.separador import TRECHO_DO_EXPEDIENTE, AtoSeparado
-from dbf_cepe.regras.programas import em_escopo, programas_do_ato
+from dbf_cepe.regras.programas import cita_programa_so_nos_considerandos, em_escopo, programas_do_ato
 
 SEM_FECHO = "sem fecho"
 FECHO_ANTIGO = "fecho antigo"
@@ -37,7 +39,22 @@ JANELA_DA_ABERTURA = 1800
 
 
 def da_dbf(ato: AtoSeparado) -> bool:
-    return em_escopo(ato.especie, programas_do_ato(ato.texto, ato.especie))
+    """O ato é de programa da DBF: o cabeçalho cita um programa e, se o programa estiver
+    só nos considerandos, a ementa tem tipo reconhecido (ver `fora_por_ementa_sem_tipo`)."""
+    return em_escopo(ato.especie, programas_do_ato(ato.texto, ato.especie)) and not fora_por_ementa_sem_tipo(ato)
+
+
+def fora_por_ementa_sem_tipo(ato: AtoSeparado) -> bool:
+    """Cita o programa só nos considerandos e a ementa não tem tipo: fora do escopo
+    (decisão de 12/11/2026, Decreto 34.519/2010). Só vale para o texto identificado como
+    um ato só: o decreto misturado com o cabeçalho de outro também perde o tipo, e esse
+    tem de continuar reprovando (revisão manual)."""
+    ident = identificar(ato.texto, (ato.especie,))
+    return (
+        ident.status is StatusIdentificacao.IDENTIFICADO
+        and ident.tipo is None
+        and cita_programa_so_nos_considerandos(ato.texto, ato.especie, ident.ementa)
+    )
 
 
 def motivos_de_reprovacao(

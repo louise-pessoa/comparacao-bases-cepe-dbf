@@ -38,6 +38,7 @@ class Identificacao:
     numero: str | None = None  # sem separador de milhar, ex.: "60929"
     tipo: Tipo | None = None  # None se a ementa não casar com nenhum
     detalhe: str = ""
+    ementa: str = ""  # do fim do cabeçalho até a abertura do corpo (texto com espaços colapsados)
 
 
 def normalizar_espacos(texto: str) -> str:
@@ -112,6 +113,7 @@ def identificar(
             numero=numero,
             tipo=_classificar(especie, ementa),
             detalhe=f"ementa: {ementa[:80]!r}",
+            ementa=ementa,
         )
 
     outras = _regex_outras_especies(especies)

@@ -21,7 +21,8 @@ from dbf_cepe.pipeline.republicacao import Acao, planejar
 from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
 from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
-from dbf_cepe.regras.programas import cita_programa_so_no_corpo, em_escopo, programas_do_ato
+from dbf_cepe.leitura import criterio
+from dbf_cepe.regras.programas import cita_programa_so_no_corpo, programas_do_ato
 from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, ResultadoSeparacao, separar_caderno
 
 log = logging.getLogger("pipeline")
@@ -101,7 +102,8 @@ def _relatar_caderno(
         ident = identificar(ato.texto)
         tipo = ident.tipo.nome if ident.tipo else "tipo não reconhecido"
         programas = programas_do_ato(ato.texto, ato.especie)
-        if ato.nivel_de_leitura is None and em_escopo(ato.especie, programas):
+        e_da_dbf = criterio.da_dbf(ato)
+        if ato.nivel_de_leitura is None and e_da_dbf:
             resumo.reprovados_dbf.append(
                 f"{nome} ({caderno.name}, p. {ato.pagina_inicial}): {', '.join(ato.reprovacao)}"
             )
@@ -110,9 +112,15 @@ def _relatar_caderno(
             if ato.pagina_inicial == ato.pagina_final
             else f"p. {ato.pagina_inicial}-{ato.pagina_final}"
         )
-        if not em_escopo(ato.especie, programas):
+        if not e_da_dbf:
             situacao = "fora do escopo da DBF"
-            if cita_programa_so_no_corpo(ato.texto, ato.especie):
+            if criterio.fora_por_ementa_sem_tipo(ato):
+                log.warning(
+                    "%s | AVISO: cita um programa da DBF só nos considerandos e a ementa não tem tipo "
+                    "reconhecido; tratado como fora do escopo, confira", nome,
+                )
+                resumo.avisos += 1
+            elif cita_programa_so_no_corpo(ato.texto, ato.especie):
                 log.warning(
                     "%s | AVISO: cita um programa da DBF só no corpo do texto; "
                     "confira se não é um ato da DBF", nome,
