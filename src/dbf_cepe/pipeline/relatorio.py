@@ -237,7 +237,7 @@ def _gravar_publicacao(
     if plano.acao is Acao.DUPLICATA:
         return "já existe na DBF (texto idêntico)"
     if plano.acao is Acao.BASE_IMAGEM:
-        return "já existe na DBF (PDF da base é imagem; não comparado)"
+        return "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)"
     rotulo = (
         "CONFERIR DUPLICATA" if plano.acao is Acao.CONFERIR
         else "REPUBLICAÇÃO" if plano.republicacao

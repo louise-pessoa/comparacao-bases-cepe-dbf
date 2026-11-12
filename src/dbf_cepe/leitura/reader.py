@@ -2,7 +2,8 @@
 
 Classifica o arquivo em três situações:
   - OK:         há texto extraível; o texto bruto é devolvido.
-  - IMAGEM:     PDF digitalizado (total ou parcialmente); segue para OCR.
+  - IMAGEM:     PDF digitalizado (total ou parcialmente), ou com texto ilegível;
+                segue para OCR.
   - CORROMPIDO: não abre, está vazio, sem páginas ou protegido por senha.
 
 Detecção de imagem: NÃO basta o PDF conter imagens. Os PDFs da CEPE trazem o
@@ -10,6 +11,12 @@ brasão como imagem na primeira página e são 100% texto. Uma página é
 considerada digitalizada quando tem pouquíssimo texto E uma imagem que cobre
 parte relevante dela (FRACAO_MIN_IMAGEM). A imagem pode ser bem menor que a
 página: o Decreto 35945, que é uma imagem, a cobre em 29%.
+
+Texto ilegível: alguns PDFs antigos da base (ex.: Decreto 34529, de 2010) têm texto
+selecionável, mas a fonte não traz a tabela de conversão para Unicode; o PyMuPDF
+devolve códigos de controle (\x01, \x02...) no lugar das letras. A página em que
+esses códigos passam de FRACAO_MAX_ILEGIVEL dos caracteres é tratada como
+digitalizada: não há texto para comparar nem para normalizar.
 
 Limitação conhecida: um download truncado não é detectável aqui. Os PDFs da
 CEPE trazem dados após o último "%%EOF" e o PyMuPDF os marca como "reparados"
@@ -32,6 +39,9 @@ MIN_CARACTERES_POR_PAGINA = 20
 # Fração mínima da área da página que a imagem precisa cobrir. O brasão da CEPE
 # cobre cerca de 3% (não pode disparar).
 FRACAO_MIN_IMAGEM = 0.10
+# Fração máxima de caracteres ilegíveis (de controle, fora espaços e quebras, ou o
+# caractere de substituição U+FFFD) numa página com texto. Num decreto legível é 0.
+FRACAO_MAX_ILEGIVEL = 0.30
 
 ##################################################################################
 
@@ -53,6 +63,12 @@ class ResultadoLeitura:
 
 
 ##################################################################################
+
+def _ilegivel(texto: str) -> bool:
+    caracteres = "".join(texto.split())
+    ruins = sum(1 for c in caracteres if ord(c) < 32 or c == "\ufffd")
+    return ruins > FRACAO_MAX_ILEGIVEL * len(caracteres)
+
 
 def _pagina_digitalizada(pagina: pymupdf.Page, texto: str) -> bool:
     if len("".join(texto.split())) >= MIN_CARACTERES_POR_PAGINA:
@@ -79,11 +95,14 @@ def ler_pdf(caminho: Path) -> ResultadoLeitura:
 
             textos: list[str] = []
             digitalizadas: list[int] = []
+            ilegiveis: list[int] = []
             for numero, pagina in enumerate(doc, start=1):
                 texto = pagina.get_text("text")
                 textos.append(texto)
                 if _pagina_digitalizada(pagina, texto):
                     digitalizadas.append(numero)
+                elif _ilegivel(texto):
+                    ilegiveis.append(numero)
             paginas = doc.page_count
     except Exception as erro:  # inexistente, vazio, não-PDF, estrutura quebrada
         return ResultadoLeitura(
@@ -92,6 +111,14 @@ def ler_pdf(caminho: Path) -> ResultadoLeitura:
 
     texto_total = "\n".join(textos)
 
+    if ilegiveis:
+        return ResultadoLeitura(
+            StatusLeitura.IMAGEM,
+            texto=texto_total,
+            paginas=paginas,
+            paginas_digitalizadas=tuple(sorted(digitalizadas + ilegiveis)),
+            detalhe=f"páginas com texto ilegível (fonte sem conversão para Unicode): {ilegiveis} de {paginas}",
+        )
     if digitalizadas:
         # Parcialmente digitalizado também vai para OCR: normalizar só as
         # páginas com texto geraria um decreto incompleto.
