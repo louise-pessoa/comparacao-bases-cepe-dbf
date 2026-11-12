@@ -83,6 +83,13 @@ python main.py
 python main.py --conferir                                    # decide os que foram para "conferir duplicata"
 ```
 
+Para vários meses de uma vez, parando no primeiro sinal de problema:
+
+```powershell
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12              # só simula
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 --executar   # grava na base
+```
+
 Passo a passo, o que conferir em cada etapa e o ano-limite (2020): [`docs/uso.md`](docs/uso.md#lote-histórico).
 
 ## Testes
