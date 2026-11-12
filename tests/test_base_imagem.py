@@ -154,7 +154,7 @@ def test_separar_gravar_pula_o_da_base_em_imagem(cfg, tmp_path, monkeypatch, cap
     caderno.write_bytes(b"%PDF-1.4")
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, caderno, gravar=True)
-    assert "já existe na DBF (PDF da base é imagem; não comparado)" in caplog.text
+    assert "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)" in caplog.text
     assert nomes(cfg.pasta_temp) == []
 
 
@@ -198,3 +198,18 @@ def test_separador_marca_o_decreto_com_o_rodape_de_republicacao(tmp_path):
 def test_publicacao_sem_a_chave_republicado_continua_valida():
     assert Publicacao.de_dict({"data": "2020-01-15", "caderno": "x.pdf", "pagina": 2}).marcada_como_republicacao is False
     assert replace(pub("2020-01-15"), marcada_como_republicacao=True).chave == pub("2020-01-15").chave
+
+
+def test_base_com_texto_ilegivel_conta_como_imagem(cfg, tmp_path, monkeypatch, caplog):
+    """Decreto 34529 (2010): a base tem texto, mas sai como códigos de controle."""
+    doc = pymupdf.open()
+    doc.new_page().insert_textbox(pymupdf.Rect(40, 40, 560, 800), "".join(chr(c) for c in range(1, 9)) * 20, fontsize=9)
+    doc.save(cfg.pasta_dbf / "Decreto 48563.pdf")
+    unico = ato("48563", pub("2020-01-15"))
+    monkeypatch.setattr(modulo_relatorio, "separar_caderno", lambda caminho: ResultadoSeparacao((unico,), 9))
+    caderno = tmp_path / "20200115_PoderExecutivo.pdf"
+    caderno.write_bytes(b"%PDF-1.4")
+    with caplog.at_level(logging.INFO, logger="pipeline"):
+        relatorio_dos_cadernos(cfg, caderno, gravar=True)
+    assert "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)" in caplog.text
+    assert nomes(cfg.pasta_temp) == []

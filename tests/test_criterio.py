@@ -117,3 +117,45 @@ def test_especie_sem_fecho_nem_abertura_nao_e_cobrada_por_eles():
 )
 def test_mencao_no_corpo_do_ato_nao_e_expediente(trecho):
     assert criterio.motivos_de_reprovacao(bom((CORPO, CORPO + "\n" + trecho)), e_da_dbf=False) == []
+
+
+# ----------------------------------------------------------------------------
+# Escopo: programa só nos considerandos (decisão de 12/11/2026)
+# ----------------------------------------------------------------------------
+
+EMENTA_34519 = (
+    "Introduz modificações no Decreto nº 27.772, de 30 de março de 2005, e alterações, que dispõe sobre a "
+    "sistemática de parcelamento de débitos do ICMS."
+)
+CONSIDERANDO = (
+    "CONSIDERANDO o disposto na Lei nº 11.675, de 11 de outubro de 1999, que dispõe sobre o Programa de "
+    "Desenvolvimento do Estado de Pernambuco - PRODEPE;"
+)
+
+
+def test_programa_so_nos_considerandos_e_ementa_sem_tipo_fica_fora_da_dbf():
+    a = ato(CABECALHO, EMENTA_34519, ABERTURA, CONSIDERANDO, CORPO, FECHO, ASSINATURA)
+    assert criterio.fora_por_ementa_sem_tipo(a) and not criterio.da_dbf(a)
+    assert criterio.motivos_de_reprovacao(a) == []
+
+
+def test_programa_so_nos_considerandos_com_tipo_continua_da_dbf():
+    # como o 60.233: a ementa não cita o PRODEPE, mas é concessão
+    a = ato(CABECALHO, "Concede incentivo à empresa X.", ABERTURA, CONSIDERANDO, CORPO, FECHO, ASSINATURA)
+    assert criterio.da_dbf(a) and not criterio.fora_por_ementa_sem_tipo(a)
+
+
+def test_programa_na_ementa_sem_tipo_continua_da_dbf_e_reprova():
+    a = bom((EMENTA, "Estabelece condições para o estímulo previsto na Lei nº 11.675, que dispõe sobre o PRODEPE."))
+    assert criterio.da_dbf(a) and criterio.motivos_de_reprovacao(a) == [criterio.DBF_SEM_TIPO]
+
+
+def test_misturado_com_outro_cabecalho_continua_da_dbf_e_reprova():
+    colado = CORPO + "\nDECRETO Nº 60.930, DE 25 DE JUNHO DE 2026.\nAltera algo."
+    a = ato(CABECALHO, "Concede incentivo à empresa X.", ABERTURA, CONSIDERANDO, colado, FECHO, ASSINATURA)
+    assert criterio.da_dbf(a)
+    assert criterio.motivos_de_reprovacao(a) == [criterio.OUTRO_CABECALHO, criterio.DBF_SEM_TIPO]
+
+
+def test_especie_sem_lista_de_programas_nunca_fica_fora_por_ementa():
+    assert not criterio.fora_por_ementa_sem_tipo(AtoSeparado(EDITAL, "1", "EDITAL Nº 1", "EDITAL Nº 1\nTexto.", 1, 1))

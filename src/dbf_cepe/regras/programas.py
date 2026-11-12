@@ -14,6 +14,11 @@ exemplo, não traz "PRODEPE" na ementa, mas os considerandos citam a Lei nº
 11.675/1999). Citações soltas no corpo do texto NÃO bastam; quando um programa
 só aparece no corpo, o pipeline avisa em vez de decidir sozinho.
 
+Decisão de 12/11/2026: o decreto que cita o programa só nos considerandos (não na
+ementa) só é da DBF se a ementa tiver um tipo reconhecido (o 60.233 é concessão). O
+Decreto 34.519/2010, que altera o decreto do parcelamento de débitos do ICMS e cita
+a Lei do PRODEPE nos considerandos, não é da DBF (`criterio.da_dbf`).
+
 Cada programa é reconhecido por: sigla, nome oficial, lei ou decreto de
 origem e o anexo do RICMS-PE (Decreto nº 44.650/2017) que o regulamenta. Os
 padrões evitam termos genéricos ("setor automotivo", "indústria naval" soltos),
@@ -251,6 +256,17 @@ def em_escopo(especie: Especie, programas_citados: tuple[Programa, ...]) -> bool
     """Espécie sem lista de programas: todo ato entra. Com lista: só se o
     cabeçalho citar algum programa dela."""
     return especie.programas is None or bool(programas_citados)
+
+
+def cita_programa_so_nos_considerandos(
+    texto: str,
+    especie: Especie,
+    ementa: str,
+    programas: tuple[Programa, ...] | None = None,
+) -> bool:
+    """True se o cabeçalho cita algum programa, mas a ementa não cita nenhum."""
+    lista = programas if programas is not None else (especie.programas or ())
+    return bool(programas_do_ato(texto, especie, lista)) and not any(p.padrao.search(ementa) for p in lista)
 
 
 def cita_programa_so_no_corpo(

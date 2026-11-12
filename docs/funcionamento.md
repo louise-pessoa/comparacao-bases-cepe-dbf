@@ -221,6 +221,7 @@ histórico continua começando em 2020.
 | 2012 a jun/2019 | **Ordem das colunas:** o PyMuPDF entrega o texto fora da ordem de leitura; um decreto é cortado no meio e o final cai no bloco do vizinho | 10% a 20% dos decretos; 2 a 5 da DBF por ano (ex.: Decreto 47.225, 22/03/2019); recuperados pelo nível 3 da cascata desde 11/11/2026 |
 | até 2010 (mudou entre set/2010 e mar/2012) | **Fecho antigo** `PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010.`, sem "Independência do Brasil." | todos os decretos de 2010; recuperados pelo nível 2 desde 11/11/2026 |
 | 2010 | **Ementas antigas:** "Introduz modificações no Decreto ..., que concede incentivo do PRODEPE" e "Dispõe sobre a fruição de estímulo ... PRODEPE" | 4 de 36 decretos da DBF sem tipo; reconhecidas desde 11/11/2026 |
+| 2010 (base da DBF) | **PDF da base com texto ilegível:** o texto é selecionável, mas a fonte não tem conversão para Unicode e sai como códigos de controle (`\x01`, `\x02`...); a comparação dava ~1% de similaridade | Decretos 34529, 34530, 34532 e 34534; desde 12/11/2026 o leitor trata a página como digitalizada (`FRACAO_MAX_ILEGIVEL`, em `leitura/reader.py`) e o relatório mostra "PDF da base é imagem ou ilegível" |
 | todos os anos, até 2026 | **Expediente do Diário** (lista de secretários, preços, endereço da CEPE) entrava no texto do decreto da mesma página | resolvido em 09/11/2026 (ver "Separação"); sobram 6 casos em 2014, 2018 e 2019, junto com o problema das colunas |
 | 2012, 2019 e 2025 | Abertura de quem substitui o titular: **"A VICE GOVERNADORA, NO EXERCÍCIO DO CARGO..."**, **"O PRESIDENTE DA ASSEMBLÉIA LEGISLATIVA ..., NO EXERCÍCIO DO CARGO DE GOVERNADOR"** | aceita desde 09/11/2026 |
 
@@ -231,6 +232,12 @@ baixado, o que bate com Extras ausentes do S3.
 "Dispõe sobre a fruição de estímulo" (Decreto 34.733/2010, que no artigo 1º concede o estímulo) como **concessão**.
 Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
 (ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
+
+*Decisão de 12/11/2026:* o decreto que cita o programa só nos considerandos (não na ementa) e cuja ementa não tem
+tipo reconhecido fica **fora do escopo da DBF**, com o aviso "cita um programa da DBF só nos considerandos e a ementa
+não tem tipo reconhecido; tratado como fora do escopo, confira" (`criterio.da_dbf`). Caso que motivou: o Decreto
+34.519/2010, que altera o decreto do parcelamento de débitos do ICMS e não está na base. Nos 454 cadernos medidos, foi o
+único a mudar. Não vale para o texto com cabeçalho de outro ato (misturado): esse continua reprovando.
 
 *Decisões de 09/11/2026:* a abertura de quem substitui o titular é aceita (`ABERTURA_DO_CORPO_DECRETO`, em
 `regras_atos.py`). Um bloco de outra espécie que começa como decreto ("DECRETO Nº 30.257, DE 12 DE MARÇO DE 2007, BAIXOU

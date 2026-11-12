@@ -132,6 +132,29 @@ def test_decreto_que_cita_programa_so_no_corpo_gera_aviso(cfg, tmp_path, caplog)
     assert resumo.avisos == 1
 
 
+def test_programa_so_nos_considerandos_sem_tipo_fica_fora_com_aviso(cfg, tmp_path, caplog):
+    """Decreto 34.519/2010: altera o decreto do parcelamento do ICMS e cita a Lei do PRODEPE
+    só nos considerandos (decisão de 12/11/2026: não é da DBF)."""
+    import pymupdf
+
+    texto = (
+        "DECRETO Nº 34.519, DE 18 DE JANEIRO DE 2010.\nIntroduz modificações no Decreto nº 27.772, de 30 de "
+        "março de 2005, que dispõe sobre a sistemática de parcelamento de débitos do ICMS.\n"
+        "O GOVERNADOR DO ESTADO, no uso das atribuições,\nCONSIDERANDO a Lei nº 11.675, de 11 de outubro de "
+        "1999, que dispõe sobre o PRODEPE;\nDECRETA:\nArt. 1º Fica alterado.\n"
+        "PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de janeiro de 2010.\nEDUARDO HENRIQUE ACCIOLY CAMPOS\n"
+    )
+    pdf = tmp_path / "20100119_PoderExecutivo.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_textbox(pymupdf.Rect(40, 40, 560, 800), texto, fontsize=9)
+    doc.save(pdf)
+    with caplog.at_level(logging.INFO, logger="pipeline"):
+        resumo = relatorio_dos_cadernos(cfg, pdf, gravar=True)
+    assert "Decreto 34519.pdf | p. 1 | tipo não reconhecido | PRODEPE | fora do escopo da DBF" in caplog.text
+    assert "cita um programa da DBF só nos considerandos" in caplog.text
+    assert resumo.reprovados_dbf == [] and nomes(cfg.pasta_temp) == []
+
+
 # ----------------------------------------------------------------------------
 # Gravação em pendentes
 # ----------------------------------------------------------------------------

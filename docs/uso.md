@@ -178,7 +178,7 @@ mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs se
 | `CONFERIR DUPLICATA (gravado em pendentes: ...)` | a base tem o número sem registro e com texto diferente; o lote manda para conferência manual |
 | `REVISÃO MANUAL (reprovado no critério de leitura: ...; não gravado)` | não grava: nenhum nível da leitura em cascata leu o decreto inteiro ([`funcionamento.md`](funcionamento.md#leitura-em-cascata)); confira o caderno e grave à mão, se for o caso |
 | `já existe na DBF (texto idêntico)` | não grava |
-| `já existe na DBF (PDF da base é imagem; não comparado)` | não grava: o PDF da base é digitalizado e não há sinal de republicação (marca "REPUBLICADO" no caderno ou outro texto do mesmo número no lote) |
+| `já existe na DBF (PDF da base é imagem ou ilegível; não comparado)` | não grava: o PDF da base é digitalizado, ou tem texto que sai como códigos de controle (fonte sem conversão para Unicode, comum em 2010), e não há sinal de republicação (marca "REPUBLICADO" no caderno ou outro texto do mesmo número no lote) |
 | `já registrado (mesma publicação)` | não grava (mesma data, caderno e página já no registro) |
 
 O lote decide o nome final de novo, com a base daquele momento. **Caderno sem data no nome:** regra antiga (só o que a
@@ -186,7 +186,8 @@ base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
 fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
-citado só no corpo do decreto, decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
+citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
+decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
 coluna): ...; confira o texto`) e decreto reprovado no critério da leitura em cascata (`reprovado no critério de leitura
 (sem fecho) em todos os níveis; revisão manual`; ver [`funcionamento.md`](funcionamento.md#leitura-em-cascata)).
 
