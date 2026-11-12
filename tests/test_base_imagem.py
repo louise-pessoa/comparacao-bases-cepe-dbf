@@ -23,6 +23,11 @@ from dbf_cepe.pipeline.relatorio import nome_em_pendentes, relatorio_dos_caderno
 from dbf_cepe.pipeline.republicacao import Acao, planejar
 from dbf_cepe.regras.especies import DECRETO
 
+# Sem o fecho, o critério da leitura em cascata reprova o decreto e o --gravar não o grava.
+FECHO = (
+    "\nPalácio do Campo das Princesas, Recife, 1º de julho do ano de 2026, 210º da Revolução "
+    "Republicana Constitucionalista e 204º da Independência do Brasil."
+)
 CONCESSAO = "Concede estímulo previsto na Lei nº 11.675, de 11 de outubro de 1999, que dispõe sobre o PRODEPE."
 
 
@@ -33,7 +38,7 @@ def pub(dia: str, pagina: int = 3, marcada: bool = False) -> Publicacao:
 
 def ato(numero: str, publicacao: Publicacao, extra: str = "") -> AtoSeparado:
     return AtoSeparado(
-        DECRETO, numero, f"DECRETO Nº {numero}", texto_decreto(f"{numero[:2]}.{numero[2:]}", CONCESSAO) + extra,
+        DECRETO, numero, f"DECRETO Nº {numero}", texto_decreto(f"{numero[:2]}.{numero[2:]}", CONCESSAO) + extra + FECHO,
         publicacao.pagina, publicacao.pagina, data_publicacao=publicacao.data, caderno=publicacao.caderno,
         marcado_como_republicacao=publicacao.marcada_como_republicacao,
     )

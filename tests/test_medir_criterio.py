@@ -23,6 +23,7 @@ FECHO = (
     "Constitucionalista e 204º da Independência do Brasil."
 )
 FECHO_ANTIGO = "PALÁCIO DO CAMPO DAS PRINCESAS, em 18 de março de 2010."
+SEM_FECHO = "Recife, 18 de março de 2010."
 ASSINATURA = "RAQUEL TEIXEIRA LYRA LUCENA\nGovernadora do Estado"
 
 
@@ -45,13 +46,17 @@ def _decreto(numero: str, fecho: str = FECHO) -> str:
 
 def test_medir_agrupa_por_ano_e_procura_nas_subpastas(tmp_path):
     _caderno(tmp_path / "2010", "20100319_PoderExecutivo.pdf", _decreto("34.716", FECHO_ANTIGO))
+    _caderno(tmp_path / "2009", "20090319_PoderExecutivo.pdf", _decreto("33.000", SEM_FECHO))
     _caderno(tmp_path / "2026", "20260626_ResumoDiario.pdf", _decreto("60.929"), _decreto("60.930"))
     anos, falhas = mc.medir([tmp_path])
     assert falhas == []
-    assert (anos["2026"].decretos, anos["2026"].reprovados, anos["2026"].dbf) == (2, 0, 2)
-    assert (anos["2010"].reprovados, anos["2010"].dbf_reprovados) == (1, 1)
-    assert anos["2010"].motivos == {criterio.FECHO_ANTIGO: 1}
-    assert anos["2010"].exemplos == ["20100319_PoderExecutivo.pdf p. 1 | Decreto 34716 (DBF) | fecho antigo"]
+    assert (anos["2026"].decretos, anos["2026"].reprovados, anos["2026"].recuperados) == (2, 0, 0)
+    # fecho antigo: reprova na leitura atual e é recuperado no nível 2
+    assert (anos["2010"].recuperados, anos["2010"].reprovados) == (1, 0)
+    # sem fecho nenhum: reprova em todos os níveis
+    assert (anos["2009"].reprovados, anos["2009"].dbf_reprovados) == (1, 1)
+    assert anos["2009"].motivos == {criterio.SEM_FECHO: 1}
+    assert anos["2009"].exemplos == ["20090319_PoderExecutivo.pdf p. 1 | Decreto 33000 (DBF) | sem fecho"]
 
 
 def test_amostras_reais_de_2026(tmp_path):
@@ -66,11 +71,11 @@ def test_amostras_reais_de_2026(tmp_path):
 
 
 def test_main_imprime_tabela_e_grava_json(tmp_path, capsys):
-    _caderno(tmp_path / "c", "20100319_PoderExecutivo.pdf", _decreto("34.716", FECHO_ANTIGO))
+    _caderno(tmp_path / "c", "20100319_PoderExecutivo.pdf", _decreto("34.716", SEM_FECHO))
     saida = tmp_path / "medida.json"
     assert mc.main([str(tmp_path / "c"), "--json", str(saida)]) == 0
     texto = capsys.readouterr().out
-    assert "2010" in texto and "fecho antigo 1" in texto
+    assert "2010" in texto and "sem fecho 1" in texto
     assert json.loads(saida.read_text(encoding="utf-8"))["2010"]["reprovados"] == 1
 
 

@@ -28,8 +28,9 @@ Republicação: a publicação mais antiga de um número fica com `Decreto N.pdf
 (republicação).pdf`, `(republicação 2)` e assim por diante. A data de cada arquivo gravado fica em
 `dados/registro_publicacoes.json`. Detalhes em [`docs/funcionamento.md`](docs/funcionamento.md#republicação).
 
-Anos antigos: o pipeline lê corretamente os cadernos de **2020 em diante**. Antes disso há problemas de leitura
-conhecidos ([`docs/funcionamento.md`](docs/funcionamento.md#cadernos-antigos-ano-limite)).
+Anos antigos: o pipeline lê corretamente os cadernos de **2020 em diante**. De 2010 a 2019, a leitura em cascata relê
+o decreto com o fecho antigo ou coluna a coluna e marca o que recuperou; o que nenhuma leitura aprova vai para revisão
+manual ([`docs/funcionamento.md`](docs/funcionamento.md#cadernos-antigos-ano-limite)).
 
 ## Instalação
 

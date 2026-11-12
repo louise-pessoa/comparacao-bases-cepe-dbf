@@ -171,7 +171,12 @@ TIPOS_DECRETO: tuple[tuple[str, re.Pattern[str], str], ...] = (
     # Concessão do estímulo a uma empresa. Amostra: 60929 e os 28 do caderno de 26/06/2026.
     (
         "CONCESSAO",
-        _inicio(r"(?:Concede\b|Disp[õo]e\s+sobre\s+a\s+concess[ãa]o\b)"),
+        # "Dispõe sobre a fruição de estímulo ... PRODEPE" (2010, Decreto 34.733: o art. 1º
+        # concede o estímulo) também é concessão. Decisão de 06/11/2026.
+        _inicio(
+            r"(?:Concede\b|Disp[õo]e\s+sobre\s+a\s+concess[ãa]o\b"
+            r"|Disp[õo]e\s+sobre\s+a\s+frui[çc][ãa]o\s+de\s+est[íi]mulo\b)"
+        ),
         EVIDENCIA_AMOSTRA,
     ),
     # Alteração da NORMA do programa (não é ato de empresa). Publicado: "Introduz
@@ -187,7 +192,16 @@ TIPOS_DECRETO: tuple[tuple[str, re.Pattern[str], str], ...] = (
         EVIDENCIA_PUBLICADO,
     ),
     # Alteração do decreto de uma empresa. Amostra: 60951 (plural); 60.134/2025 usa o singular.
-    ("ALTERACAO", _inicio(r"Introduz\s+altera[çc][õo]es\b"), EVIDENCIA_AMOSTRA),
+    # "Introduz modificações no Decreto nº 30.159 [...], que concede incentivo do PRODEPE
+    # à empresa ..." (2010) também é alteração de empresa. Decisão de 06/11/2026.
+    (
+        "ALTERACAO",
+        _inicio(
+            rf"Introduz\s+(?:altera[çc][õo]es\b"
+            rf"|modi{_FI}ca[çc][õo]es\b(?=.{{0,300}}?\bque\s+conced(?:e|eu)\s+(?:o\s+)?(?:incentivo|est[íi]mulo)))"
+        ),
+        EVIDENCIA_AMOSTRA,
+    ),
     # Segunda prorrogação / renovação: sem amostra real, padrão presumido.
     (
         "SEGUNDA_PRORROGACAO",

@@ -195,6 +195,10 @@ def test_decreto_sem_abertura_do_corpo_avisa():
         ("Dispõe sobre a segunda prorrogação dos prazos", "SEGUNDA_PRORROGACAO"),
         ("Dispõe sobre a prorrogação dos prazos", "PRORROGACAO"),
         ("Introduz alterações no Decreto nº 41.447", "ALTERACAO"),
+        # 2010: "modificações" só é alteração de incentivo quando o decreto alterado concede um
+        ("Introduz modificações no Decreto nº 26.010, de 2003, que concede incentivo do PRODEPE", "ALTERACAO"),
+        ("Introduz modificações no Decreto nº 14.876, de 1991, que regulamenta o ICMS", None),
+        ("Dispõe sobre a fruição de estímulo previsto na Lei nº 11.675", "CONCESSAO"),
         ("Altera o Decreto nº 21.959, de 27 de dezembro de 1999", "ALTERACAO_NORMA"),
         ("Autoriza a terceirização da industrialização", "TERCEIRIZACAO"),
         ("Abre ao Orçamento Fiscal do Estado crédito suplementar", None),
