@@ -15,7 +15,7 @@ Uso:
 O critério é o de `dbf_cepe/leitura/criterio.py` e os níveis de recuperação são os de
 `dbf_cepe/leitura/cascata.py`: "recuperados" são os decretos que reprovam na leitura
 atual e são aprovados num nível de recuperação; "reprovados", os que nenhum nível
-aprova (revisão manual), com os motivos do nível 1.
+aprova (na tabela, "nenhum"; o da DBF vai para revisão manual), com os motivos do nível 1.
 
 O ano é o do nome do caderno (AAAAMMDD_...); caderno sem data no nome conta como
 "sem data".
@@ -44,11 +44,19 @@ class Ano:
     dbf: int = 0
     dbf_reprovados: int = 0
     recuperados: int = 0  # reprovados no nível 1 e aprovados num nível de recuperação
+    por_nivel: Counter[int] = field(default_factory=Counter)  # recuperados, por nível que os leu
     motivos: Counter[str] = field(default_factory=Counter)
     exemplos: list[str] = field(default_factory=list)
 
+    @property
+    def nivel_1(self) -> int:
+        return self.decretos - self.recuperados - self.reprovados
+
     def para_dict(self) -> dict[str, object]:
-        return {**self.__dict__, "motivos": dict(self.motivos.most_common())}
+        return {
+            **self.__dict__, "motivos": dict(self.motivos.most_common()),
+            "por_nivel": {str(n): q for n, q in sorted(self.por_nivel.items())},
+        }
 
 
 def ano_do_caderno(caminho: Path) -> str:
@@ -78,6 +86,7 @@ def medir(pastas: list[Path], limite_exemplos: int = 20) -> tuple[dict[str, Ano]
             final = avaliar(ato, NIVEIS, caderno)
             if final.nivel_de_leitura is not None:
                 ano.recuperados += 1
+                ano.por_nivel[final.nivel_de_leitura] += 1
                 continue
             ano.reprovados += 1
             ano.dbf_reprovados += da_dbf
@@ -91,14 +100,28 @@ def medir(pastas: list[Path], limite_exemplos: int = 20) -> tuple[dict[str, Ano]
 
 
 def tabela(anos: dict[str, Ano]) -> str:
-    linhas = ["ano       decretos  recuperados  reprovados  DBF  DBF reprovados  motivos (nível 1)"]
+    """Por ano: em que nível da cascata cada decreto foi lido ("nenhum": reprovado em todos
+    os níveis), para todos os decretos e para os da DBF, e os motivos dos "nenhum"."""
+    niveis = [1, *(n.numero for n in NIVEIS)]
+    colunas_todos = "".join(f"{f'nível {n}':>9}" for n in niveis) + f"{'nenhum':>9}"
+    largura_todos = 7 + len(colunas_todos)
+    linhas = [
+        f"{'':<9} {'todos os decretos: lidos em qual nível':<{largura_todos}}   {'da DBF':<16}",
+        f"{'ano':<9} {'total':>7}{colunas_todos}   {'total':>7}{'nenhum':>9}   "
+        "por que a leitura atual reprovou os \"nenhum\"",
+    ]
     for nome in sorted(anos, reverse=True):
         a = anos[nome]
+        lidos = [a.nivel_1, *(a.por_nivel[n] for n in niveis[1:])]
         detalhe = ", ".join(f"{m} {n}" for m, n in a.motivos.most_common()) or "-"
         linhas.append(
-            f"{nome:<9} {a.decretos:>8}  {a.recuperados:>11}  {a.reprovados:>10}  {a.dbf:>3}  "
-            f"{a.dbf_reprovados:>14}  {detalhe}"
+            f"{nome:<9} {a.decretos:>7}" + "".join(f"{q:>9}" for q in lidos) + f"{a.reprovados:>9}   "
+            f"{a.dbf:>7}{a.dbf_reprovados:>9}   {detalhe}"
         )
+    linhas.append(
+        "\n\"nenhum\": nenhum nível da cascata leu o decreto inteiro; o da DBF vai para revisão manual, "
+        "o de fora da DBF é ignorado pelo pipeline."
+    )
     return "\n".join(linhas)
 
 

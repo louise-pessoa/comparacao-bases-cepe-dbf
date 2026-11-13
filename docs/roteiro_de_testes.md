@@ -90,7 +90,8 @@ python -m ferramentas.localizar_exemplos
 python -m ferramentas.medir_criterio dados\cadernos
 ```
 
-- [ ] Nos 5 cadernos de referência, a linha `2026` mostra `73` decretos, `0` recuperados, `0` reprovados e `0` da DBF reprovados.
+- [ ] Nos 5 cadernos de referência, a linha `2026` mostra total `73`, `73` no nível 1, `0` nos níveis 2 e 3, `0` em
+  "nenhum" e, na parte da DBF, total `30` e `0` em "nenhum".
 
 ## 8. Republicação, em pastas de teste (nunca no G:)
 

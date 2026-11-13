@@ -358,8 +358,9 @@ python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # 
 - `regressao_separador` extrai um commit antigo e compara, caderno a caderno, os decretos separados. Sai com código 1 se
   algum diferir.
 - `medir_criterio` só lê. Procura PDFs nas pastas (e subpastas) dadas, aplica o critério de aprovação da leitura em
-  cascata a cada decreto e mostra, por ano do caderno, quantos foram recuperados por um nível da cascata e quantos
-  reprovam, e por quê (`fecho antigo`, `sem fecho`,
+  cascata a cada decreto e mostra, por ano do caderno, em que nível cada decreto foi lido (nível 1 é a leitura
+  atual; 2, o fecho de até 2010; 3, a leitura por coluna; "nenhum", reprovado em todos), para todos os decretos e para
+  os da DBF (o da DBF em "nenhum" vai para revisão manual), e por que a leitura atual reprovou os "nenhum" (`fecho antigo`, `sem fecho`,
   `fecho repetido`, `sem abertura`, `outro cabeçalho`, `expediente`, `DBF sem tipo`), com alguns exemplos. `--json
   ARQUIVO` grava tudo; `--exemplos N` muda quantos exemplos aparecem por ano. Sai com código 1 se algum caderno não
   puder ser lido. Critério e motivos: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).
