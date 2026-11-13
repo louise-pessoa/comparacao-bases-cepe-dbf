@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,14 @@ def test_medir_agrupa_por_ano_e_procura_nas_subpastas(tmp_path):
     assert (anos["2009"].reprovados, anos["2009"].dbf_reprovados) == (1, 1)
     assert anos["2009"].motivos == {criterio.SEM_FECHO: 1}
     assert anos["2009"].exemplos == ["20090319_PoderExecutivo.pdf p. 1 | Decreto 33000 (DBF) | sem fecho"]
+    assert (anos["2010"].nivel_1, anos["2010"].por_nivel, anos["2026"].nivel_1) == (0, {2: 1}, 2)
+    linhas = mc.tabela(anos).splitlines()
+    assert linhas[1].split()[:8] == ["ano", "total", "nível", "1", "nível", "2", "nível", "3"]
+    # ano, total, nível 1, nível 2, nível 3, nenhum | DBF total, DBF nenhum | motivos
+    assert linhas[2].split() == ["2026", "2", "2", "0", "0", "0", "2", "0", "-"]
+    assert linhas[3].split() == ["2010", "1", "0", "1", "0", "0", "1", "0", "-"]
+    assert linhas[4].split() == ["2009", "1", "0", "0", "0", "1", "1", "1", "sem", "fecho", "1"]
+    assert mc.Ano(por_nivel=Counter({3: 2})).para_dict()["por_nivel"] == {"3": 2}
 
 
 def test_amostras_reais_de_2026(tmp_path):
