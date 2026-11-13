@@ -22,6 +22,7 @@ uma vez por caderno (`_texto_do_caderno`, com cache).
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -129,13 +130,70 @@ NIVEIS: tuple[Nivel, ...] = (
 # ----------------------------------------------------------------------------
 
 
+# ----------------------------------------------------------------------------
+# Trecho de outro ato (intruso)
+# ----------------------------------------------------------------------------
+
+# Um decreto aprovado no critério ainda pode ter, no meio, um trecho de outro ato que o PDF
+# guarda fora de ordem (ex.: Decreto 35.173/2010, com a "PLANILHA DE CÁLCULO ANALÍTICO" de
+# outro ato entre as páginas 8 e 9; Decreto 48.719/2020, com um aviso da Casa Civil). O
+# critério não vê: fecho e abertura estão certos. A leitura por coluna põe o trecho no lugar.
+# Medição de 13/11/2026 (3.868 decretos, 2010 a 2026): 10 decretos da DBF, todos intrusos
+# de verdade; nos demais, as duas leituras são iguais ou diferem de outro jeito.
+MIN_PALAVRAS_DO_INTRUSO = 30
+MAX_OUTRAS_DIFERENCAS = 5  # palavras diferentes fora do trecho intruso
+AVISO_DE_INTRUSO = (
+    "trecho de outro ato removido ({quantas} palavras, lido por coluna): \"{inicio}...\"; confira o texto"
+)
+_PALAVRA = re.compile(r"\w+")
+
+
+def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
+    """O trecho (palavras) que só existe no texto aceito, se for um bloco contínuo de pelo
+    menos MIN_PALAVRAS_DO_INTRUSO palavras e o resto dos dois textos for igual (até
+    MAX_OUTRAS_DIFERENCAS palavras de diferença); senão None."""
+    a, b = _PALAVRA.findall(aceito.casefold()), _PALAVRA.findall(por_coluna.casefold())
+    if a == b:
+        return None
+    diferencas = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
+    so_no_aceito = [op for op in diferencas if op[0] == "delete"]
+    if not so_no_aceito:
+        return None
+    maior = max(so_no_aceito, key=lambda op: op[2] - op[1])
+    if maior[2] - maior[1] < MIN_PALAVRAS_DO_INTRUSO:
+        return None
+    resto = sum(max(op[2] - op[1], op[4] - op[3]) for op in diferencas if op is not maior)
+    if resto > MAX_OUTRAS_DIFERENCAS:
+        return None
+    return " ".join(_PALAVRA.findall(aceito)[maior[1]:maior[2]])
+
+
+def _sem_intruso(ato: AtoSeparado, caminho: Path, e_da_dbf: bool) -> AtoSeparado:
+    """O ato aprovado, ou a leitura por coluna dele se o aprovado tiver um trecho intruso."""
+    relido = _reler_por_coluna(caminho, ato)
+    if relido is None or relido.numero != ato.numero or motivos_de_reprovacao(relido, e_da_dbf, True):
+        return ato
+    trecho = trecho_intruso(ato.texto, relido.texto)
+    if trecho is None:
+        return ato
+    aviso = AVISO_DE_INTRUSO.format(quantas=len(trecho.split()), inicio=" ".join(trecho.split()[:10]))
+    anteriores = tuple(a for a in ato.avisos if a.startswith("lido no nível"))
+    return replace(relido, nivel_de_leitura=3, avisos=(*relido.avisos, *anteriores, aviso))
+
+
+# ----------------------------------------------------------------------------
+# Cascata
+# ----------------------------------------------------------------------------
+
+
 def avaliar(ato: AtoSeparado, niveis: tuple[Nivel, ...], caminho: Path) -> AtoSeparado:
     """O ato aprovado no primeiro nível que o aceitar, ou o ato do nível 1 marcado como
-    reprovado (com os motivos do nível 1)."""
+    reprovado (com os motivos do nível 1). O decreto da DBF aprovado no nível 1 ou 2 ainda
+    passa pela conferência do trecho intruso (`_sem_intruso`)."""
     e_da_dbf = da_dbf(ato)
     motivos = motivos_de_reprovacao(ato, e_da_dbf)
     if not motivos:
-        return ato
+        return _sem_intruso(ato, caminho, e_da_dbf) if e_da_dbf else ato
     for nivel in niveis:
         relido = nivel.reler(caminho, ato)
         if (
@@ -146,7 +204,10 @@ def avaliar(ato: AtoSeparado, niveis: tuple[Nivel, ...], caminho: Path) -> AtoSe
             aviso = AVISO_DE_RECUPERACAO.format(
                 numero=nivel.numero, descricao=nivel.descricao, motivos=", ".join(motivos)
             )
-            return replace(relido, nivel_de_leitura=nivel.numero, avisos=(*relido.avisos, aviso))
+            aprovado = replace(relido, nivel_de_leitura=nivel.numero, avisos=(*relido.avisos, aviso))
+            if e_da_dbf and nivel.reler is not _reler_por_coluna:
+                return _sem_intruso(aprovado, caminho, e_da_dbf)
+            return aprovado
     aviso = AVISO_DE_REPROVACAO.format(motivos=", ".join(motivos))
     return replace(ato, nivel_de_leitura=None, reprovacao=tuple(motivos), avisos=(*ato.avisos, aviso))
 

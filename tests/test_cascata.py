@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
+import pytest
 
 from dbf_cepe.leitura import cascata, criterio
 from dbf_cepe.leitura.cascata import Nivel, avaliar, separar_em_cascata
@@ -161,3 +162,90 @@ def test_especie_sem_fecho_anterior_fica_como_esta():
     assert cascata.com_fechos_anteriores(replace(DECRETO, fecho=None)).fecho is None
     juntos = cascata.com_fechos_anteriores(DECRETO).fecho
     assert juntos.search("PALÁCIO DO CAMPO DAS PRINCESAS, em 5 de maio de 2010.")
+
+
+# ----------------------------------------------------------------------------
+# Trecho de outro ato no meio do decreto aprovado (intruso)
+# ----------------------------------------------------------------------------
+
+TEXTO_BASE = " ".join(f"palavra{i}" for i in range(200))
+INTRUSO = " ".join(f"intruso{i}" for i in range(40))
+
+
+@pytest.mark.parametrize(
+    ("aceito", "por_coluna", "esperado"),
+    [
+        (TEXTO_BASE, TEXTO_BASE, None),
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO), TEXTO_BASE, INTRUSO),
+        # 29 palavras: pequeno demais para ser um trecho de outro ato
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + " ".join(INTRUSO.split()[:29])), TEXTO_BASE, None),
+        # 30 palavras: o limite
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + " ".join(INTRUSO.split()[:30])), TEXTO_BASE,
+         " ".join(INTRUSO.split()[:30])),
+        # o trecho existe só na leitura por coluna: não é intruso do aceito
+        (TEXTO_BASE, TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO), None),
+        # além do trecho, 5 palavras diferentes: ainda vale; 6, não
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).replace(" ".join(f"palavra{i}" for i in range(5)),
+         " ".join(f"outra{i}" for i in range(5))), TEXTO_BASE, INTRUSO),
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).replace(" ".join(f"palavra{i}" for i in range(6)),
+         " ".join(f"outra{i}" for i in range(6))), TEXTO_BASE, None),
+        # caixa e pontuação não contam como diferença
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).upper() + " .", TEXTO_BASE, INTRUSO.upper()),
+    ],
+)
+def test_trecho_intruso(aceito, por_coluna, esperado):
+    assert cascata.trecho_intruso(aceito, por_coluna) == esperado
+
+
+TABELA_DE_OUTRO_ATO = "PLANILHA DE CÁLCULO ANALÍTICO\n" + "\n".join(
+    f"{i}º ZP-{i:02d} 282.507,648 9.088.304,355 112º 34' 12'' 56,99 m" for i in range(1, 9)
+)
+INICIO = (
+    "DECRETO Nº 35.173, DE 16 DE JUNHO DE 2010.\nConcede estímulo previsto na Lei nº 11.675, de 11 de outubro de "
+    "1999, que dispõe sobre o PRODEPE, à empresa EXEMPLO LTDA.\nO GOVERNADOR DO ESTADO, no uso das atribuições,\n"
+    "DECRETA:\nArt. 1º Fica concedido à empresa EXEMPLO LTDA. o estímulo, com os produtos beneficiados:"
+)
+CONTINUACAO = "\n".join(f"produto {i} - NBM/SH 3004.90.{i:02d};" for i in range(1, 25))
+FIM = (
+    "Art. 2º Este Decreto entra em vigor na data de sua publicação.\n"
+    "PALÁCIO DO CAMPO DAS PRINCESAS, em 16 de junho de 2010.\nEDUARDO HENRIQUE ACCIOLY CAMPOS"
+)
+
+
+def _caderno_com_intruso(caminho: Path, intruso: str = TABELA_DE_OUTRO_ATO) -> Path:
+    """Como o caderno de 17/06/2010: o decreto começa na coluna da direita da página 1 e
+    termina na página 2; a tabela de outro ato, no alto da coluna da esquerda da página 1, é
+    guardada por último na página."""
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    pagina.insert_textbox(pymupdf.Rect(40, 400, 300, 800), "Fim de outro ato que não é da DBF.", fontsize=8)
+    pagina.insert_textbox(pymupdf.Rect(310, 40, 570, 800), INICIO + "\n" + CONTINUACAO, fontsize=8)
+    pagina.insert_textbox(pymupdf.Rect(40, 40, 300, 390), intruso, fontsize=8)
+    doc.new_page().insert_textbox(pymupdf.Rect(40, 40, 300, 800), "outros produtos - NBM/SH 3005.10.10;\n" + FIM,
+                                  fontsize=8)
+    doc.save(caminho)
+    return caminho
+
+
+def test_decreto_aprovado_com_trecho_de_outro_ato_e_lido_por_coluna(tmp_path):
+    caminho = _caderno_com_intruso(tmp_path / "20100617_PoderExecutivo.pdf")
+    (direto,) = separar_caderno(caminho).atos
+    assert "PLANILHA" in direto.texto  # a leitura atual põe a tabela no meio do decreto
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 3 and "PLANILHA" not in lido.texto
+    assert lido.texto.index("produto 24") < lido.texto.index("outros produtos") < lido.texto.index("PALÁCIO")
+    assert lido.avisos[-2].startswith("lido no nível 2")  # o fecho antigo continua avisado
+    assert lido.avisos[-1].startswith('trecho de outro ato removido (') and "PLANILHA DE CÁLCULO" in lido.avisos[-1]
+
+
+def test_trecho_curto_de_outro_ato_nao_troca_a_leitura(tmp_path):
+    caminho = _caderno_com_intruso(tmp_path / "20100617_PoderExecutivo.pdf", "PLANILHA 1º ZP-01")
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 2 and "PLANILHA" in lido.texto
+
+
+def test_decreto_fora_da_dbf_nao_e_conferido(tmp_path, monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(cascata, "_reler_por_coluna", lambda caminho, ato: chamadas.append(ato.numero))
+    original = ato(BOM.replace("Abre crédito suplementar.", "Abre crédito suplementar ao Orçamento."))
+    assert avaliar(original, (), Path("c.pdf")) is original and chamadas == []
