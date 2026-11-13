@@ -8,8 +8,10 @@
                                                                            com colunas fora
                                                                            de ordem
 
-O ato aprovado no nível 1 sai exatamente como o separador o entrega: a cascata nunca
-muda o que já sai certo. Um ato aprovado num nível de recuperação sai com o texto desse
+O ato aprovado no nível 1 sai exatamente como o separador o entrega, com uma exceção: o
+decreto da DBF aprovado no nível 1 ou 2 com um trecho de outro ato no meio (bloco contínuo
+que a leitura por coluna põe fora dele; ver `trecho_intruso`) sai com o texto da leitura
+por coluna e um aviso. Um ato aprovado num nível de recuperação sai com o texto desse
 nível e um aviso. O ato que nenhum nível aprova continua na lista, com
 `nivel_de_leitura=None`, os motivos em `reprovacao` e um aviso: ele vai para revisão
 manual, não para pendentes.
@@ -153,8 +155,6 @@ def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
     menos MIN_PALAVRAS_DO_INTRUSO palavras e o resto dos dois textos for igual (até
     MAX_OUTRAS_DIFERENCAS palavras de diferença); senão None."""
     a, b = _PALAVRA.findall(aceito.casefold()), _PALAVRA.findall(por_coluna.casefold())
-    if a == b:
-        return None
     diferencas = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
     so_no_aceito = [op for op in diferencas if op[0] == "delete"]
     if not so_no_aceito:
@@ -171,7 +171,7 @@ def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
 def _sem_intruso(ato: AtoSeparado, caminho: Path, e_da_dbf: bool) -> AtoSeparado:
     """O ato aprovado, ou a leitura por coluna dele se o aprovado tiver um trecho intruso."""
     relido = _reler_por_coluna(caminho, ato)
-    if relido is None or relido.numero != ato.numero or motivos_de_reprovacao(relido, e_da_dbf, True):
+    if relido is None or motivos_de_reprovacao(relido, e_da_dbf, True):
         return ato
     trecho = trecho_intruso(ato.texto, relido.texto)
     if trecho is None:
@@ -205,9 +205,7 @@ def avaliar(ato: AtoSeparado, niveis: tuple[Nivel, ...], caminho: Path) -> AtoSe
                 numero=nivel.numero, descricao=nivel.descricao, motivos=", ".join(motivos)
             )
             aprovado = replace(relido, nivel_de_leitura=nivel.numero, avisos=(*relido.avisos, aviso))
-            if e_da_dbf and nivel.reler is not _reler_por_coluna:
-                return _sem_intruso(aprovado, caminho, e_da_dbf)
-            return aprovado
+            return _sem_intruso(aprovado, caminho, e_da_dbf) if e_da_dbf else aprovado
     aviso = AVISO_DE_REPROVACAO.format(motivos=", ".join(motivos))
     return replace(ato, nivel_de_leitura=None, reprovacao=tuple(motivos), avisos=(*ato.avisos, aviso))
 

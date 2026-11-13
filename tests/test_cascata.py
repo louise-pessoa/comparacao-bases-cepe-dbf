@@ -189,6 +189,9 @@ INTRUSO = " ".join(f"intruso{i}" for i in range(40))
          " ".join(f"outra{i}" for i in range(5))), TEXTO_BASE, INTRUSO),
         (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).replace(" ".join(f"palavra{i}" for i in range(6)),
          " ".join(f"outra{i}" for i in range(6))), TEXTO_BASE, None),
+        # um bloco trocado (40 palavras diferentes nas duas leituras) não é trecho sobrando
+        (TEXTO_BASE.replace("palavra100", INTRUSO), TEXTO_BASE.replace("palavra100", INTRUSO.replace("intruso", "x")),
+         None),
         # caixa e pontuação não contam como diferença
         (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).upper() + " .", TEXTO_BASE, INTRUSO.upper()),
     ],
@@ -212,7 +215,7 @@ FIM = (
 )
 
 
-def _caderno_com_intruso(caminho: Path, intruso: str = TABELA_DE_OUTRO_ATO) -> Path:
+def _caderno_com_intruso(caminho: Path, intruso: str = TABELA_DE_OUTRO_ATO, fim: str = FIM) -> Path:
     """Como o caderno de 17/06/2010: o decreto começa na coluna da direita da página 1 e
     termina na página 2; a tabela de outro ato, no alto da coluna da esquerda da página 1, é
     guardada por último na página."""
@@ -221,7 +224,7 @@ def _caderno_com_intruso(caminho: Path, intruso: str = TABELA_DE_OUTRO_ATO) -> P
     pagina.insert_textbox(pymupdf.Rect(40, 400, 300, 800), "Fim de outro ato que não é da DBF.", fontsize=8)
     pagina.insert_textbox(pymupdf.Rect(310, 40, 570, 800), INICIO + "\n" + CONTINUACAO, fontsize=8)
     pagina.insert_textbox(pymupdf.Rect(40, 40, 300, 390), intruso, fontsize=8)
-    doc.new_page().insert_textbox(pymupdf.Rect(40, 40, 300, 800), "outros produtos - NBM/SH 3005.10.10;\n" + FIM,
+    doc.new_page().insert_textbox(pymupdf.Rect(40, 40, 300, 800), "outros produtos - NBM/SH 3005.10.10;\n" + fim,
                                   fontsize=8)
     doc.save(caminho)
     return caminho
@@ -248,4 +251,35 @@ def test_decreto_fora_da_dbf_nao_e_conferido(tmp_path, monkeypatch):
     chamadas = []
     monkeypatch.setattr(cascata, "_reler_por_coluna", lambda caminho, ato: chamadas.append(ato.numero))
     original = ato(BOM.replace("Abre crédito suplementar.", "Abre crédito suplementar ao Orçamento."))
-    assert avaliar(original, (), Path("c.pdf")) is original and chamadas == []
+    assert avaliar(original, (), Path("c.pdf")) is original
+    assert avaliar(ato(CORTADO), (nivel(2, BOM),), Path("c.pdf")).nivel_de_leitura == 2  # recuperado, fora da DBF
+    assert chamadas == []
+
+
+def test_decreto_atual_com_trecho_de_outro_ato(tmp_path):
+    """Nível 1 (fecho de hoje), como o Decreto 48.719/2020 com o aviso da Casa Civil."""
+    fecho_de_hoje = (
+        "Palácio do Campo das Princesas, Recife, 16 de junho do ano de 2020, 204º da Revolução Republicana "
+        "Constitucionalista e 198º da Independência do Brasil."
+    )
+    fim = FIM.replace("PALÁCIO DO CAMPO DAS PRINCESAS, em 16 de junho de 2010.", fecho_de_hoje)
+    caminho = _caderno_com_intruso(tmp_path / "20200221_PoderExecutivo.pdf", fim=fim)
+    (direto,) = separar_caderno(caminho).atos
+    assert criterio.motivos_de_reprovacao(direto) == [] and "PLANILHA" in direto.texto
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 3 and "PLANILHA" not in lido.texto
+    assert len(lido.avisos) == 1 and lido.avisos[0].startswith("trecho de outro ato removido")
+
+
+def test_leitura_por_coluna_reprovada_nao_substitui(tmp_path, monkeypatch):
+    caminho = _caderno_com_intruso(tmp_path / "20100617_PoderExecutivo.pdf")
+    original = cascata._reler_por_coluna
+
+    def sem_abertura(caminho, ato):  # uma palavra diferente: só o critério barra
+        relido = original(caminho, ato)
+        return replace(relido, texto=relido.texto.replace("O GOVERNADOR DO ESTADO", "O GOVERNADORX DO ESTADO"))
+
+    monkeypatch.setattr(cascata, "_reler_por_coluna", sem_abertura)
+    monkeypatch.setattr(cascata, "NIVEIS", cascata.NIVEIS[:1])  # o nível 2 aprova; o 3 só confere
+    (lido,) = separar_em_cascata(caminho).atos
+    assert lido.nivel_de_leitura == 2 and "PLANILHA" in lido.texto
