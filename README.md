@@ -58,6 +58,7 @@ python main.py --separar dados/cadernos --gravar            # grava os inéditos
 python main.py --simular                                     # lote (etapas 2 a 5): mostra o que faria
 python main.py                                               # lote de verdade: grava na base da DBF
 python main.py --conferir [--simular]                       # revisa a pasta "conferir duplicata" pelo terminal
+python main.py --limpar-cadernos PASTA [--mes AAAA-MM] [--simular]  # apaga os cadernos já processados
 python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
 ```
 
@@ -82,13 +83,15 @@ python main.py --separar $pasta --gravar
 python main.py --simular
 python main.py
 python main.py --conferir                                    # decide os que foram para "conferir duplicata"
+python main.py --limpar-cadernos $pasta --simular            # o que pode ser apagado do mês
+python main.py --limpar-cadernos $pasta                      # apaga a mesma lista
 ```
 
 Para vários meses de uma vez, parando no primeiro sinal de problema:
 
 ```powershell
 python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12              # só simula
-python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 --executar   # grava na base
+python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 --executar   # grava na base e apaga os cadernos processados
 ```
 
 Passo a passo, o que conferir em cada etapa e o ano-limite (2020): [`docs/uso.md`](docs/uso.md#lote-histórico).

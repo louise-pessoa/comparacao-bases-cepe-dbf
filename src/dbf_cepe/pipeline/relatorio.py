@@ -22,8 +22,11 @@ from dbf_cepe.pipeline.exportador import ErroExportacao, gravar_pdf_do_ato
 from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.leitura import criterio
+from dbf_cepe.pipeline import limpeza
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, programas_do_ato
-from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, ResultadoSeparacao, separar_caderno
+from dbf_cepe.leitura.separador import (
+    AtoSeparado, ErroSeparacao, ResultadoSeparacao, data_do_caderno, separar_caderno,
+)
 
 log = logging.getLogger("pipeline")
 
@@ -97,6 +100,8 @@ def _relatar_caderno(
     resumo.cadernos += 1
     resumo.atos += len(resultado.atos)
     gravados: set[str] = set()
+    falhas_antes = resumo.falhas
+    decretos_dbf: list[dict[str, object]] = []  # para a limpeza dos cadernos (manifesto)
     for ato in resultado.atos:
         nome = ato.especie.nome_arquivo(ato.numero)
         ident = identificar(ato.texto)
@@ -143,6 +148,10 @@ def _relatar_caderno(
         else:
             situacao = "INÉDITO"
         resumo.situacoes[situacao.split(" (")[0]] += 1
+        if e_da_dbf:
+            decretos_dbf.append(
+                {"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": situacao.split(" (")[0]}
+            )
         programa = "+".join(p.sigla for p in programas) or "-"
         log.info("%s | %s | %s | %s | %s", nome, paginas, tipo, programa, situacao)
         for aviso in ato.avisos:
@@ -151,6 +160,13 @@ def _relatar_caderno(
     for aviso in resultado.avisos:
         log.warning("AVISO: %s", aviso)
     resumo.avisos += len(resultado.avisos)
+    if contexto is not None and data_do_caderno(caderno.name) is not None:
+        # Só com --gravar (há contexto). O caderno foi processado até o fim: a limpeza (pipeline/limpeza.py) confere isto
+        # antes de apagá-lo.
+        limpeza.registrar_processamento(
+            caderno, len(resultado.atos), decretos_dbf, resumo.falhas - falhas_antes,
+            resultado.paginas_digitalizadas,
+        )
 
 
 def _descrever(comparado: comparacao.Comparacao) -> str:

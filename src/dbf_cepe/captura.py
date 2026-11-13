@@ -254,6 +254,27 @@ def _gravar_manifesto(caminho: Path, arquivos: dict[str, dict[str, Any]]) -> Non
     os.replace(temporario, caminho)
 
 
+def ler_manifesto(pasta_cadernos: Path) -> dict[str, dict[str, Any]]:
+    """Os arquivos do manifesto da pasta ({} se não houver manifesto). Ao contrário da
+    leitura da captura, NÃO substitui um manifesto ilegível: levanta `ErroCaptura`
+    (quem chama, como a limpeza dos cadernos, não pode seguir sem ele)."""
+    caminho = Path(pasta_cadernos) / NOME_MANIFESTO
+    if not caminho.exists():
+        return {}
+    try:
+        arquivos = json.loads(caminho.read_text(encoding="utf-8"))["arquivos"]
+    except (OSError, ValueError, KeyError, TypeError) as erro:
+        raise ErroCaptura(f"manifesto ilegível em {caminho}: {erro}") from erro
+    if not isinstance(arquivos, dict):
+        raise ErroCaptura(f"manifesto ilegível em {caminho}: 'arquivos' não é um objeto")
+    return arquivos
+
+
+def gravar_manifesto(pasta_cadernos: Path, arquivos: dict[str, dict[str, Any]]) -> None:
+    """Grava o manifesto da pasta (de forma atômica)."""
+    _gravar_manifesto(Path(pasta_cadernos) / NOME_MANIFESTO, arquivos)
+
+
 # ----------------------------------------------------------------------------
 # Download de um caderno
 # ----------------------------------------------------------------------------

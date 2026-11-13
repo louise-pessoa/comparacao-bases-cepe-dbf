@@ -99,6 +99,8 @@ python main.py --simular
 python main.py
 python main.py --conferir --simular
 python main.py --conferir
+python main.py --limpar-cadernos $pasta --simular
+python main.py --limpar-cadernos $pasta
 ```
 
 O que conferir em cada passo:
@@ -113,8 +115,9 @@ O que conferir em cada passo:
 | `--conferir` | decidir cada PDF (usar o Diário ou manter a base) |
 
 Para o console mostrar os acentos, rode antes, na mesma janela: `$env:PYTHONUTF8 = "1"` e
-`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`. Os cadernos do mês podem ser apagados à mão depois do
-`--conferir`; o manifesto da pasta guarda o que foi baixado.
+`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`. Depois do `--conferir`, apague os cadernos do mês com
+`--limpar-cadernos` ([abaixo](#limpeza-dos-cadernos---limpar-cadernos)); o manifesto da pasta guarda o que foi baixado
+e o que foi feito com cada caderno.
 
 ### Vários meses de uma vez (`ferramentas.lote_historico`)
 
@@ -141,8 +144,15 @@ Sem `--executar`, cada mês é baixado, separado e simulado, e `dados\pendentes`
 gravado, a simulação de um mês não enxerga o que o anterior gravaria: uma republicação entre meses aparece como
 inédita. Isso só afeta a simulação.
 
-No fim, uma linha por mês: cadernos, decretos, inéditos, já existentes, para conferir e gravados na base. O log
-completo fica em `logs\pipeline.log`.
+Com `--executar`, no fim de cada mês gravado sem problema, a ferramenta **apaga os cadernos do mês já processados por
+completo** ([limpeza](#limpeza-dos-cadernos---limpar-cadernos)): mostra no log a lista do que pode ser apagado e apaga
+em seguida, sem pedir a simulação separada. O caderno com alguma pendência (por exemplo, um decreto em "conferir
+duplicata" ainda sem decisão) fica, com o motivo no log; depois do `--conferir`, apague-o com `--limpar-cadernos`. Para
+não apagar nada, use `--manter-cadernos`. Se um caderno não puder ser apagado (arquivo em uso, por exemplo), a
+ferramenta para nesse mês.
+
+No fim, uma linha por mês: cadernos, decretos, inéditos, já existentes, para conferir, gravados na base e, com
+`--executar`, cadernos apagados e guardados. O log completo fica em `logs\pipeline.log`.
 
 ## Etapa 1b: separar os decretos (`--separar`)
 
@@ -276,6 +286,37 @@ pergunta:
 - Se o número não tiver mais arquivo na base, a opção `d` não aparece.
 - A pasta das cópias pode ser trocada com `PASTA_SUBSTITUIDOS` no `.env`. As cópias nunca são apagadas pelo programa.
 - Para registro ilegível ou com uma operação do lote pela metade, o comando para sem mexer em nada (rode o lote antes).
+
+## Limpeza dos cadernos (`--limpar-cadernos`)
+
+```powershell
+python main.py --limpar-cadernos dados\historico\2020-03 --simular   # lista o que seria apagado e por que o resto fica
+python main.py --limpar-cadernos dados\historico\2020-03             # apaga exatamente a lista simulada
+python main.py --limpar-cadernos dados\cadernos --mes 2026-09 --simular   # só os cadernos de um mês
+```
+
+Apaga o PDF dos cadernos já processados por completo e deixa no `manifesto.json` da pasta o registro do que foi feito.
+Um caderno só é apagado se:
+
+1. o mês dele já acabou;
+2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes (ele anota isso no manifesto);
+3. não tem página digitalizada;
+4. nenhum decreto da DBF dele ficou em revisão manual;
+5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
+6. todo decreto da DBF dele que foi para pendentes está no registro de publicações, e o que foi para "conferir
+   duplicata" já foi decidido no `--conferir`.
+
+Senão, o caderno fica, e a saída diz o motivo (`20200310_PoderExecutivo.pdf | limpeza: fica (Decreto 48700 em conferir
+duplicata, sem decisão (rode --conferir))`).
+
+- **Simulação obrigatória:** o `--simular` grava a lista em `limpeza_simulada.json`, na pasta. Sem ela, ou se a lista
+  (ou o `--mes`) mudou desde a simulação, nada é apagado e o comando termina com código 2.
+- **O que fica no manifesto:** endereço, tamanho, SHA-256 e data do download, mais `processado_em`, `processamento`
+  (decretos, decretos da DBF com número, página e situação) e `apagado_em`. O caderno apagado continua no manifesto, e
+  por isso a captura não o baixa de novo; para rebaixar, apague a entrada dele no manifesto.
+- **Cadernos baixados antes desta versão** não têm a anotação do `--separar --gravar`: rode o `--separar --gravar` de
+  novo na pasta (não grava nada repetido) e depois a limpeza.
+- Nunca mexe na base da DBF: recusa uma pasta dentro dela.
 
 ## Catálogo (`--catalogar`)
 

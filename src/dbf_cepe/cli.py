@@ -20,6 +20,8 @@ Quatro modos, independentes por enquanto:
      e republicações dos cadernos e grava um CSV, um ato por linha (ver
      catalogo.py). Só lê os cadernos; não usa a configuração (.env), a base da DBF
      nem as pastas de saída do pipeline.
+  5. Limpeza: `--limpar-cadernos PASTA [--mes AAAA-MM]` apaga os cadernos já
+     processados por completo, deixando o registro no manifesto (pipeline/limpeza.py).
 
 Uso:
     python main.py --simular                              # lote, sem mexer em nada
@@ -31,6 +33,8 @@ Uso:
     python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
     python main.py --catalogar dados/cadernos             # grava dados/catalogo_atos.csv
     python main.py --conferir [--simular]                 # revisa a pasta "conferir duplicata"
+    python main.py --limpar-cadernos dados/historico/2020-03 --simular   # o que seria apagado
+    python main.py --limpar-cadernos dados/historico/2020-03             # apaga (mesma lista)
 """
 
 from __future__ import annotations
@@ -44,7 +48,7 @@ from pathlib import Path
 
 from dbf_cepe import captura
 from dbf_cepe import catalogo
-from dbf_cepe.pipeline import conferencia
+from dbf_cepe.pipeline import conferencia, limpeza
 from dbf_cepe import proxy
 from dbf_cepe.config import (
     Configuracao,
@@ -111,6 +115,13 @@ def _configurar_log(pasta_logs: Path) -> None:
     for destino in destinos:
         destino.setFormatter(formato)
         log.addHandler(destino)
+
+
+def _mes_iso(texto: str) -> date:
+    try:
+        return date.fromisoformat(texto + "-01")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"mês inválido: {texto!r} (use AAAA-MM)")
 
 
 def _data_iso(texto: str) -> date:
@@ -213,6 +224,19 @@ def main(argv: list[str] | None = None) -> int:
         "com --simular, só mostra",
     )
     parser.add_argument(
+        "--limpar-cadernos",
+        type=Path,
+        metavar="PASTA",
+        help="apaga os cadernos da pasta já processados por completo (lote rodado, nada pendente), "
+        "deixando o registro no manifesto; exige antes uma rodada com --simular e a mesma lista",
+    )
+    parser.add_argument(
+        "--mes",
+        type=_mes_iso,
+        metavar="AAAA-MM",
+        help="com --limpar-cadernos: só os cadernos deste mês (que já tem de ter acabado)",
+    )
+    parser.add_argument(
         "--catalogar",
         type=Path,
         metavar="PASTA",
@@ -249,6 +273,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--gravar só vale junto com --separar")
     if args.comparar and not args.separar:
         parser.error("--comparar só vale junto com --separar")
+    if args.limpar_cadernos and (
+        args.separar or args.baixar or args.de or args.ate or args.gravar or args.comparar or args.conferir
+    ):
+        parser.error("--limpar-cadernos só se combina com --mes e --simular")
+    if args.mes and not args.limpar_cadernos:
+        parser.error("--mes só vale junto com --limpar-cadernos")
     if args.baixar and args.de is None:
         parser.error("--baixar exige --de AAAA-MM-DD")
     if not args.baixar and (args.de or args.ate):
@@ -263,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.conferir:
             conferencia.conferir(cfg, args.simular)
             return 0
+        if args.limpar_cadernos:
+            resultado = limpeza.limpar(cfg, args.limpar_cadernos, args.mes, args.simular)
+            return 1 if resultado.falhas else 0
         if args.separar:
             resumo = relatorio_dos_cadernos(
                 cfg, args.separar, args.gravar, args.permitir_pasta_vazia, args.comparar
@@ -281,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         if resumo_lote[Destino.FALHA_AO_GRAVAR]:
             return 1  # decretos ficaram em pendentes; vale rodar de novo
     except (
-        ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao, ErroRegistro
+        ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao, ErroRegistro,
+        limpeza.ErroLimpeza,
     ) as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2

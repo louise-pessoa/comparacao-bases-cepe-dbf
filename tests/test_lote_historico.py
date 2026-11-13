@@ -12,6 +12,7 @@ import lote_historico as lh
 from dbf_cepe import captura
 from dbf_cepe.config import Configuracao
 from dbf_cepe.pipeline.comparacao import Comparacao
+from dbf_cepe.pipeline.limpeza import Avaliacao, ResultadoLimpeza
 from dbf_cepe.pipeline.lote import Destino
 from dbf_cepe.pipeline.relatorio import ResumoRelatorio
 
@@ -67,12 +68,16 @@ def test_motivos_no_lote():
 class Roteiro:
     """Respostas controladas da captura, da separação e do lote, e o registro das chamadas."""
 
-    def __init__(self, monkeypatch, *, baixados=5, sem_conexao=0, separacao=None, gravacao=None, simulacao=None, lote=None):
+    def __init__(
+        self, monkeypatch, *, baixados=5, sem_conexao=0, separacao=None, gravacao=None, simulacao=None, lote=None,
+        limpeza=None,
+    ):
         self.chamadas: list[str] = []
         self.separacao = separacao or ResumoRelatorio()
         self.gravacao = gravacao or ResumoRelatorio(situacoes=Counter({"INÉDITO": 2}))
         self.simulacao = simulacao or Counter({Destino.CONCLUIDO: 2})
         self.lote = lote or Counter({Destino.CONCLUIDO: 2})
+        self.limpeza = limpeza or ResultadoLimpeza(apagados=["a.pdf", "b.pdf"], mantidos=[Avaliacao("c.pdf", ["x"])])
 
         def capturar(cfg, inicio, fim, simular, fonte):
             self.chamadas.append(f"baixar {inicio:%Y-%m} {fonte} em {cfg.pasta_cadernos.as_posix()}")
@@ -90,20 +95,47 @@ class Roteiro:
 
         monkeypatch.setattr(lh, "capturar", capturar)
         monkeypatch.setattr(lh, "relatorio_dos_cadernos", relatorio)
+        def limpar(cfg, pasta, mes, exigir_simulacao=True):
+            self.chamadas.append(f"limpar {mes:%Y-%m} {pasta.as_posix()} exigir={exigir_simulacao}")
+            return self.limpeza
+
         monkeypatch.setattr(lh, "executar", executar)
+        monkeypatch.setattr(lh.limpeza_dos_cadernos, "limpar", limpar)
 
 
 def test_mes_completo_com_executar(cfg, monkeypatch):
     r = Roteiro(monkeypatch)
     mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
     assert not mes.parada
-    assert r.chamadas == ["baixar 2020-03 s3 em dados/historico/2020-03", "comparar", "gravar", "simular", "lote"]
+    assert r.chamadas == [
+        "baixar 2020-03 s3 em dados/historico/2020-03", "comparar", "gravar", "simular", "lote",
+        "limpar 2020-03 dados/historico/2020-03 exigir=False",
+    ]
+    assert "cadernos apagados 2, guardados 1" in lh.resumo_do_mes(mes)
+
+
+def test_manter_cadernos_nao_limpa(cfg, monkeypatch):
+    r = Roteiro(monkeypatch)
+    mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True, limpar=False)
+    assert not mes.parada and r.chamadas[-1] == "lote" and "apagados" not in lh.resumo_do_mes(mes)
+
+
+def test_falha_ao_apagar_para_o_mes(cfg, monkeypatch):
+    Roteiro(monkeypatch, limpeza=ResultadoLimpeza(falhas=["a.pdf"]))
+    mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
+    assert "não puderam ser apagados" in mes.parada
+
+
+def test_lote_com_problema_nao_limpa(cfg, monkeypatch):
+    r = Roteiro(monkeypatch, lote=Counter({Destino.ENVIADO_ERROS: 1}))
+    lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
+    assert not any(c.startswith("limpar") for c in r.chamadas)
 
 
 def test_sem_executar_so_simula_e_esvazia_pendentes(cfg, monkeypatch):
     r = Roteiro(monkeypatch)
     mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=False)
-    assert not mes.parada and r.chamadas[-1] == "simular"
+    assert not mes.parada and r.chamadas[-1] == "simular"  # sem limpeza
     assert list(cfg.pasta_temp.iterdir()) == []
 
 
@@ -156,3 +188,14 @@ def test_main_sem_pasta_dbf_ou_mes_invalido(cfg, monkeypatch, capsys):
     assert lh.main(["--de", "2020-03", "--ate", "2020-03"]) == 2
     with pytest.raises(SystemExit):
         lh.main(["--de", "2020-13", "--ate", "2020-03"])
+
+
+@pytest.mark.parametrize(("extra", "limpou"), [([], True), (["--manter-cadernos"], False)])
+def test_main_executar_limpa_ou_mantem(cfg, monkeypatch, capsys, extra, limpou):
+    gravacao = ResumoRelatorio(situacoes=Counter({"INÉDITO": 1, "CONFERIR DUPLICATA": 1}))
+    r = Roteiro(monkeypatch, gravacao=gravacao)
+    monkeypatch.setattr(lh, "carregar_configuracao", lambda: cfg)
+    assert lh.main(["--de", "2020-03", "--ate", "2020-03", "--executar", *extra]) == 0
+    assert any(c.startswith("limpar") for c in r.chamadas) is limpou
+    saida = capsys.readouterr().out
+    assert ("--limpar-cadernos" in saida) is limpou and "rode python main.py --conferir" in saida

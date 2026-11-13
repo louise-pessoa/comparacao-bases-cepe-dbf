@@ -31,6 +31,16 @@ Um decreto é da DBF se a ementa ou os considerandos (do início até o `DECRETA
   chega duas vezes.
 - Uso, problemas de rede e limitações (endereços, 403, download truncado): [`uso.md`](uso.md#etapa-1-baixar-os-cadernos---baixar).
 
+### Limpeza dos cadernos
+
+O caderno processado por completo pode ser apagado (`pipeline/limpeza.py`; uso em
+[`uso.md`](uso.md#limpeza-dos-cadernos---limpar-cadernos)). O `--separar --gravar` anota no manifesto da pasta que o
+caderno foi processado, com os decretos da DBF dele; a limpeza confere essa anotação contra as pastas do pipeline e o
+registro de publicações, sem reler o caderno. Decisões (09/11/2026, implementadas em 13/11/2026): a limpeza é por mês
+encerrado; o comando exige uma simulação com a mesma lista; o lote histórico, com `--executar`, apaga no fim de cada
+mês; o caderno com algo em erros, em leitura tesseract ou em conferir duplicata sem decisão fica guardado. A cascata relê
+o caderno nos níveis 2 e 3, por isso a limpeza só vem depois do lote.
+
 ## Separação dos decretos (etapa 1b)
 
 O caderno é separado pelo **texto**, não por páginas, porque as páginas do Diário têm colunas e os decretos começam e

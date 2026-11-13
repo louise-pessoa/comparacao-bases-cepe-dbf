@@ -8,7 +8,10 @@ Para cada mês, em ordem cronológica, faz o mesmo que o passo a passo de docs/u
     2. --separar --comparar (só lê);
     3. --separar --gravar (grava em dados/pendentes);
     4. lote simulado;
-    5. lote de verdade (só com --executar).
+    5. lote de verdade (só com --executar);
+    6. limpeza dos cadernos do mês (só com --executar): mostra no log a lista do que pode
+       ser apagado e apaga em seguida (pipeline/limpeza.py). O caderno com alguma pendência
+       (conferir duplicata sem decisão, PDF em erros...) fica, com o motivo no log.
 
 Para ANTES de gravar qualquer coisa do mês quando:
   - o download não trouxe nenhum caderno, ou houve falha / falta de conexão;
@@ -27,8 +30,9 @@ Uso (da raiz do repositório, com o .env apontando para a base certa):
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06              # só simula
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06 --executar   # grava na base
 
-Sem --executar, cada mês é baixado, separado e simulado, mas nada vai para a base e
-`dados/pendentes` é esvaziado no fim do mês (os PDFs gerados ali só serviam à simulação).
+Sem --executar, cada mês é baixado, separado e simulado, mas nada vai para a base,
+`dados/pendentes` é esvaziado no fim do mês (os PDFs gerados ali só serviam à simulação)
+e nenhum caderno é apagado. Com --executar e --manter-cadernos, também não se apaga nada.
 Sai com código 0 se todos os meses terminaram, 1 se parou num mês, 2 em erro de uso.
 """
 
@@ -45,6 +49,7 @@ from pathlib import Path
 from dbf_cepe import captura
 from dbf_cepe.cli import _configurar_log, capturar
 from dbf_cepe.config import Configuracao, ErroConfiguracao, carregar_configuracao
+from dbf_cepe.pipeline import limpeza as limpeza_dos_cadernos
 from dbf_cepe.pipeline.lote import Destino, executar, listar_pdfs
 from dbf_cepe.pipeline.registro import ErroRegistro
 from dbf_cepe.pipeline.relatorio import ResumoRelatorio, relatorio_dos_cadernos
@@ -68,6 +73,7 @@ class Mes:
     resumo_separacao: ResumoRelatorio | None = None
     resumo_gravacao: ResumoRelatorio | None = None
     lote: Counter[Destino] = field(default_factory=Counter)
+    limpeza: limpeza_dos_cadernos.ResultadoLimpeza | None = None
     parada: str = ""  # motivo da parada; vazio = mês concluído
 
     @property
@@ -117,7 +123,7 @@ def motivos_de_parada_no_lote(simulacao: Counter[Destino]) -> list[str]:
     return motivos
 
 
-def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool) -> Mes:
+def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
     pasta = PASTA_HISTORICO / mes.nome
     log.info("===== %s (fonte %s) =====", mes.nome, mes.fonte)
 
@@ -150,6 +156,10 @@ def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool) -> Mes:
         mes.lote = executar(cfg)
         if mes.lote[Destino.FALHA_AO_GRAVAR] or mes.lote[Destino.ENVIADO_ERROS]:
             mes.parada = "o lote de verdade teve falha ao gravar ou mandou PDF para erros"
+        elif limpar:
+            mes.limpeza = limpeza_dos_cadernos.limpar(cfg, pasta, mes.inicio, exigir_simulacao=False)
+            if mes.limpeza.falhas:
+                mes.parada = f"{len(mes.limpeza.falhas)} caderno(s) não puderam ser apagados"
     else:
         mes.lote = simulacao
         for pdf in listar_pdfs(cfg.pasta_temp):  # só serviam à simulação
@@ -168,6 +178,8 @@ def resumo_do_mes(mes: Mes, executado: bool = True) -> str:
         f"conferir {situacoes['CONFERIR DUPLICATA']}",
         f"{'gravados na base' if executado else 'iriam para a base'} {mes.lote[Destino.CONCLUIDO]}",
     ]
+    if mes.limpeza is not None:
+        partes.append(f"cadernos apagados {len(mes.limpeza.apagados)}, guardados {len(mes.limpeza.mantidos)}")
     estado = f"PAROU: {mes.parada}" if mes.parada else "ok"
     return f"{mes.nome}: {', '.join(partes)} | {estado}"
 
@@ -178,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ate", type=_mes_iso, required=True, metavar="AAAA-MM", help="último mês, inclusive")
     parser.add_argument("--executar", action="store_true",
                         help="grava na base da DBF (sem isto, cada mês só é baixado, separado e simulado)")
+    parser.add_argument("--manter-cadernos", action="store_true",
+                        help="com --executar: não apaga os cadernos processados no fim de cada mês")
     args = parser.parse_args(argv)
     try:
         lista = meses(args.de, args.ate)
@@ -200,12 +214,12 @@ def main(argv: list[str] | None = None) -> int:
     feitos: list[Mes] = []
     try:
         for inicio in lista:
-            mes = rodar_mes(cfg, Mes(inicio), args.executar)
+            mes = rodar_mes(cfg, Mes(inicio), args.executar, limpar=not args.manter_cadernos)
             feitos.append(mes)
             log.info("%s", resumo_do_mes(mes, args.executar))
             if mes.parada:
                 break
-    except (ErroRegistro, ErroConfiguracao, captura.ErroCaptura) as erro:
+    except (ErroRegistro, ErroConfiguracao, captura.ErroCaptura, limpeza_dos_cadernos.ErroLimpeza) as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -217,6 +231,9 @@ def main(argv: list[str] | None = None) -> int:
     conferir = sum((m.resumo_gravacao.situacoes["CONFERIR DUPLICATA"] if m.resumo_gravacao else 0) for m in feitos)
     if conferir and args.executar:
         print(f"\n{conferir} decreto(s) foram para 'conferir duplicata': rode python main.py --conferir")
+        if not args.manter_cadernos:
+            print("Os cadernos deles ficaram guardados; depois do --conferir, apague-os com "
+                  "python main.py --limpar-cadernos dados\\historico\\AAAA-MM --simular (e sem --simular).")
     if feitos and feitos[-1].parada:
         print(f"\nParou em {feitos[-1].nome}. Resolva e rode de novo a partir de --de {feitos[-1].nome}.")
         return 1
