@@ -198,7 +198,8 @@ Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha
 fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
 citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
 decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
-coluna): ...; confira o texto`) e decreto reprovado no critério da leitura em cascata (`reprovado no critério de leitura
+coluna): ...; confira o texto`), decreto com um trecho de outro ato removido (`trecho de outro ato removido (N palavras,
+lido por coluna): "..."; confira o texto`) e decreto reprovado no critério da leitura em cascata (`reprovado no critério de leitura
 (sem fecho) em todos os níveis; revisão manual`; ver [`funcionamento.md`](funcionamento.md#leitura-em-cascata)).
 
 ### `--comparar`
