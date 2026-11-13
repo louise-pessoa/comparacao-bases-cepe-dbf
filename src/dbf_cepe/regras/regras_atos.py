@@ -106,6 +106,21 @@ _DECRETO_N = r"Decreto\s+n\s*\.?\s*[ºo°]\.?\s*"
 # fruição do benefício fiscal"). Alterar um deles é alterar a NORMA, não o ato de uma
 # empresa.
 _DECRETOS_DE_PROGRAMA = rf"{_DECRETO_N}(?:21\.?959|34\.?560|44\.?650|44\.?766)\b"
+# Norma de programa sem número de decreto conhecido (ver ALTERACAO_NORMA em TIPOS_DECRETO):
+# verbo de norma no início ("Dispõe sobre" só se não for prorrogação, renovação, concessão,
+# transferência, revogação ou fruição, que são atos de empresa); nenhuma empresa específica
+# ("à empresa X", "pela empresa X"; "empresa(s) beneficiária(s)" é genérico e não conta) nem
+# incentivo concedido ("que concede", "concedidos à"); e o programa citado na ementa. Nos
+# decretos fora da DBF (ex.: "Modifica o Decreto nº 38.438 [...] Programa de Jornada Extra de
+# Segurança"), o tipo é só informativo (catálogo): o escopo vem de regras/programas.py.
+_NORMA_DE_PROGRAMA = (
+    rf"(?:Introduz\s+(?:altera[çc][õo]es|modi{_FI}ca[çc][õo]es)|Altera|Modi{_FI}ca|D[áa]\s+nova\s+reda[çc][ãa]o"
+    r"|Regulamenta|Disp[õo]e\s+sobre\s+(?!(?:a|as|o|os)\s+(?:segund[ao]s?\s+|2\S*\s+)?"
+    r"(?:prorroga|renova|concess|transfer|revoga|frui)))\b"
+    r"(?!.*\b(?:[àa]s?|pela|pelas|da|das|na|nas)\s+empresas?\b(?!\s+benefici[áa]ri))"
+    r"(?!.*\b(?:que\s+conced(?:e|eu)|concedid[oa]s?\s+[àa])\b)"
+    r"(?=.*?(?:\bPrograma\b|\bPRODEPE\b|\bPROIND\b|\bPEAP\b|\bsistem[áa]tica\s+de\s+tributa[çc][ãa]o\b))"
+)
 
 # "Nº", "N°", "N.º", "Nº." e também "n°" (minúsculo). Sem letra colada antes
 # ("PE" + "Nº" colados valem só com o símbolo º/°) nem depois ("NOTIFICAÇÃO" não é "No").
@@ -182,23 +197,34 @@ TIPOS_DECRETO: tuple[tuple[str, re.Pattern[str], str], ...] = (
     # Alteração da NORMA do programa (não é ato de empresa). Publicado: "Introduz
     # modificações no Decreto nº 21.959", "Altera o Decreto nº 21.959", "Modifica o
     # Decreto nº 44.650 ...". O discriminador é o decreto citado.
+    # Ou, de forma geral (decisão de 13/11/2026, `_NORMA_DE_PROGRAMA`), a ementa que altera,
+    # regulamenta ou dispõe sobre um programa sem nomear uma empresa. Publicado, 2010: 34.560
+    # ("Regulamenta a Lei nº 13.942 [...], que institui o Programa de Estímulo à Atividade
+    # Portuária"), 34.566 e 35.691 (modificam o Decreto nº 30.403, do programa de calçados),
+    # 35.092 ("Dispõe sobre a taxa de administração devida por empresa beneficiária do
+    # Programa [...] Automotivo") e 36.043 (modifica o Decreto nº 28.800, sobre as "empresas
+    # beneficiárias do PRODEPE").
     (
         "ALTERACAO_NORMA",
         _inicio(
-            rf"(?:Introduz\s+(?:altera[çc][õo]es|modi{_FI}ca[çc][õo]es)|"
+            rf"(?:(?:Introduz\s+(?:altera[çc][õo]es|modi{_FI}ca[çc][õo]es)|"
             rf"Altera|Modi{_FI}ca|D[áa]\s+nova\s+reda[çc][ãa]o)\b"
             rf"(?=.{{0,400}}?{_DECRETOS_DE_PROGRAMA})"
+            rf"|{_NORMA_DE_PROGRAMA})"
         ),
         EVIDENCIA_PUBLICADO,
     ),
     # Alteração do decreto de uma empresa. Amostra: 60951 (plural); 60.134/2025 usa o singular.
     # "Introduz modificações no Decreto nº 30.159 [...], que concede incentivo do PRODEPE
-    # à empresa ..." (2010) também é alteração de empresa. Decisão de 06/11/2026.
+    # à empresa ..." (2010) também é alteração de empresa. Decisão de 06/11/2026. E também
+    # "Introduz modificações nos Decretos nº 29.674 [...] e nº 35.334 [...], que dispõem sobre
+    # incentivos do PRODEPE concedidos à empresa ..." (35.947/2010). Decisão de 13/11/2026.
     (
         "ALTERACAO",
         _inicio(
             rf"Introduz\s+(?:altera[çc][õo]es\b"
-            rf"|modi{_FI}ca[çc][õo]es\b(?=.{{0,300}}?\bque\s+conced(?:e|eu)\s+(?:o\s+)?(?:incentivo|est[íi]mulo)))"
+            rf"|modi{_FI}ca[çc][õo]es\b(?=.{{0,300}}?\b(?:que\s+conced(?:e|eu)\s+(?:o\s+)?(?:incentivo|est[íi]mulo)"
+            rf"|concedid[oa]s?\s+[àa]\s+empresa\b)))"
         ),
         EVIDENCIA_AMOSTRA,
     ),

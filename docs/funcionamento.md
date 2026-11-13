@@ -243,6 +243,14 @@ baixado, o que bate com Extras ausentes do S3.
 Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
 (ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
 
+*Decisões de 13/11/2026:* "Introduz modificações nos Decretos ..., que dispõem sobre incentivos do PRODEPE concedidos
+à empresa" (35.947/2010) é **alteração**. A **alteração de norma** passa a valer também, de forma geral, para a ementa
+que altera, regulamenta ou dispõe sobre um programa sem nomear empresa nem incentivo concedido (`_NORMA_DE_PROGRAMA`, em
+`regras_atos.py`): 34.560, 34.566, 35.092, 35.691 e 36.043, de 2010, nenhum deles na base. Medição em 3.868 decretos
+de 604 cadernos: só esses 7 decretos da DBF (6 números) mudaram de tipo e nenhum decreto mudou de escopo; 28 decretos fora
+da DBF (PJES, PETE etc.) ganharam o tipo, que para eles só aparece no catálogo. Com isso, 2010 inteiro (S3, 214
+cadernos do Executivo) fica com 246 decretos da DBF, nenhum reprovado.
+
 *Decisão de 12/11/2026:* o decreto que cita o programa só nos considerandos (não na ementa) e cuja ementa não tem
 tipo reconhecido fica **fora do escopo da DBF**, com o aviso "cita um programa da DBF só nos considerandos e a ementa
 não tem tipo reconhecido; tratado como fora do escopo, confira" (`criterio.da_dbf`). Caso que motivou: o Decreto
@@ -309,7 +317,8 @@ recuperação; a regressão do separador (nível 1) segue idêntica.
   60950, renovação 60945, transferência 60505 e terceirização 60233. Segunda prorrogação/renovação usa o modelo da
   prorrogação/renovação.
 - Alteração da norma do programa ("Introduz modificações no Decreto nº 21.959", "Modifica o Decreto nº 44.650",
-  "Modifica o Decreto nº 44.766", o regulamento do PROIND, incluído em 11/11/2026),
+  "Modifica o Decreto nº 44.766", o regulamento do PROIND, incluído em 11/11/2026; desde 13/11/2026, também qualquer
+  ementa que altera, regulamenta ou dispõe sobre um programa sem nomear empresa),
   revogação e PROIND ainda não têm modelo.
 - Cada tipo e cada programa tem o campo `evidencia`: `amostra` (ato real da DBF em mãos), `publicado` (ato real publicado
   na Alepe ou na SEFAZ) ou `presumido` (deduzido da legislação, a confirmar). O padrão da ementa de segunda

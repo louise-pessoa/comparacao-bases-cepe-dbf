@@ -199,6 +199,39 @@ def test_decreto_sem_abertura_do_corpo_avisa():
         ("Introduz modificações no Decreto nº 26.010, de 2003, que concede incentivo do PRODEPE", "ALTERACAO"),
         ("Introduz modificações no Decreto nº 14.876, de 1991, que regulamenta o ICMS", None),
         ("Dispõe sobre a fruição de estímulo previsto na Lei nº 11.675", "CONCESSAO"),
+        # 2010, decisão de 13/11/2026: alteração de empresa com "nos Decretos" e "concedidos à empresa"
+        ("Introduz modificações nos Decretos nº 29.674, de 22 de setembro de 2006, e nº 35.334, de 21 de julho de "
+         "2010, que dispõem sobre incentivos do PRODEPE concedidos à empresa COMPANHIA DE BEBIDAS DAS AMÉRICAS – AMBEV.",
+         "ALTERACAO"),
+        # norma de programa, de forma geral (sem empresa específica, programa na ementa)
+        ("Regulamenta a Lei nº 13.942, de 04 de dezembro de 2009, que institui o Programa de Estímulo à Atividade "
+         "Portuária.", "ALTERACAO_NORMA"),
+        ("Introduz modificações no Decreto nº 30.403, de 04 de maio de 2007, e alterações, que dispõe sobre o Programa "
+         "de Desenvolvimento da Indústria de Calçados, Bolsas, Cintos e Bolas Esportivas do Estado de Pernambuco.",
+         "ALTERACAO_NORMA"),
+        ("Introduz modificações no Decreto n° 30.403, de 04 de maio de 2007, que dispõe sobre a sistemática de "
+         "tributação do ICMS relativa a calçados, bolsas, cintos e bolas esportivas.", "ALTERACAO_NORMA"),
+        ("Dispõe sobre a taxa de administração devida por empresa beneficiária do Programa de Desenvolvimento do "
+         "Setor Automotivo do Estado de Pernambuco.", "ALTERACAO_NORMA"),
+        ("Introduz modificações no Decreto nº 28.800, de 04 de janeiro de 2006, que dispõe sobre o controle do "
+         "montante mínimo de recolhimento do ICMS, relativamente às empresas beneficiárias do PRODEPE.", "ALTERACAO_NORMA"),
+        ("Altera o Decreto nº 50.000, que dispõe sobre o PROIND.", "ALTERACAO_NORMA"),
+        ("Modifica o Decreto nº 50.000, que dispõe sobre o PEAP.", "ALTERACAO_NORMA"),
+        ("Dá nova redação ao Decreto nº 50.000, que dispõe sobre o Programa X.", "ALTERACAO_NORMA"),
+        # não é norma: empresa específica, incentivo concedido, ato de empresa ou sem programa
+        ("Dispõe sobre a taxa devida pela empresa X Ltda., beneficiária do PRODEPE.", None),
+        ("Dispõe sobre a taxa devida à empresa X, do Programa de Desenvolvimento.", None),
+        ("Dispõe sobre o incentivo do PRODEPE concedido à X Ltda.", None),
+        ("Dispõe sobre o incentivo do PRODEPE que concedeu à X Ltda.", None),
+        ("Dispõe sobre as segundas prorrogações do PRODEPE", None),
+        ("Dispõe sobre a 2ª renovação do PRODEPE", "SEGUNDA_RENOVACAO"),
+        ("Dispõe sobre a revogação do incentivo do PRODEPE", "REVOGACAO"),
+        ("Dispõe sobre as concessões do PRODEPE", None),
+        ("Dispõe sobre a transferência do PRODEPE", "TRANSFERENCIA"),
+        ("Dispõe sobre a fruição dos benefícios do PRODEPE", None),
+        ("Estabelece regras do Programa de Desenvolvimento.", None),
+        ("Introduz modificações no Decreto nº 27.772, de 30 de março de 2005, e alterações, que dispõe sobre a "
+         "sistemática de parcelamento de débitos do ICMS.", None),
         ("Altera o Decreto nº 21.959, de 27 de dezembro de 1999", "ALTERACAO_NORMA"),
         ("Autoriza a terceirização da industrialização", "TERCEIRIZACAO"),
         ("Abre ao Orçamento Fiscal do Estado crédito suplementar", None),
