@@ -153,16 +153,19 @@ _PALAVRA = re.compile(r"\w+")
 def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
     """O trecho (palavras) que só existe no texto aceito, se for um bloco contínuo de pelo
     menos MIN_PALAVRAS_DO_INTRUSO palavras e o resto dos dois textos for igual (até
-    MAX_OUTRAS_DIFERENCAS palavras de diferença); senão None."""
+    MAX_OUTRAS_DIFERENCAS palavras de diferença); senão None. O bloco pode estar no lugar de
+    umas poucas palavras da leitura por coluna (ex.: o número da página, no Decreto
+    35.503/2010): elas entram na conta das outras diferenças."""
     a, b = _PALAVRA.findall(aceito.casefold()), _PALAVRA.findall(por_coluna.casefold())
     diferencas = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
-    so_no_aceito = [op for op in diferencas if op[0] == "delete"]
+    so_no_aceito = [op for op in diferencas if op[0] in ("delete", "replace")]
     if not so_no_aceito:
         return None
     maior = max(so_no_aceito, key=lambda op: op[2] - op[1])
     if maior[2] - maior[1] < MIN_PALAVRAS_DO_INTRUSO:
         return None
-    resto = sum(max(op[2] - op[1], op[4] - op[3]) for op in diferencas if op is not maior)
+    no_lugar = maior[4] - maior[3]  # palavras da leitura por coluna no lugar do bloco
+    resto = no_lugar + sum(max(op[2] - op[1], op[4] - op[3]) for op in diferencas if op is not maior)
     if resto > MAX_OUTRAS_DIFERENCAS:
         return None
     return " ".join(_PALAVRA.findall(aceito)[maior[1]:maior[2]])
