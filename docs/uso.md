@@ -142,7 +142,9 @@ gravados são reconhecidos como já registrados.
 
 Sem `--executar`, cada mês é baixado, separado e simulado, e `dados\pendentes` é esvaziado no fim do mês. Como nada é
 gravado, a simulação de um mês não enxerga o que o anterior gravaria: uma republicação entre meses aparece como
-inédita. Isso só afeta a simulação.
+inédita. Isso só afeta a simulação. Se o mês parar depois de gravar em pendentes e antes do lote de verdade (um decreto que não pôde ser gravado, ou a
+simulação mandaria algo para erros), `dados\pendentes` também é esvaziado, com ou sem `--executar`: nada dali foi para a
+base, e rodar o mês de novo gera tudo outra vez. Se parar no lote de verdade, o que sobrou em pendentes fica.
 
 Com `--executar`, no fim de cada mês gravado sem problema, a ferramenta **apaga os cadernos do mês já processados por
 completo** ([limpeza](#limpeza-dos-cadernos---limpar-cadernos)): mostra no log a lista do que pode ser apagado e apaga
