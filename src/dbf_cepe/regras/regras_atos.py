@@ -20,7 +20,8 @@ A tabela de exemplos (entrada -> resultado esperado) fica em tests/test_regras_a
 O que o código pressupõe sobre o texto (ver `limpar_texto`):
   - uma linha do Diário por linha do texto (as quebras do PDF são mantidas);
   - ligaduras "ﬁ", "ﬂ"... já convertidas (o Diário as traz seguidas de um espaço
-    espúrio: "beneﬁ ciário");
+    espúrio: "beneﬁ ciário"), e os códigos de controle 0x80 a 0x9F trocados pelo caractere
+    do cp1252 ("€", aspas, travessão);
   - o cabeçalho do ato está no INÍCIO de uma linha e em MAIÚSCULAS. Citações no
     corpo do texto ("o Decreto nº 21.959, de ...") nunca contam.
 
@@ -66,8 +67,25 @@ _ESPACOS_ESTRANHOS = str.maketrans({" ": " ", " ": " ", " ": " ", "﻿": " 
 _ESPACOS = re.compile(r"\s+")
 
 
+def _de_cp1252(codigo: int) -> str:
+    try:
+        return bytes([codigo]).decode("cp1252")
+    except UnicodeDecodeError:  # 0x81, 0x8D, 0x8F, 0x90 e 0x9D não existem no cp1252
+        return chr(codigo)
+
+
+# Códigos de controle C1 (0x80 a 0x9F) que a fonte do PDF entrega no lugar do caractere da
+# codificação do Windows (cp1252): 0x80 é o "€", 0x93/0x94 são aspas etc. Caso real:
+# Decreto 35.237/2010, "vinho tinto, acima de 8 € a garrafa", com o € gravado como 0x80 e
+# sem desenho na fonte (o Diário mostra um espaço). Decisão de 16/11/2026: converter.
+# Um caractere vira um caractere, então as posições no texto não mudam.
+_CONTROLES_DO_CP1252 = str.maketrans({chr(c): _de_cp1252(c) for c in range(0x80, 0xA0)})
+
+
 def limpar_ligaduras(texto: str) -> str:
-    """'beneﬁ ciário' -> 'beneficiário'; ligadura sem espaço também é convertida."""
+    """'beneﬁ ciário' -> 'beneficiário'; ligadura sem espaço também é convertida. Também
+    converte os códigos de controle C1 que vêm no lugar de caracteres do cp1252 (0x80 -> €)."""
+    texto = texto.translate(_CONTROLES_DO_CP1252)
     texto = _LIGADURA_COM_ESPACO.sub(lambda m: _LIGADURAS[m.group(1)], texto)
     for ligadura, letras in _LIGADURAS.items():
         texto = texto.replace(ligadura, letras)

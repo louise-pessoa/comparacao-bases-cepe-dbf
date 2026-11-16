@@ -243,6 +243,12 @@ baixado, o que bate com Extras ausentes do S3.
 Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
 (ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
 
+*Decisão de 16/11/2026:* os códigos de controle 0x80 a 0x9F que a fonte do PDF entrega no lugar de um caractere da
+codificação do Windows (cp1252) são convertidos na limpeza do texto (`limpar_ligaduras`, em `regras_atos.py`): 0x80 vira
+"€", 0x93/0x94 viram aspas etc. Caso que motivou: o Decreto 35.237/2010, "vinho tinto, acima de 8 € a garrafa", com o €
+gravado como 0x80 e sem desenho na fonte (o Diário mostra um espaço); o PDF gerado não conseguia reproduzir o código e o
+`--separar --gravar` falhava. Em 609 cadernos (2010 a 2026), é o único decreto com um desses códigos.
+
 *Decisões de 13/11/2026:* "Introduz modificações nos Decretos ..., que dispõem sobre incentivos do PRODEPE concedidos
 à empresa" (35.947/2010) é **alteração**. A **alteração de norma** passa a valer também, de forma geral, para a ementa
 que altera, regulamenta ou dispõe sobre um programa sem nomear empresa nem incentivo concedido (`_NORMA_DE_PROGRAMA`, em

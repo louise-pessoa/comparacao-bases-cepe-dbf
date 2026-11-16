@@ -147,3 +147,21 @@ def test_palavra_trocada_continua_reprovando_a_conferencia(tmp_path, monkeypatch
     with pytest.raises(exportador.ErroExportacao, match="decreto: concedido \\| PDF: negado"):
         exportador.gravar_pdf_do_ato(ato, tmp_path / "x.pdf")
     assert not (tmp_path / "x.pdf").exists()
+
+
+def test_euro_gravado_como_codigo_de_controle_chega_ao_pdf(tmp_path):
+    """Decreto 35.237/2010: o caderno traz o € como 0x80 (sem desenho na fonte do Diário)."""
+    caderno = tmp_path / "20100630_PoderExecutivo.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_textbox(
+        pymupdf.Rect(40, 40, 560, 800),
+        "DECRETO Nº 35.237, DE 29 DE JUNHO DE 2010.\nConcede estímulo previsto na Lei nº 11.675, que dispõe sobre o "
+        "PRODEPE.\nO GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\nArt. 1º Produtos: vinho tinto, "
+        "acima de 8 \x80 a garrafa.\nPALÁCIO DO CAMPO DAS PRINCESAS, em 29 de junho de 2010.\nEDUARDO CAMPOS",
+        fontsize=9,
+    )
+    doc.save(caderno)
+    (ato,) = separar_caderno(caderno).atos
+    assert "acima de 8 € a garrafa" in ato.texto
+    destino = gravar_pdf_do_ato(ato, tmp_path / "Decreto 35237.pdf")
+    assert "€" in ler_pdf(destino).texto

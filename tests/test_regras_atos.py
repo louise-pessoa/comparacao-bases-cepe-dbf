@@ -696,6 +696,18 @@ def test_ligaduras_com_espaco_espurio_sao_convertidas():
     assert ra.limpar_texto("beneﬁ ciário e ﬁ scal") == "beneficiário e fiscal"
 
 
+@pytest.mark.parametrize(
+    ("bruto", "limpo"),
+    [
+        ("vinho tinto, acima de 8 \x80 a garrafa", "vinho tinto, acima de 8 € a garrafa"),  # Decreto 35.237/2010
+        ("\x93Art. 1º\x94 \x96 texto\x85", "“Art. 1º” – texto…"),
+        ("sem código \x81 no cp1252", "sem código \x81 no cp1252"),  # 0x81 não existe no cp1252: fica
+    ],
+)
+def test_codigos_de_controle_do_cp1252_sao_convertidos(bruto, limpo):
+    assert ra.limpar_texto(bruto) == limpo and len(limpo) == len(bruto)
+
+
 def test_limpar_texto_e_idempotente_e_preserva_posicoes():
     texto = PORTARIA_SF
     assert ra.limpar_texto(texto) == texto
