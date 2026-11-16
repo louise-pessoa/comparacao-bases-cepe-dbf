@@ -144,10 +144,31 @@ NIVEIS: tuple[Nivel, ...] = (
 # de verdade; nos demais, as duas leituras são iguais ou diferem de outro jeito.
 MIN_PALAVRAS_DO_INTRUSO = 30
 MAX_OUTRAS_DIFERENCAS = 5  # palavras diferentes fora do trecho intruso
+MAX_COINCIDENCIA = 2  # palavras iguais por acaso no meio do trecho intruso (ver _blocos_diferentes)
 AVISO_DE_INTRUSO = (
     "trecho de outro ato removido ({quantas} palavras, lido por coluna): \"{inicio}...\"; confira o texto"
 )
 _PALAVRA = re.compile(r"\w+")
+
+
+def _blocos_diferentes(a: list[str], b: list[str]) -> list[tuple[int, int, int]]:
+    """As diferenças entre as duas listas de palavras, agrupadas em blocos: (início e fim no
+    texto aceito, palavras da leitura por coluna no bloco). Diferenças separadas por até
+    MAX_COINCIDENCIA palavras iguais formam um bloco só: a comparação pode "achar" no meio do
+    trecho de outro ato uma palavra que coincide com o decreto (o "5" de "5.811.272,00" no
+    Decreto 35.629/2010) e partir o trecho em dois."""
+    blocos: list[list[int]] = []
+    aberto = False
+    for etiqueta, i1, i2, j1, j2 in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if etiqueta == "equal":
+            aberto = aberto and i2 - i1 <= MAX_COINCIDENCIA
+        elif aberto:
+            blocos[-1][1] = i2
+            blocos[-1][2] += j2 - j1
+        else:
+            blocos.append([i1, i2, j2 - j1])
+            aberto = True
+    return [(inicio, fim, no_lugar) for inicio, fim, no_lugar in blocos]
 
 
 def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
@@ -157,18 +178,16 @@ def trecho_intruso(aceito: str, por_coluna: str) -> str | None:
     umas poucas palavras da leitura por coluna (ex.: o número da página, no Decreto
     35.503/2010): elas entram na conta das outras diferenças."""
     a, b = _PALAVRA.findall(aceito.casefold()), _PALAVRA.findall(por_coluna.casefold())
-    diferencas = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
-    so_no_aceito = [op for op in diferencas if op[0] in ("delete", "replace")]
-    if not so_no_aceito:
+    blocos = _blocos_diferentes(a, b)
+    if not blocos:
         return None
-    maior = max(so_no_aceito, key=lambda op: op[2] - op[1])
-    if maior[2] - maior[1] < MIN_PALAVRAS_DO_INTRUSO:
+    maior = max(blocos, key=lambda bloco: bloco[1] - bloco[0])
+    if maior[1] - maior[0] < MIN_PALAVRAS_DO_INTRUSO:
         return None
-    no_lugar = maior[4] - maior[3]  # palavras da leitura por coluna no lugar do bloco
-    resto = no_lugar + sum(max(op[2] - op[1], op[4] - op[3]) for op in diferencas if op is not maior)
+    resto = maior[2] + sum(max(fim - inicio, no_lugar) for inicio, fim, no_lugar in blocos if (inicio, fim, no_lugar) != maior)
     if resto > MAX_OUTRAS_DIFERENCAS:
         return None
-    return " ".join(_PALAVRA.findall(aceito)[maior[1]:maior[2]])
+    return " ".join(_PALAVRA.findall(aceito)[maior[0]:maior[1]])
 
 
 def _sem_intruso(ato: AtoSeparado, caminho: Path, e_da_dbf: bool) -> AtoSeparado:
