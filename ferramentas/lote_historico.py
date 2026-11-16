@@ -32,7 +32,10 @@ Uso (da raiz do repositório, com o .env apontando para a base certa):
 
 Sem --executar, cada mês é baixado, separado e simulado, mas nada vai para a base,
 `dados/pendentes` é esvaziado no fim do mês (os PDFs gerados ali só serviam à simulação)
-e nenhum caderno é apagado. Com --executar e --manter-cadernos, também não se apaga nada.
+e nenhum caderno é apagado. Se o mês parar depois do --gravar e antes do lote de verdade
+(falha ao gravar em pendentes, simulação com problema), `dados/pendentes` também é
+esvaziado, com ou sem --executar: nada daquilo foi para a base, e rodar o mês de novo
+gera tudo outra vez. Se parar no lote de verdade, o que sobrou em pendentes fica. Com --executar e --manter-cadernos, também não se apaga nada.
 Sai com código 0 se todos os meses terminaram, 1 se parou num mês, 2 em erro de uso.
 """
 
@@ -123,6 +126,14 @@ def motivos_de_parada_no_lote(simulacao: Counter[Destino]) -> list[str]:
     return motivos
 
 
+def _esvaziar_pendentes(cfg: Configuracao) -> None:
+    """Apaga os PDFs que o --gravar deste mês pôs em pendentes e que não vão para a base
+    (simulação, ou parada antes do lote de verdade). Ao rodar o mês de novo, eles são gerados
+    outra vez; sem isto, a rodada seguinte recusaria começar ("PDFs de uma rodada anterior")."""
+    for pdf in listar_pdfs(cfg.pasta_temp):
+        pdf.unlink()
+
+
 def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
     pasta = PASTA_HISTORICO / mes.nome
     log.info("===== %s (fonte %s) =====", mes.nome, mes.fonte)
@@ -145,12 +156,14 @@ def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bo
     mes.resumo_gravacao = relatorio_dos_cadernos(cfg, pasta, gravar=True)
     if mes.resumo_gravacao.falhas:
         mes.parada = f"{mes.resumo_gravacao.falhas} decreto(s) não puderam ser gravados em pendentes"
+        _esvaziar_pendentes(cfg)
         return mes
 
     simulacao = executar(cfg, simular=True)
     motivos = motivos_de_parada_no_lote(simulacao)
     if motivos:
         mes.parada = "; ".join(motivos)
+        _esvaziar_pendentes(cfg)
         return mes
     if executar_de_verdade:
         mes.lote = executar(cfg)
@@ -162,8 +175,7 @@ def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bo
                 mes.parada = f"{len(mes.limpeza.falhas)} caderno(s) não puderam ser apagados"
     else:
         mes.lote = simulacao
-        for pdf in listar_pdfs(cfg.pasta_temp):  # só serviam à simulação
-            pdf.unlink()
+        _esvaziar_pendentes(cfg)  # só serviam à simulação
     return mes
 
 

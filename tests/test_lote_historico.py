@@ -199,3 +199,21 @@ def test_main_executar_limpa_ou_mantem(cfg, monkeypatch, capsys, extra, limpou):
     assert any(c.startswith("limpar") for c in r.chamadas) is limpou
     saida = capsys.readouterr().out
     assert ("--limpar-cadernos" in saida) is limpou and "rode python main.py --conferir" in saida
+
+
+@pytest.mark.parametrize("executar_de_verdade", [False, True])
+@pytest.mark.parametrize(
+    "ajustes", [{"gravacao": ResumoRelatorio(falhas=1)}, {"simulacao": Counter({Destino.ENVIADO_ERROS: 1})}]
+)
+def test_parada_antes_do_lote_esvazia_pendentes(cfg, monkeypatch, ajustes, executar_de_verdade):
+    """Junho de 2010: o --gravar parou num decreto e deixou os outros em pendentes; a rodada
+    seguinte recusava começar."""
+    Roteiro(monkeypatch, **ajustes)
+    mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=executar_de_verdade)
+    assert mes.parada and list(cfg.pasta_temp.iterdir()) == []
+
+
+def test_parada_no_lote_de_verdade_mantem_pendentes(cfg, monkeypatch):
+    Roteiro(monkeypatch, lote=Counter({Destino.FALHA_AO_GRAVAR: 1}))
+    mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
+    assert "falha ao gravar" in mes.parada and [p.name for p in cfg.pasta_temp.iterdir()] == ["2020-03.pdf"]
