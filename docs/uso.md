@@ -344,6 +344,35 @@ data_de_publicacao, caderno, pagina, republicacao, situacao`.
 
 O significado de cada coluna e as regras de escopo estão em [`funcionamento.md`](funcionamento.md#catálogo).
 
+## OCR (Tesseract): instalação e verificação
+
+Em implementação, na branch `claude/plano-ocr-tesseract` ([`plano_ocr.md`](plano_ocr.md)). Por enquanto o OCR só é usado
+pelo `--verificar-ocr` e pelo levantamento das páginas digitalizadas; o pipeline ainda não lê nada por OCR.
+
+1. Instale o Tesseract 5 para Windows (instalador da UB Mannheim, o indicado na documentação do Tesseract) e marque o
+   idioma **Portuguese** na instalação. Se ele já estiver instalado, basta conferir o passo 3.
+2. No `.env`, se o `tesseract` não estiver no PATH, informe o caminho do executável:
+   `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` (no WSL2: `sudo apt install tesseract-ocr
+   tesseract-ocr-por` e deixe em branco).
+3. Confira:
+
+```powershell
+python main.py --verificar-ocr
+```
+
+Mostra o executável, a versão, os idiomas instalados, o SHA-256 do `por.traineddata` e o OCR de uma página de teste
+gerada na hora. Termina com `OK: o OCR está pronto para uso.` (código 0). Com algo faltando, diz o quê e sai com código 1;
+com uma linha `OCR_*` inválida no `.env`, código 2.
+
+| Mensagem | O que fazer |
+|---|---|
+| `Tesseract não encontrado no PATH` | informe `TESSERACT_CMD` no `.env` |
+| `TESSERACT_CMD=... não é o executável do Tesseract` | o caminho tem de terminar em `tesseract.exe` |
+| `falta o idioma por` | rode o instalador de novo marcando Portuguese, ou copie o `por.traineddata` (repositório oficial `tesseract-ocr/tessdata`) para a pasta `tessdata` do Tesseract |
+| `OCR_IDIOMA=... é inválido` | só o nome do idioma: `por`, ou `por+eng` |
+
+O OCR roda só na máquina: nenhum texto vai para serviço externo, e não há rede envolvida depois da instalação.
+
 ## Ferramentas (fora do pipeline)
 
 ```bash
@@ -352,6 +381,7 @@ python -m ferramentas.regressao_separador main      # a separação dos decretos
 python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decreto a decreto
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # vários meses do lote histórico
+python -m ferramentas.levantar_digitalizadas dados/historico [--base PASTA] [--ocr]  # onde o OCR vai atuar
 ```
 
 - `localizar_exemplos` só lê `dados/cadernos`. Copia cada página achada, uma por PDF, para `dados/exemplos` (sem
@@ -367,4 +397,9 @@ python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # 
   `fecho repetido`, `sem abertura`, `outro cabeçalho`, `expediente`, `DBF sem tipo`), com alguns exemplos. `--json
   ARQUIVO` grava tudo; `--exemplos N` muda quantos exemplos aparecem por ano. Sai com código 1 se algum caderno não
   puder ser lido. Critério e motivos: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).
-
+- `levantar_digitalizadas` só lê (fase 0 do [plano do OCR](plano_ocr.md)). Mostra, por ano do caderno, quantos cadernos
+  e páginas há, quantos cadernos têm página digitalizada ou com texto ilegível, e alguns exemplos com os números das
+  páginas. Com `--base PASTA`, classifica também os PDFs da base da DBF (texto, imagem, texto ilegível, corrompido) e
+  lista os que estão em imagem. Com `--ocr`, lê as páginas sem texto com o Tesseract do `.env` e conta os cabeçalhos
+  `DECRETO Nº` achados nelas (o resultado fica no cache do OCR, então a segunda rodada é rápida). `--json ARQUIVO`
+  grava tudo; `--exemplos N` muda quantos exemplos aparecem. Sai com código 1 se algum PDF não puder ser lido.

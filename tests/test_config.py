@@ -275,3 +275,65 @@ def test_sem_variavel_de_ambiente_nao_ha_sinalizacao(tmp_path):
     env.write_text("HTTPS_PROXY=auto\n", encoding="utf-8")
     assert carregar_configuracao(env).proxy_do_ambiente is None
 """Proteja a leitura do .env e a trava contra pastas iguais ou aninhadas."""
+
+
+# ----------------------------------------------------------------------------
+# OCR (docs/plano_ocr.md)
+# ----------------------------------------------------------------------------
+
+_VARIAVEIS_OCR = (
+    "OCR_ATIVO", "TESSERACT_CMD", "OCR_IDIOMA", "OCR_DPI", "OCR_TIMEOUT", "OCR_CONFIANCA_MEDIA",
+    "OCR_CONFIANCA_CRITICA", "OCR_SIMILARIDADE_DUPLICATA", "OCR_GRAVAR_NA_BASE", "PASTA_CACHE_OCR",
+)
+
+
+@pytest.fixture
+def sem_ocr_no_ambiente(monkeypatch):
+    for variavel in _VARIAVEIS_OCR:
+        monkeypatch.delenv(variavel, raising=False)
+
+
+def test_ocr_padroes(tmp_path, sem_ocr_no_ambiente):
+    cfg = carregar_configuracao(tmp_path / "nao_existe.env")
+    assert cfg.ocr.ativo == "auto" and cfg.ocr.idioma == "por" and cfg.ocr.dpi == 300
+    assert cfg.ocr.gravar_na_base is False  # piloto: desligado até ser conferido
+    assert cfg.cache_ocr == RAIZ / "dados" / "cache ocr"
+
+
+def test_ocr_le_o_env(tmp_path, sem_ocr_no_ambiente):
+    env = tmp_path / ".env"
+    env.write_text(
+        "OCR_ATIVO=Não\nOCR_IDIOMA=por+eng\nOCR_DPI=400\nOCR_CONFIANCA_MEDIA=90,5\n"
+        "OCR_SIMILARIDADE_DUPLICATA=0.97\nOCR_GRAVAR_NA_BASE=sim\n",
+        encoding="utf-8",
+    )
+    cfg = carregar_configuracao(env).ocr
+    assert (cfg.ativo, cfg.idioma, cfg.dpi, cfg.confianca_media) == ("nao", "por+eng", 400, 90.5)
+    assert cfg.similaridade_duplicata == 0.97 and cfg.gravar_na_base is True
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        "OCR_ATIVO=talvez",
+        "OCR_DPI=1200",
+        "OCR_DPI=abc",
+        "OCR_CONFIANCA_MEDIA=101",
+        "OCR_SIMILARIDADE_DUPLICATA=nan",
+        "OCR_IDIOMA=por --tessdata-dir x",  # nada além do nome do idioma vai para o Tesseract
+        "OCR_IDIOMA=../por",
+    ],
+)
+def test_ocr_valores_invalidos(tmp_path, sem_ocr_no_ambiente, linha):
+    env = tmp_path / ".env"
+    env.write_text(linha + "\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao):
+        carregar_configuracao(env)
+
+
+def test_cache_do_ocr_nao_pode_ficar_dentro_da_base(tmp_path, sem_ocr_no_ambiente):
+    base = tmp_path / "dbf"
+    env = tmp_path / ".env"
+    env.write_text(f"PASTA_DBF={base}\nPASTA_CACHE_OCR={base / 'cache'}\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao, match="PASTA_CACHE_OCR"):
+        carregar_configuracao(env)

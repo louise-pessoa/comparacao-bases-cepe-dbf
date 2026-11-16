@@ -1,6 +1,15 @@
 # Plano: leitura por OCR (Tesseract) dos cadernos da CEPE e da base da DBF
 
-Situação: **proposta**, ainda não implementada. Escrito em 16/11/2026.
+Situação: **em implementação** na branch `claude/plano-ocr-tesseract`. Escrito em 16/11/2026.
+
+| Fase | Situação |
+|---|---|
+| 0 — ambiente e levantamento | pronta: `--verificar-ocr` e `ferramentas/levantar_digitalizadas.py`; falta rodar nos cadernos e na base |
+| 1 — `leitura/ocr.py`, configuração e cache | pronta |
+| 2 a 6 | a fazer |
+
+*Decisão de 16/11/2026:* as fases são feitas e testadas nesta branch, um commit por fase; o merge na `main` só acontece
+depois de todas testadas (não há merge só do plano).
 
 ## Objetivo e escopo
 
@@ -168,7 +177,8 @@ PASTA_CACHE_OCR=dados/cache ocr
 
 ## Fases
 
-Cada fase é um PR pequeno, com testes e docs atualizados, como nos PRs anteriores.
+Cada fase é um commit na branch `claude/plano-ocr-tesseract`, com testes e docs atualizados; a branch inteira vai
+para a `main` num PR só, depois de testada.
 
 ### Fase 0 — ambiente e levantamento
 

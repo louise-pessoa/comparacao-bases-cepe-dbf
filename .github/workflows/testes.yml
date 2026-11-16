@@ -23,8 +23,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: requirements*.txt
+      - run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr tesseract-ocr-por   # testes marcados "ocr"
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pip install --no-deps -e .   # o pacote instala e o comando responde
       - run: dbf-cepe --help
+      - run: dbf-cepe --verificar-ocr
       - run: pytest -q -rs

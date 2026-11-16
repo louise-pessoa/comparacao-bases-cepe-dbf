@@ -100,7 +100,8 @@ Não foi alterado, para a comparação com a base não regredir; o catálogo mar
 
 **Limitações:**
 
-- O OCR em si ainda não existe: os PDFs de imagem só são separados na pasta `leitura tesseract`.
+- O OCR ainda não lê nada no pipeline: os PDFs de imagem só são separados na pasta `leitura tesseract`. A leitura das
+  páginas digitalizadas dos cadernos e dos PDFs em imagem da base está em implementação ([`plano_ocr.md`](plano_ocr.md)).
 - PDF com cabeçalho em texto (20 caracteres ou mais) e corpo em imagem não é detectado como digitalizado: é lido como
   texto, não casa com nenhum cabeçalho e vai para `dados/erros`.
 

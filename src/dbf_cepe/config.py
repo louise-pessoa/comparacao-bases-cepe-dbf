@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,6 +20,32 @@ _UNIDADE_WINDOWS = re.compile(r"^[A-Za-z]:[\\/]")
 
 class ErroConfiguracao(Exception):
     """Configuração ausente ou inválida."""
+
+
+# OCR_ATIVO: "auto" liga o OCR se o Tesseract for encontrado; "sim" exige o Tesseract;
+# "nao" desliga (o pipeline se comporta como antes do OCR).
+OCR_AUTO, OCR_SIM, OCR_NAO = "auto", "sim", "nao"
+# Limites contra PDF defeituoso ou malicioso: a imagem de uma página a 600 dpi já tem
+# dezenas de milhões de pixels.
+DPI_MINIMO, DPI_MAXIMO = 150, 600
+# Idioma do Tesseract: só nomes de arquivo .traineddata ("por", "por+eng"). Vai para
+# a linha de comando do Tesseract, então nada além disso é aceito.
+_IDIOMA_DO_TESSERACT = re.compile(r"^[a-z_]{3,20}(?:\+[a-z_]{3,20}){0,3}$")
+
+
+@dataclass(frozen=True)
+class ConfiguracaoOcr:
+    """Variáveis OCR_* do .env (ver docs/plano_ocr.md). Os limiares são provisórios até a
+    calibração (fase 2 do plano)."""
+    ativo: str = OCR_AUTO
+    tesseract_cmd: Path | None = None  # None: procura "tesseract" no PATH
+    idioma: str = "por"
+    dpi: int = 300
+    timeout: int = 120  # segundos por página
+    confianca_media: float = 85.0
+    confianca_critica: float = 70.0
+    similaridade_duplicata: float = 0.95
+    gravar_na_base: bool = False  # piloto: só vira True depois de conferido à mão
 
 
 @dataclass(frozen=True)
@@ -44,6 +70,13 @@ class Configuracao:
     arquivo_registro: Path | None = None
     # `--conferir`: cópia de cada arquivo da base substituído pelo texto do Diário.
     pasta_substituidos: Path | None = None
+    # Cache do OCR (derivado; pode ser apagado). Nunca dentro da base da DBF.
+    pasta_cache_ocr: Path | None = None
+    ocr: ConfiguracaoOcr = field(default_factory=ConfiguracaoOcr)
+
+    @property
+    def cache_ocr(self) -> Path:
+        return self.pasta_cache_ocr or self.pasta_temp.parent / "cache ocr"
 
     @property
     def substituidos(self) -> Path:
@@ -81,6 +114,7 @@ def _pastas_nomeadas(cfg: Configuracao) -> list[tuple[str, Path]]:
         ("PASTA_LOGS", cfg.pasta_logs),
         ("PASTA_CONFERIR_DUPLICATA", cfg.conferir_duplicata),
         ("PASTA_SUBSTITUIDOS", cfg.substituidos),
+        ("PASTA_CACHE_OCR", cfg.cache_ocr),
     ]
     if cfg.pasta_dbf is not None:
         pastas.append(("PASTA_DBF", cfg.pasta_dbf))
@@ -163,6 +197,47 @@ def _ler_booleano(variavel: str, valor: str, padrao: bool) -> bool:
     )
 
 
+def _ler_numero(variavel: str, valor: str, padrao: float, minimo: float, maximo: float) -> float:
+    texto = valor.strip().replace(",", ".")
+    if not texto:
+        return padrao
+    try:
+        numero = float(texto)
+    except ValueError:
+        numero = float("nan")
+    if not minimo <= numero <= maximo:  # também recusa nan
+        raise ErroConfiguracao(f"{variavel}={valor!r} é inválido. Use um número de {minimo:g} a {maximo:g}.")
+    return numero
+
+
+def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
+    def valor(variavel: str) -> str:
+        return (valores.get(variavel) or "").strip()
+
+    ativo = valor("OCR_ATIVO").casefold().replace("ã", "a") or OCR_AUTO
+    if ativo not in (OCR_AUTO, OCR_SIM, OCR_NAO):
+        raise ErroConfiguracao(f"OCR_ATIVO={valor('OCR_ATIVO')!r} é inválido. Use auto, sim ou nao.")
+    idioma = valor("OCR_IDIOMA") or "por"
+    if not _IDIOMA_DO_TESSERACT.match(idioma):
+        raise ErroConfiguracao(
+            f"OCR_IDIOMA={idioma!r} é inválido. Use o nome do idioma do Tesseract, por exemplo por ou por+eng."
+        )
+    bruto_cmd = valor("TESSERACT_CMD")
+    return ConfiguracaoOcr(
+        ativo=ativo,
+        tesseract_cmd=_resolver_caminho("TESSERACT_CMD", bruto_cmd) if bruto_cmd else None,
+        idioma=idioma,
+        dpi=int(_ler_numero("OCR_DPI", valor("OCR_DPI"), 300, DPI_MINIMO, DPI_MAXIMO)),
+        timeout=int(_ler_numero("OCR_TIMEOUT", valor("OCR_TIMEOUT"), 120, 10, 3600)),
+        confianca_media=_ler_numero("OCR_CONFIANCA_MEDIA", valor("OCR_CONFIANCA_MEDIA"), 85, 0, 100),
+        confianca_critica=_ler_numero("OCR_CONFIANCA_CRITICA", valor("OCR_CONFIANCA_CRITICA"), 70, 0, 100),
+        similaridade_duplicata=_ler_numero(
+            "OCR_SIMILARIDADE_DUPLICATA", valor("OCR_SIMILARIDADE_DUPLICATA"), 0.95, 0.5, 1
+        ),
+        gravar_na_base=_ler_booleano("OCR_GRAVAR_NA_BASE", valor("OCR_GRAVAR_NA_BASE"), False),
+    )
+
+
 def _ler_proxy_do_arquivo(arquivo_env: Path | None) -> str:
     return (dotenv_values(arquivo_env or RAIZ / ".env").get("HTTPS_PROXY") or "").strip()
 
@@ -196,6 +271,8 @@ def carregar_configuracao(arquivo_env: Path | None = None) -> Configuracao:
         pasta_conferir_duplicata=pasta("PASTA_CONFERIR_DUPLICATA", "dados/conferir duplicata"),
         arquivo_registro=pasta("REGISTRO_PUBLICACOES", "dados/registro_publicacoes.json"),
         pasta_substituidos=pasta("PASTA_SUBSTITUIDOS", "dados/substituidos"),
+        pasta_cache_ocr=pasta("PASTA_CACHE_OCR", "dados/cache ocr"),
+        ocr=_ler_ocr(valores),
         pasta_dbf=_resolver_caminho("PASTA_DBF", bruto_dbf) if bruto_dbf else None,
         proxy_https=_ler_proxy(valores.get("HTTPS_PROXY") or ""),
         ssl_estrito=_ler_booleano("SSL_ESTRITO", valores.get("SSL_ESTRITO") or "", True),

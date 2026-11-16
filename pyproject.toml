@@ -29,6 +29,7 @@ dbf_cepe = ["recursos/fontes/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", ".", "ferramentas"]
+markers = ["ocr: usa o Tesseract de verdade (pulado se ele não estiver instalado)"]
 
 [tool.ruff]
 target-version = "py311"

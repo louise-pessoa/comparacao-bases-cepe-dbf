@@ -126,4 +126,21 @@ python main.py --separar "$v\cad19" --gravar
 Os textos de 22/03/2019 vêm cortados (problema de leitura dos cadernos anteriores a 2020), por isso eles diferem do
 original e viram republicação; o teste serve para conferir os nomes, não o conteúdo.
 
+## 9. OCR (branch `claude/plano-ocr-tesseract`)
+
+Fases 0 e 1 do [plano do OCR](plano_ocr.md). Só leem: nada muda na base nem nos cadernos.
+
+```powershell
+python main.py --verificar-ocr
+python -m ferramentas.levantar_digitalizadas dados\historico --base "G:\Meu Drive\DBF\Decretos" --json levantamento.json
+python -m ferramentas.levantar_digitalizadas dados\historico --ocr --exemplos 10
+```
+
+- [ ] `--verificar-ocr` termina com `OK: o OCR está pronto para uso.` e a página de teste traz `12.345`.
+- [ ] `pytest -q -rs` não pula os testes marcados `ocr` (se pular, o Tesseract não foi achado pelo PATH).
+- [ ] O levantamento mostra a tabela por ano; guarde o `levantamento.json` (define o piloto e os anos do OCR).
+- [ ] Com `--ocr`, os cadernos com páginas digitalizadas mostram quantos cabeçalhos de decreto o OCR achou; abra um ou
+      dois exemplos e confira se o número bate com a página.
+- [ ] Nada mudou no G: nem em `dados\historico`; só apareceu `dados\cache ocr`.
+
 **Se algo falhar:** guarde o comando, a saída completa e o número do item.
