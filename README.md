@@ -126,6 +126,7 @@ tests/               testes automatizados
 - [`docs/uso.md`](docs/uso.md): como rodar cada modo, o que ele mostra, e problemas de rede e de base.
 - [`docs/funcionamento.md`](docs/funcionamento.md): como funciona por dentro, decisões e limitações.
 - [`docs/roteiro_de_testes.md`](docs/roteiro_de_testes.md): o que conferir antes de aceitar uma mudança.
+- [`docs/plano_ocr.md`](docs/plano_ocr.md): plano (ainda não implementado) da leitura por OCR com o Tesseract.
 
 ## Como ler o código
 
