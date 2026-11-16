@@ -192,6 +192,14 @@ INTRUSO = " ".join(f"intruso{i}" for i in range(40))
         # um bloco trocado (40 palavras diferentes nas duas leituras) não é trecho sobrando
         (TEXTO_BASE.replace("palavra100", INTRUSO), TEXTO_BASE.replace("palavra100", INTRUSO.replace("intruso", "x")),
          None),
+        # o bloco no lugar do número da página (Decreto 35.503/2010): 1 palavra na leitura por coluna
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO), TEXTO_BASE.replace("palavra100", "palavra100 4"),
+         INTRUSO),
+        # no lugar, 5 palavras ainda valem (entram nas outras diferenças); 6, não
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO),
+         TEXTO_BASE.replace("palavra100", "palavra100 a b c d e"), INTRUSO),
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO),
+         TEXTO_BASE.replace("palavra100", "palavra100 a b c d e f"), None),
         # caixa e pontuação não contam como diferença
         (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).upper() + " .", TEXTO_BASE, INTRUSO.upper()),
     ],
