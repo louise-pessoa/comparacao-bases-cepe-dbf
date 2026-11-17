@@ -53,11 +53,44 @@ class Ano:
     exemplos: list[str] = field(default_factory=list)
 
 
+# Número do decreto no nome do arquivo da base ("Decreto 35945.pdf", "Decreto 47207 (republicação).pdf").
+_NUMERO_NA_BASE = re.compile(r"(\d{4,6})")
+TAMANHO_DA_FAIXA = 1000
+
+
 @dataclass
 class Base:
     total: int = 0
     situacoes: Counter[str] = field(default_factory=Counter)
     imagem: list[str] = field(default_factory=list)  # nome: detalhe
+    # Faixa de número ("34000-34999") -> situação -> quantidade. Mostra quantos PDFs em imagem
+    # têm números que podem aparecer nos cadernos baixados (os antigos nunca são comparados).
+    faixas: dict[str, Counter[str]] = field(default_factory=dict)
+
+
+def faixa_do_arquivo(nome: str) -> str:
+    achado = _NUMERO_NA_BASE.search(nome)
+    if achado is None:
+        return "sem número"
+    inicio = int(achado.group(1)) // TAMANHO_DA_FAIXA * TAMANHO_DA_FAIXA
+    return f"{inicio}-{inicio + TAMANHO_DA_FAIXA - 1}"
+
+
+def tabela_da_base(base: Base) -> str:
+    """Por faixa de número: quantos PDFs em texto, imagem e texto ilegível. Só as faixas com
+    algum PDF sem texto."""
+    colunas = ("ok", "imagem (digitalizado)", "texto ilegível", "corrompido")
+    linhas = [f"  {'faixa':<14}{'texto':>8}{'imagem':>8}{'ilegível':>10}{'corromp.':>10}"]
+
+    def chave(faixa: str) -> int:
+        return int(faixa.split("-")[0]) if faixa[0].isdigit() else -1
+
+    for faixa in sorted(base.faixas, key=chave):
+        q = base.faixas[faixa]
+        if q[colunas[1]] + q[colunas[2]] == 0:
+            continue
+        linhas.append(f"  {faixa:<14}" + "".join(f"{q[c]:>{w}}" for c, w in zip(colunas, (8, 8, 10, 10))))
+    return "\n".join(linhas)
 
 
 def ano_do_caderno(caminho: Path) -> str:
@@ -137,6 +170,7 @@ def levantar_base(pasta: Path) -> Base:
         else:
             situacao = leitura.status.value
         base.situacoes[situacao] += 1
+        base.faixas.setdefault(faixa_do_arquivo(pdf.name), Counter())[situacao] += 1
     return base
 
 
@@ -208,6 +242,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nBase da DBF ({args.base}): {base.total} PDFs")
         for situacao, quantidade in base.situacoes.most_common():
             print(f"  {quantidade:>6}  {situacao}")
+        print("\nPor faixa de número (só as faixas com PDF sem texto):")
+        print(tabela_da_base(base))
+        print()
         for linha in base.imagem[: max(args.exemplos, 0) * 4]:
             print(f"  {linha}")
         if len(base.imagem) > args.exemplos * 4:
@@ -217,7 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         dados: dict[str, object] = {"cadernos": {nome: a.__dict__ for nome, a in anos.items()}}
         if base is not None:
-            dados["base"] = {"total": base.total, "situacoes": dict(base.situacoes), "imagem": base.imagem}
+            dados["base"] = {
+                "total": base.total, "situacoes": dict(base.situacoes), "imagem": base.imagem,
+                "faixas": {faixa: dict(q) for faixa, q in base.faixas.items()},
+            }
         args.json.write_text(json.dumps(dados, ensure_ascii=False, indent=1), encoding="utf-8")
     return 1 if falhas else 0
 

@@ -51,3 +51,18 @@ def test_main_grava_json_e_nao_altera_os_pdfs(tmp_path, capsys):
 
 def test_main_pasta_inexistente(tmp_path):
     assert ld.main([str(tmp_path / "nao")]) == 2
+
+
+def test_base_por_faixa_de_numero(tmp_path):
+    base = tmp_path / "base"
+    base.mkdir()
+    criar_pdf_imagem(base / "Decreto 16176.pdf")
+    criar_pdf_imagem(base / "Decreto 34529 (republicação).pdf")
+    (base / "Decreto 34999.pdf").write_bytes((AMOSTRAS / "Decreto 60929.pdf").read_bytes())
+    (base / "Decreto 60929.pdf").write_bytes((AMOSTRAS / "Decreto 60929.pdf").read_bytes())
+    resultado = ld.levantar_base(base)
+    assert resultado.faixas["34000-34999"] == {"imagem (digitalizado)": 1, "ok": 1}
+    assert ld.faixa_do_arquivo("Edital.pdf") == "sem número"
+    tabela = ld.tabela_da_base(resultado)
+    assert "16000-16999" in tabela and "34000-34999" in tabela
+    assert "60000-60999" not in tabela  # só faixas com PDF sem texto

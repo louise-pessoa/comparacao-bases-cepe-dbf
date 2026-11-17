@@ -11,6 +11,28 @@ Situação: **em implementação** na branch `claude/plano-ocr-tesseract`. Escri
 *Decisão de 16/11/2026:* as fases são feitas e testadas nesta branch, um commit por fase; o merge na `main` só acontece
 depois de todas testadas (não há merge só do plano).
 
+## Levantamento (fase 0), 17/11/2026
+
+Cadernos baixados na máquina da DBF (`dados/historico` e `dados/cadernos`; os já apagados pela limpeza não entram):
+
+| ano | cadernos | páginas | cadernos com página sem texto | digitalizadas | texto ilegível |
+|---|---|---|---|---|---|
+| 2010 | 346 | 6.746 | 1 | 0 | 1 |
+| 2020 | 491 | 7.598 | 10 | 0 | 30 |
+| 2021 | 35 | 372 | 0 | 0 | 0 |
+| 2026 | 53 | 786 | 0 | 0 | 0 |
+
+Base da DBF: 9.163 PDFs, dos quais 6.331 com texto, 2.152 digitalizados e 680 com texto ilegível (31% sem texto).
+
+Conclusões:
+
+- Nos cadernos, **nenhuma página é digitalizada**: o OCR atua nas páginas com **texto ilegível** (fonte sem conversão
+  para Unicode). A página é desenhada normalmente, então a renderização + OCR funciona do mesmo jeito.
+- **Lacuna atual:** o separador só avisa das páginas digitalizadas. Os atos das páginas ilegíveis somem sem aviso, e
+  a limpeza (que confere só as digitalizadas) pode apagar esses cadernos. Ver a questão em aberto 4.
+- O volume grande está na base. Só importam os PDFs em imagem com números que aparecem nos cadernos; a distribuição
+  por faixa de número (`levantar_digitalizadas --base`) mostra quantos são.
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:
@@ -257,5 +279,7 @@ para a `main` num PR só, depois de testada.
    fase 0.
 2. **Anos cobertos.** Depende do levantamento: se as páginas digitalizadas forem todas de antes de 2010, o OCR também
    depende da cascata antiga (fecho, colunas) e o piloto deve ser num desses anos.
+4. **Páginas ilegíveis no separador, já agora:** tratar a página com texto ilegível como a digitalizada (aviso no
+   `--separar` e caderno guardado na limpeza) antes mesmo do OCR, para não perder atos em silêncio.
 3. **Onde fica o reprovado no piloto:** o plano usa `dados/erros`. Uma pasta própria (`dados/conferir ocr`) deixaria a
    revisão mais fácil, ao custo de mais uma pasta na limpeza e na validação.
