@@ -4,7 +4,7 @@ e para no primeiro sinal de problema.
 Para cada mês, em ordem cronológica, faz o mesmo que o passo a passo de docs/uso.md
 ("Lote histórico"):
 
-    1. baixa os cadernos em dados/historico/AAAA-MM (--fonte s3 até 05/2026, resumo depois);
+    1. baixa os cadernos em dados/historico/AAAA/AAAA-MM (--fonte s3 até 05/2026, resumo depois);
     2. --separar --comparar (só lê);
     3. --separar --gravar (grava em dados/pendentes);
     4. lote simulado;
@@ -29,6 +29,15 @@ conferência fica para o fim (`python main.py --conferir`).
 Uso (da raiz do repositório, com o .env apontando para a base certa):
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06              # só simula
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06 --executar   # grava na base
+    python -m ferramentas.lote_historico --reorganizar [--executar]  # AAAA-MM -> AAAA/AAAA-MM
+
+Pastas: um ano por pasta e, dentro dela, um mês por pasta (dados/historico/2020/2020-03;
+decisão de 17/11/2026, para o histórico de 1999 a 2026). A pasta do mês mantém o ano no nome
+para ser reconhecível sozinha. Até 17/11/2026 os meses ficavam direto em dados/historico
+(dados/historico/2020-03): o `--reorganizar` move essas pastas (sem --executar, só mostra), e o
+lote não começa enquanto houver uma, para não baixar de novo um mês que já existe. Mover não
+perde nada: o manifesto, a simulação da limpeza e o registro de publicações guardam o nome do
+caderno, não o caminho.
 
 Sem --executar, cada mês é baixado, separado e simulado, mas nada vai para a base,
 `dados/pendentes` é esvaziado no fim do mês (os PDFs gerados ali só serviam à simulação)
@@ -43,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field, replace
@@ -60,6 +70,7 @@ from dbf_cepe.pipeline.relatorio import ResumoRelatorio, relatorio_dos_cadernos
 log = logging.getLogger("pipeline")
 
 PASTA_HISTORICO = Path("dados/historico")
+_MES_NO_FORMATO_ANTIGO = re.compile(r"^\d{4}-\d{2}$")
 # Até este mês (inclusive) o histórico vem do S3; depois, do site atual da CEPE.
 ULTIMO_MES_DO_S3 = date(2026, 5, 1)
 SIMILARIDADE_MINIMA = 0.95
@@ -134,8 +145,40 @@ def _esvaziar_pendentes(cfg: Configuracao) -> None:
         pdf.unlink()
 
 
+def pasta_do_mes(nome: str, historico: Path | None = None) -> Path:
+    """dados/historico/AAAA/AAAA-MM."""
+    return (historico or PASTA_HISTORICO) / nome[:4] / nome
+
+
+def pastas_no_formato_antigo(historico: Path | None = None) -> list[Path]:
+    """As pastas de mês direto em dados/historico (AAAA-MM), do formato anterior a 17/11/2026."""
+    historico = historico or PASTA_HISTORICO
+    if not historico.is_dir():
+        return []
+    return sorted(p for p in historico.iterdir() if p.is_dir() and _MES_NO_FORMATO_ANTIGO.match(p.name))
+
+
+def reorganizar(historico: Path | None = None, mover: bool = False) -> tuple[list[tuple[Path, Path]], list[str]]:
+    """Move cada dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM. Sem `mover`, só
+    devolve o que faria. Nunca junta pastas: se o destino já existe, a pasta fica e o
+    motivo vai para a segunda lista."""
+    historico = historico or PASTA_HISTORICO
+    movidas: list[tuple[Path, Path]] = []
+    problemas: list[str] = []
+    for antiga in pastas_no_formato_antigo(historico):
+        nova = pasta_do_mes(antiga.name, historico)
+        if nova.exists():
+            problemas.append(f"{antiga} não foi movida: {nova} já existe (junte as duas à mão)")
+            continue
+        if mover:
+            nova.parent.mkdir(parents=True, exist_ok=True)
+            antiga.rename(nova)
+        movidas.append((antiga, nova))
+    return movidas, problemas
+
+
 def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
-    pasta = PASTA_HISTORICO / mes.nome
+    pasta = pasta_do_mes(mes.nome)
     log.info("===== %s (fonte %s) =====", mes.nome, mes.fonte)
 
     downloads = capturar(replace(cfg, pasta_cadernos=pasta), mes.inicio, mes.fim, False, mes.fonte)
@@ -198,14 +241,39 @@ def resumo_do_mes(mes: Mes, executado: bool = True) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--de", type=_mes_iso, required=True, metavar="AAAA-MM", help="primeiro mês")
-    parser.add_argument("--ate", type=_mes_iso, required=True, metavar="AAAA-MM", help="último mês, inclusive")
+    parser.add_argument("--de", type=_mes_iso, metavar="AAAA-MM", help="primeiro mês")
+    parser.add_argument("--ate", type=_mes_iso, metavar="AAAA-MM", help="último mês, inclusive")
+    parser.add_argument("--reorganizar", action="store_true",
+                        help="move dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM "
+                        "(sem --executar, só mostra)")
     parser.add_argument("--executar", action="store_true",
                         help="grava na base da DBF (sem isto, cada mês só é baixado, separado e simulado)")
     parser.add_argument("--manter-cadernos", action="store_true",
                         help="com --executar: não apaga os cadernos processados no fim de cada mês")
     args = parser.parse_args(argv)
+    if args.reorganizar:
+        if args.de or args.ate or args.manter_cadernos:
+            parser.error("--reorganizar só se combina com --executar")
+        movidas, problemas = reorganizar(mover=args.executar)
+        verbo = "movida" if args.executar else "seria movida"
+        for antiga, nova in movidas:
+            print(f"{antiga} -> {nova} ({verbo})")
+        for problema in problemas:
+            print(f"AVISO: {problema}", file=sys.stderr)
+        if not movidas and not problemas:
+            print(f"Nada a reorganizar em {PASTA_HISTORICO}.")
+        elif movidas and not args.executar:
+            print("Simulação: rode de novo com --executar para mover.")
+        return 1 if problemas else 0
+    if args.de is None or args.ate is None:
+        parser.error("informe --de e --ate (ou use --reorganizar)")
     try:
+        antigas = pastas_no_formato_antigo()
+        if antigas:
+            raise ErroDeUso(
+                f"{len(antigas)} pasta(s) de mês no formato antigo em {PASTA_HISTORICO} (ex.: {antigas[0].name}); "
+                "rode antes: python -m ferramentas.lote_historico --reorganizar --executar"
+            )
         lista = meses(args.de, args.ate)
         cfg = carregar_configuracao()
         if cfg.pasta_dbf is None:
@@ -245,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{conferir} decreto(s) foram para 'conferir duplicata': rode python main.py --conferir")
         if not args.manter_cadernos:
             print("Os cadernos deles ficaram guardados; depois do --conferir, apague-os com "
-                  "python main.py --limpar-cadernos dados\\historico\\AAAA-MM --simular (e sem --simular).")
+                  "python main.py --limpar-cadernos dados\\historico\\AAAA\\AAAA-MM --simular (e sem --simular).")
     if feitos and feitos[-1].parada:
         print(f"\nParou em {feitos[-1].nome}. Resolva e rode de novo a partir de --de {feitos[-1].nome}.")
         return 1

@@ -108,8 +108,8 @@ def test_mes_completo_com_executar(cfg, monkeypatch):
     mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
     assert not mes.parada
     assert r.chamadas == [
-        "baixar 2020-03 s3 em dados/historico/2020-03", "comparar", "gravar", "simular", "lote",
-        "limpar 2020-03 dados/historico/2020-03 exigir=False",
+        "baixar 2020-03 s3 em dados/historico/2020/2020-03", "comparar", "gravar", "simular", "lote",
+        "limpar 2020-03 dados/historico/2020/2020-03 exigir=False",
     ]
     assert "cadernos apagados 2, guardados 1" in lh.resumo_do_mes(mes)
 
@@ -162,7 +162,7 @@ def test_main_para_no_mes_com_problema_e_nao_segue(cfg, monkeypatch, capsys):
     r = Roteiro(monkeypatch, separacao=reprovado)
     monkeypatch.setattr(lh, "carregar_configuracao", lambda: cfg)
     assert lh.main(["--de", "2020-03", "--ate", "2020-05", "--executar"]) == 1
-    assert [c for c in r.chamadas if c.startswith("baixar")] == ["baixar 2020-03 s3 em dados/historico/2020-03"]
+    assert [c for c in r.chamadas if c.startswith("baixar")] == ["baixar 2020-03 s3 em dados/historico/2020/2020-03"]
     assert "Parou em 2020-03" in capsys.readouterr().out
 
 
@@ -217,3 +217,45 @@ def test_parada_no_lote_de_verdade_mantem_pendentes(cfg, monkeypatch):
     Roteiro(monkeypatch, lote=Counter({Destino.FALHA_AO_GRAVAR: 1}))
     mes = lh.rodar_mes(cfg, lh.Mes(date(2020, 3, 1)), executar_de_verdade=True)
     assert "falha ao gravar" in mes.parada and [p.name for p in cfg.pasta_temp.iterdir()] == ["2020-03.pdf"]
+
+
+
+# ----------------------------------------------------------------------------
+# Pastas por ano (dados/historico/AAAA/AAAA-MM)
+# ----------------------------------------------------------------------------
+
+
+def test_pasta_do_mes_fica_dentro_do_ano():
+    assert lh.pasta_do_mes("2020-03") == lh.PASTA_HISTORICO / "2020" / "2020-03"
+
+
+def test_reorganizar_simula_move_e_nao_junta(tmp_path):
+    historico = tmp_path / "historico"
+    (historico / "2010-03").mkdir(parents=True)
+    (historico / "2010-03" / "manifesto.json").write_text("{}", encoding="utf-8")
+    (historico / "2020-04").mkdir()
+    (historico / "2020" / "2020-04").mkdir(parents=True)  # destino já existe: não junta
+    (historico / "2021").mkdir()  # pasta de ano: não é mês antigo
+    movidas, problemas = lh.reorganizar(historico)
+    assert [(a.name, n.relative_to(historico).as_posix()) for a, n in movidas] == [("2010-03", "2010/2010-03")]
+    assert (historico / "2010-03").exists()  # simulação: nada mudou
+    assert len(problemas) == 1 and "2020-04" in problemas[0]
+    lh.reorganizar(historico, mover=True)
+    assert (historico / "2010" / "2010-03" / "manifesto.json").read_text(encoding="utf-8") == "{}"
+    assert not (historico / "2010-03").exists() and (historico / "2020-04").exists()
+    assert lh.pastas_no_formato_antigo(historico) == [historico / "2020-04"]
+
+
+def test_main_recusa_comecar_com_pasta_no_formato_antigo(cfg, monkeypatch, capsys, tmp_path):
+    historico = tmp_path / "historico"
+    (historico / "2020-03").mkdir(parents=True)
+    monkeypatch.setattr(lh, "PASTA_HISTORICO", historico)
+    monkeypatch.setattr(lh, "carregar_configuracao", lambda: cfg)
+    assert lh.main(["--de", "2020-04", "--ate", "2020-04"]) == 2
+    assert "--reorganizar --executar" in capsys.readouterr().err
+    assert lh.main(["--reorganizar"]) == 0
+    assert "seria movida" in capsys.readouterr().out
+    assert lh.main(["--reorganizar", "--executar"]) == 0
+    assert (historico / "2020" / "2020-03").is_dir()
+    with pytest.raises(SystemExit):
+        lh.main(["--reorganizar", "--de", "2020-03"])

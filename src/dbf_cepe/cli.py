@@ -35,8 +35,8 @@ Uso:
     python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
     python main.py --catalogar dados/cadernos             # grava dados/catalogo_atos.csv
     python main.py --conferir [--simular]                 # revisa a pasta "conferir duplicata"
-    python main.py --limpar-cadernos dados/historico/2020-03 --simular   # o que seria apagado
-    python main.py --limpar-cadernos dados/historico/2020-03             # apaga (mesma lista)
+    python main.py --limpar-cadernos dados/historico/2020/2020-03 --simular   # o que seria apagado
+    python main.py --limpar-cadernos dados/historico/2020/2020-03             # apaga (mesma lista)
     python main.py --verificar-ocr                        # o Tesseract está pronto?
 """
 

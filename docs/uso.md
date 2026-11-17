@@ -79,14 +79,24 @@ Para gravar na base os decretos de meses anteriores a 2026:
 - **Sempre `--fonte s3`.** O site atual da CEPE, a fonte padrão, só foi conferido para 2026. O S3 tem os cadernos
   de 2005 a 2025, mas o pipeline só lê corretamente a partir de **2020**
   ([`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite)).
-- **Cada mês na própria pasta** (`dados\historico\AAAA-MM`), com `PASTA_CADERNOS` definido só para o download. Assim
-  o mês não se mistura com `dados\cadernos`, e cada pasta tem o próprio manifesto.
+- **Cada mês na própria pasta, dentro da pasta do ano** (`dados\historico\AAAA\AAAA-MM`, ex.: `dados\historico\2020\2020-02`),
+  com `PASTA_CADERNOS` definido só para o download. Assim o mês não se mistura com `dados\cadernos`, cada pasta tem o
+  próprio manifesto, e os 27 anos do histórico não ficam em centenas de pastas lado a lado. Até 17/11/2026 os meses
+  ficavam direto em `dados\historico\AAAA-MM`; para mover essas pastas para o formato novo (nada se perde: os
+  manifestos guardam só o nome dos cadernos):
+
+```powershell
+python -m ferramentas.lote_historico --reorganizar             # mostra o que seria movido
+python -m ferramentas.lote_historico --reorganizar --executar  # move
+```
+
+  O `lote_historico` não começa enquanto houver pasta no formato antigo, para não baixar de novo um mês que já existe.
 
 Em PowerShell, para fevereiro de 2020:
 
 ```powershell
 $mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
-$pasta = "dados\historico\$mes"
+$pasta = "dados\historico\$($mes.Substring(0,4))\$mes"   # dados\historico\2020\2020-02
 
 $env:PASTA_CADERNOS = $pasta
 python main.py --baixar --fonte s3 --de $de --ate $ate
@@ -293,8 +303,8 @@ pergunta:
 ## Limpeza dos cadernos (`--limpar-cadernos`)
 
 ```powershell
-python main.py --limpar-cadernos dados\historico\2020-03 --simular   # lista o que seria apagado e por que o resto fica
-python main.py --limpar-cadernos dados\historico\2020-03             # apaga exatamente a lista simulada
+python main.py --limpar-cadernos dados\historico\2020\2020-03 --simular   # lista o que seria apagado e por que o resto fica
+python main.py --limpar-cadernos dados\historico\2020\2020-03        # apaga exatamente a lista simulada
 python main.py --limpar-cadernos dados\cadernos --mes 2026-09 --simular   # só os cadernos de um mês
 ```
 

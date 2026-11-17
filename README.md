@@ -75,7 +75,7 @@ Um mês por vez, em ordem cronológica, cada mês na própria pasta e **sempre c
 
 ```powershell
 $mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
-$pasta = "dados\historico\$mes"
+$pasta = "dados\historico\$($mes.Substring(0,4))\$mes"   # um ano por pasta: dados\historico\2020\2020-02
 $env:PASTA_CADERNOS = $pasta                                 # baixa na pasta do mês, não em dados\cadernos
 python main.py --baixar --fonte s3 --de $de --ate $ate
 Remove-Item Env:PASTA_CADERNOS
