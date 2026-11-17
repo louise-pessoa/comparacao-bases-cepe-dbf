@@ -380,7 +380,7 @@ projeto e informe-a no `.env`:
 ```powershell
 New-Item -ItemType Directory -Force dados\tessdata | Out-Null
 Invoke-WebRequest https://github.com/tesseract-ocr/tessdata/raw/main/por.traineddata -OutFile dados\tessdata\por.traineddata
-Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # uns 15 MB; poucos bytes = página de erro
+Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # alguns MB; com poucos KB, veio uma página de erro
 ```
 
 No `.env`: `OCR_TESSDATA=dados/tessdata`. Só o `por` é necessário (o OCR não usa o `osd`). O `--verificar-ocr` mostra o
