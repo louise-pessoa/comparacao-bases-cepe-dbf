@@ -197,7 +197,7 @@ O lote decide o nome final de novo, com a base daquele momento. **Caderno sem da
 base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
-fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
+fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada ou com texto ilegível, programa
 citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
 decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
 coluna): ...; confira o texto`), decreto com um trecho de outro ato removido (`trecho de outro ato removido (N palavras,
@@ -303,7 +303,7 @@ Um caderno só é apagado se:
 
 1. o mês dele já acabou;
 2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes (ele anota isso no manifesto);
-3. não tem página digitalizada;
+3. não tem página digitalizada nem com texto ilegível;
 4. nenhum decreto da DBF dele ficou em revisão manual;
 5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
 6. todo decreto da DBF dele que foi para pendentes está no registro de publicações, e o que foi para "conferir

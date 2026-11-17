@@ -60,7 +60,8 @@ class Ano:
 
 
 # Número do decreto no nome do arquivo da base ("Decreto 35945.pdf", "Decreto 47207 (republicação).pdf").
-_NUMERO_NA_BASE = re.compile(r"(\d{4,6})")
+# Só arquivos "Decreto N...": em editais e portarias, o número do nome pode ser um ano.
+_NUMERO_NA_BASE = re.compile(r"^decreto\s+(\d{4,6})", re.IGNORECASE)
 TAMANHO_DA_FAIXA = 1000
 
 
@@ -75,9 +76,9 @@ class Base:
 
 
 def faixa_do_arquivo(nome: str) -> str:
-    achado = _NUMERO_NA_BASE.search(nome)
+    achado = _NUMERO_NA_BASE.match(nome)
     if achado is None:
-        return "sem número"
+        return "outros"
     inicio = int(achado.group(1)) // TAMANHO_DA_FAIXA * TAMANHO_DA_FAIXA
     return f"{inicio}-{inicio + TAMANHO_DA_FAIXA - 1}"
 

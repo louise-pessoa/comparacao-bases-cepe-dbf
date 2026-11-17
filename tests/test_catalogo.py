@@ -481,3 +481,11 @@ def test_com_base_sem_catalogar_e_erro():
         main.main(["--com-base"])
     assert saida.value.code == 2
 """Proteja o catálogo somente para leitura e suas decisões de escopo."""
+
+
+def test_catalogo_avisa_pagina_com_texto_ilegivel(tmp_path: Path):
+    from dbf_cepe.catalogo import catalogar_caderno
+
+    pdf = criar_pdf_texto(tmp_path / "20200418_PoderExecutivo.pdf", "texto normal", "".join(chr(c) for c in range(1, 9)) * 20)
+    _, avisos = catalogar_caderno(pdf)
+    assert any("com texto ilegível [2]" in aviso for aviso in avisos)

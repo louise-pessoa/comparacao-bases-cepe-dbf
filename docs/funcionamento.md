@@ -65,6 +65,12 @@ terminam no meio delas.
 - Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o
   nome do caderno. Com `--gravar`, os dois vão nos metadados do PDF de pendentes (campo Keywords) e acompanham o decreto
   até a etapa 5. O `manifesto.json` não é usado para isso.
+- **Página sem texto:** a página digitalizada e, desde 17/11/2026, a página com **texto ilegível** (a fonte não converte
+  os caracteres para Unicode e eles saem como códigos de controle) geram o aviso "páginas digitalizadas ou com texto
+  ilegível [...]: atos nelas não foram vistos (precisam de OCR)", no `--separar` e no catálogo, e o caderno não é
+  apagado pela limpeza. Antes, os atos da página ilegível sumiam sem aviso. O texto da página continua no texto do
+  caderno, como antes. Nos cadernos baixados (2010, 2020, 2021 e 2026), as 31 páginas ilegíveis, lidas por OCR, eram
+  balanços de empresas, sem decreto. *Decisão de 17/11/2026.*
 - Como o recorte de página não serve, o PDF de cada decreto é gerado de novo a partir do texto, em Liberation Sans, só
   com título e linhas. Antes de ser guardado, ele é relido, e o texto e o número precisam bater, senão nada é gravado.
   Esse PDF é intermediário; o layout da DBF vem na etapa 4.

@@ -9,7 +9,7 @@ confere essa anotação contra o disco e o registro de publicações; não relê
 Um caderno só é apagado se tudo isto for verdade (senão fica, e o motivo é mostrado):
   1. o mês dele já acabou (e, com `mes`, é o mês pedido);
   2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes;
-  3. não tem página digitalizada (que precisaria de OCR);
+  3. não tem página digitalizada nem com texto ilegível (que precisaria de OCR);
   4. nenhum decreto da DBF dele ficou em revisão manual;
   5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
   6. todo decreto da DBF dele que foi para pendentes está no registro de publicações (o
@@ -38,7 +38,7 @@ from typing import Any
 
 from dbf_cepe import captura
 from dbf_cepe.config import Configuracao
-from dbf_cepe.leitura.separador import data_do_caderno
+from dbf_cepe.leitura.separador import AVISO_PAGINAS_SEM_TEXTO, data_do_caderno
 from dbf_cepe.pipeline.lote import listar_pdfs
 from dbf_cepe.pipeline.publicacao import ler_do_pdf
 from dbf_cepe.pipeline.registro import CONFERIR, Registro
@@ -184,7 +184,7 @@ def avaliar(cfg: Configuracao, pasta: Path, mes: date | None = None, hoje: date 
             if processamento.get("falhas"):
                 avaliacao.motivos.append(f"{processamento['falhas']} decreto(s) não puderam ser gravados em pendentes")
             if processamento.get("paginas_digitalizadas"):
-                avaliacao.motivos.append(f"páginas digitalizadas: {processamento['paginas_digitalizadas']}")
+                avaliacao.motivos.append(f"{AVISO_PAGINAS_SEM_TEXTO}: {processamento['paginas_digitalizadas']}")
             avaliacao.motivos += _motivos_do_registro(caderno.name, processamento.get("decretos_dbf", []), registro)
         avaliacao.motivos += pendencias.get(caderno.name, [])
         avaliacoes.append(avaliacao)

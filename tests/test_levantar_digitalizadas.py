@@ -62,7 +62,8 @@ def test_base_por_faixa_de_numero(tmp_path):
     (base / "Decreto 60929.pdf").write_bytes((AMOSTRAS / "Decreto 60929.pdf").read_bytes())
     resultado = ld.levantar_base(base)
     assert resultado.faixas["34000-34999"] == {"imagem (digitalizado)": 1, "ok": 1}
-    assert ld.faixa_do_arquivo("Edital.pdf") == "sem número"
+    assert ld.faixa_do_arquivo("Edital.pdf") == "outros"
+    assert ld.faixa_do_arquivo("Edital 2020-15.pdf") == "outros"  # o ano não é número de decreto
     tabela = ld.tabela_da_base(resultado)
     assert "16000-16999" in tabela and "34000-34999" in tabela
     assert "60000-60999" not in tabela  # só faixas com PDF sem texto
