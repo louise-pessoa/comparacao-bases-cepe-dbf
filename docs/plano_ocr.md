@@ -4,7 +4,7 @@ Situação: **em implementação** na branch `claude/plano-ocr-tesseract`. Escri
 
 | Fase | Situação |
 |---|---|
-| 0 — ambiente e levantamento | pronta: `--verificar-ocr` e `ferramentas/levantar_digitalizadas.py`; falta rodar nos cadernos e na base |
+| 0 — ambiente e levantamento | pronta e rodada na máquina da DBF (17/11/2026); resultado abaixo |
 | 1 — `leitura/ocr.py`, configuração e cache | pronta |
 | 2 a 6 | a fazer |
 
@@ -30,8 +30,15 @@ Conclusões:
   para Unicode). A página é desenhada normalmente, então a renderização + OCR funciona do mesmo jeito.
 - **Lacuna atual:** o separador só avisa das páginas digitalizadas. Os atos das páginas ilegíveis somem sem aviso, e
   a limpeza (que confere só as digitalizadas) pode apagar esses cadernos. Ver a questão em aberto 4.
-- O volume grande está na base. Só importam os PDFs em imagem com números que aparecem nos cadernos; a distribuição
-  por faixa de número (`levantar_digitalizadas --base`) mostra quantos são.
+- Com `--ocr`, as 31 páginas foram lidas com confiança de 86 a 95 (800 a 3.100 palavras cada): são balanços e
+  publicações de empresas (CHESF, COMPESA, JCPM), sem cabeçalho de decreto e longe dos decretos do caderno. **Nos
+  cadernos baixados, o OCR dos cadernos (fase 3) não recupera nenhum decreto.**
+- O volume que importa está na base. Por faixa de número, os PDFs sem texto ficam onde os cadernos processados
+  caem: de 29.000 a 45.999 (≈2010 a 2018), 30 a 70 com texto ilegível por milhar; de 45.000 a 49.999 (≈2018 a 2020),
+  23 a 145 em imagem por milhar. Abaixo de 29.000 (antes de 2010) quase tudo é imagem, mas esses números não
+  aparecem nos cadernos. É aqui que hoje o decreto do caderno vira "já existe; não comparado" (fase 5).
+- *Decisão de 17/11/2026 (questão 4):* a página com texto ilegível passou a contar como página sem texto no separador
+  (aviso no `--separar` e no catálogo; a limpeza guarda o caderno).
 
 ## Objetivo e escopo
 
@@ -281,5 +288,6 @@ para a `main` num PR só, depois de testada.
    depende da cascata antiga (fecho, colunas) e o piloto deve ser num desses anos.
 3. **Onde fica o reprovado no piloto:** o plano usa `dados/erros`. Uma pasta própria (`dados/conferir ocr`) deixaria a
    revisão mais fácil, ao custo de mais uma pasta na limpeza e na validação.
-4. **Páginas ilegíveis no separador, já agora:** tratar a página com texto ilegível como a digitalizada (aviso no
-   `--separar` e caderno guardado na limpeza) antes mesmo do OCR, para não perder atos em silêncio.
+4. ~~Páginas ilegíveis no separador~~: feito em 17/11/2026 (ver o levantamento).
+5. **Ordem das fases:** com o levantamento, a fase 5 (base em imagem) traz o ganho real e a fase 3 (cadernos) quase
+   nenhum nos cadernos baixados. Proposta: fazer a 5 antes da 3.
