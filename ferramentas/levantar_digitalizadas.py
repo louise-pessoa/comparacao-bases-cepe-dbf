@@ -33,13 +33,19 @@ from pathlib import Path
 
 import pymupdf
 
+from dbf_cepe.leitura.criterio import da_dbf
 from dbf_cepe.leitura.reader import StatusLeitura, _ilegivel, _pagina_digitalizada, ler_pdf
-from dbf_cepe.leitura.separador import data_do_caderno
+from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, data_do_caderno, separar_caderno
 
 PASTA_PADRAO = Path("dados/cadernos")
 # Cabeçalho de decreto no texto do OCR: no início da linha, em maiúsculas. Mais tolerante
 # que a regex do separador (o OCR troca "Nº" por "N°", "Nº", "N.º", "N?").
 CABECALHO_NO_OCR = re.compile(r"^\s*DECRETO\s+N\S{0,2}\s*[\d.]{3,}", re.MULTILINE)
+# Citações no meio do texto ("ANEXO ÚNICO DO DECRETO Nº 48.900"): dizem a que ato a página pertence.
+_DECRETO_CITADO = re.compile(r"DECRETO\s+N\S{0,2}\s*(\d{1,2}\.?\d{3})", re.IGNORECASE)
+_ANEXO = re.compile(r"\bANEXO\b", re.IGNORECASE)
+# Decreto que termina até tantas páginas antes da página sem texto: candidato a dono dela (anexo).
+PAGINAS_ATE_O_DECRETO_ANTERIOR = 3
 
 
 @dataclass
@@ -118,6 +124,35 @@ def paginas_sem_texto(caderno: Path) -> tuple[int, list[int], list[int]]:
         return doc.page_count, digitalizadas, ilegiveis
 
 
+def _nome(ato: AtoSeparado) -> str:
+    return f"{ato.especie.nome} {ato.numero}{' (DBF)' if da_dbf(ato) else ''}"
+
+
+def detalhar_pagina(numero: int, lida, atos: tuple[AtoSeparado, ...]) -> str:
+    """Uma linha sobre a página lida por OCR: quanto o OCR leu, o começo do texto, se cita
+    anexo ou decreto, e a que decreto do caderno ela pode pertencer (o que a cobre, ou o que
+    termina pouco antes dela: a página pode ser o anexo dele)."""
+    linhas = [linha.strip() for linha in lida.texto.splitlines() if linha.strip()]
+    inicio = " / ".join(linhas[:2])[:90]
+    partes = [f"p. {numero}: {len(lida.palavras)} palavras, confiança {lida.confianca_media:.0f}"]
+    partes.append(f'"{inicio}"' if inicio else "(OCR sem texto: página em branco ou não desenhada?)")
+    citados = sorted({c.replace(".", "") for c in _DECRETO_CITADO.findall(lida.texto)})
+    mencoes = (["ANEXO"] if _ANEXO.search(lida.texto) else []) + [f"Decreto {c}" for c in citados]
+    if mencoes:
+        partes.append(f"cita {', '.join(mencoes)}")
+    cobre = [a for a in atos if a.pagina_inicial <= numero <= a.pagina_final]
+    if cobre:
+        partes.append(f"dentro de {', '.join(_nome(a) for a in cobre)}")
+    else:
+        antes = [a for a in atos if numero - PAGINAS_ATE_O_DECRETO_ANTERIOR <= a.pagina_final < numero]
+        if antes:
+            ultimo = max(antes, key=lambda a: a.pagina_final)
+            partes.append(f"depois de {_nome(ultimo)} (termina na p. {ultimo.pagina_final})")
+        else:
+            partes.append("nenhum decreto perto")
+    return " | ".join(partes)
+
+
 def levantar_cadernos(pastas: list[Path], leitor=None, limite_exemplos: int = 20) -> tuple[dict[str, Ano], list[str]]:
     """Conta as páginas sem texto dos cadernos, por ano. `leitor` (um `ocr.LeitorOcr`)
     liga a contagem de cabeçalhos de decreto nas páginas digitalizadas."""
@@ -139,12 +174,20 @@ def levantar_cadernos(pastas: list[Path], leitor=None, limite_exemplos: int = 20
             continue
         ano.cadernos_com_digitalizadas += 1
         decretos = 0
+        detalhes: list[str] = []
         if leitor is not None:
+            try:
+                atos = separar_caderno(caderno).atos
+            except ErroSeparacao:
+                atos = ()
             for numero in sem_texto:
                 try:
-                    decretos += len(CABECALHO_NO_OCR.findall(leitor.ler(caderno, numero).texto))
+                    lida = leitor.ler(caderno, numero)
                 except Exception as erro:  # ErroOcr: anota e segue
                     falhas.append(f"{caderno.name} p. {numero}: OCR falhou: {erro}")
+                    continue
+                decretos += len(CABECALHO_NO_OCR.findall(lida.texto))
+                detalhes.append(detalhar_pagina(numero, lida, atos))
             ano.decretos_no_ocr += decretos
         if len(ano.exemplos) < limite_exemplos:
             partes = []
@@ -154,7 +197,9 @@ def levantar_cadernos(pastas: list[Path], leitor=None, limite_exemplos: int = 20
                 partes.append(f"ilegíveis {ilegiveis}")
             if leitor is not None:
                 partes.append(f"{decretos} cabeçalho(s) de decreto no OCR")
-            ano.exemplos.append(f"{caderno} | {total} p. | {'; '.join(partes)}")
+            ano.exemplos.append(
+                f"{caderno} | {total} p. | {'; '.join(partes)}" + "".join(f"\n      {d}" for d in detalhes)
+            )
     return anos, falhas
 
 
@@ -206,8 +251,9 @@ def _leitor_do_env():
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("pastas", nargs="*", type=Path, default=[PASTA_PADRAO],
-                        help="cadernos ou pastas com cadernos (procura nas subpastas)")
+    parser.add_argument("pastas", nargs="*", type=Path,
+                        help=f"cadernos ou pastas com cadernos (procura nas subpastas); padrão: {PASTA_PADRAO}, "
+                        "ou nenhuma se houver --base")
     parser.add_argument("--base", type=Path, metavar="PASTA", help="também classifica os PDFs da base da DBF (só lê)")
     parser.add_argument("--ocr", action="store_true",
                         help="lê as páginas sem texto com o Tesseract e conta os cabeçalhos de decreto")
@@ -215,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--exemplos", type=int, default=5, metavar="N",
                         help="quantos cadernos com páginas em imagem mostrar por ano (padrão: 5)")
     args = parser.parse_args(argv)
+    if not args.pastas:
+        args.pastas = [] if args.base else [PASTA_PADRAO]
     faltando = [p for p in [*args.pastas, *([args.base] if args.base else [])] if not p.exists()]
     if faltando:
         print(f"Não encontrado: {', '.join(map(str, faltando))}", file=sys.stderr)

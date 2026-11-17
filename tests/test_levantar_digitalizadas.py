@@ -66,3 +66,38 @@ def test_base_por_faixa_de_numero(tmp_path):
     tabela = ld.tabela_da_base(resultado)
     assert "16000-16999" in tabela and "34000-34999" in tabela
     assert "60000-60999" not in tabela  # só faixas com PDF sem texto
+
+
+def _ato(numero: str, inicial: int, final: int):
+    from dbf_cepe.leitura.separador import AtoSeparado
+    from dbf_cepe.regras.especies import ESPECIES_ATIVAS
+
+    return AtoSeparado(ESPECIES_ATIVAS[0], numero, f"DECRETO Nº {numero}", "texto", inicial, final)
+
+
+def test_detalhe_da_pagina_diz_a_quem_ela_pode_pertencer():
+    from dbf_cepe.leitura.ocr import PaginaOcr, montar_texto
+
+    dados = {c: [] for c in ("text", "conf", "left", "top", "width", "height", "block_num", "par_num", "line_num")}
+    for palavra in ("ANEXO", "ÚNICO", "DO", "DECRETO", "Nº", "48.900"):
+        for coluna, valor in zip(dados, (palavra, 90, 0, 0, 1, 1, 1, 1, 1)):
+            dados[coluna].append(valor)
+    texto, palavras = montar_texto(dados)
+    lida = PaginaOcr(texto, palavras, "5")
+    linha = ld.detalhar_pagina(12, lida, (_ato("48890", 9, 11),))
+    assert "6 palavras, confiança 90" in linha
+    assert "cita ANEXO, Decreto 48900" in linha
+    assert "depois de Decreto 48890 (termina na p. 11)" in linha
+    assert "dentro de Decreto 48890" in ld.detalhar_pagina(10, lida, (_ato("48890", 9, 11),))
+    vazia = ld.detalhar_pagina(12, PaginaOcr("", (), "5"), ())
+    assert "OCR sem texto" in vazia and "nenhum decreto perto" in vazia
+
+
+def test_so_a_base_sem_pasta_de_cadernos(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # sem dados/cadernos aqui
+    base = tmp_path / "base"
+    base.mkdir()
+    criar_pdf_imagem(base / "Decreto 34529.pdf")
+    assert ld.main(["--base", str(base)]) == 0
+    saida = capsys.readouterr().out
+    assert "34000-34999" in saida and "ano" not in saida.split("Base da DBF")[0]

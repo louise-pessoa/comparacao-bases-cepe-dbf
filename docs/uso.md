@@ -416,5 +416,8 @@ python -m ferramentas.levantar_digitalizadas dados/historico [--base PASTA] [--o
   e páginas há, quantos cadernos têm página digitalizada ou com texto ilegível, e alguns exemplos com os números das
   páginas. Com `--base PASTA`, classifica também os PDFs da base da DBF (texto, imagem, texto ilegível, corrompido) e
   lista os que estão em imagem. Com `--ocr`, lê as páginas sem texto com o Tesseract do `.env` e conta os cabeçalhos
-  `DECRETO Nº` achados nelas (o resultado fica no cache do OCR, então a segunda rodada é rápida). `--json ARQUIVO`
+  `DECRETO Nº` achados nelas e, página a página, quantas palavras o OCR leu, o começo do texto, se cita anexo ou
+  decreto e a que decreto do caderno a página pode pertencer (o que a cobre, ou o que termina até 3 páginas antes: a
+  página pode ser o anexo dele). O resultado fica no cache do OCR, então a segunda rodada é rápida. Só com `--base`
+  (sem pastas), não lê cadernos. `--json ARQUIVO`
   grava tudo; `--exemplos N` muda quantos exemplos aparecem. Sai com código 1 se algum PDF não puder ser lido.
