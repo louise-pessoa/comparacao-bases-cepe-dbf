@@ -143,7 +143,7 @@ def test_leitor_usa_o_cache_na_segunda_leitura(falso, tmp_path):
     assert falso.chamadas == 1
     assert primeira == segunda
     assert primeira.texto == "DECRETO Nº 1.234\n" and primeira.versao == "5.3.4"
-    assert falso.opcoes["lang"] == "por" and falso.opcoes["config"] == "--oem 1 --psm 1"
+    assert falso.opcoes["lang"] == "por" and falso.opcoes["config"] == "--oem 1 --psm 3"
     # Outros ajustes são outra leitura.
     leitor.ler(pdf, 1, leitor.ajustes(psm=4))
     assert falso.chamadas == 2
@@ -250,3 +250,43 @@ def test_linha_de_comando_verificar_ocr(monkeypatch, capsys):
     with pytest.raises(SystemExit) as saida:
         cli.main(["--verificar-ocr", "--simular"])
     assert saida.value.code == 2
+
+
+# ----------------------------------------------------------------------------
+# OCR_TESSDATA: pasta de idiomas fora da instalação (sem administrador)
+# ----------------------------------------------------------------------------
+
+
+def test_tessdata_inexistente_vira_erro(tmp_path):
+    with pytest.raises(ocr.ErroOcr, match="OCR_TESSDATA"):
+        ocr.localizar_tesseract(ConfiguracaoOcr(tessdata=tmp_path / "nao"))
+
+
+def test_tessdata_vale_so_durante_a_chamada(monkeypatch, tmp_path):
+    monkeypatch.setenv("TESSDATA_PREFIX", "original")
+    with ocr._tessdata(ConfiguracaoOcr(tessdata=tmp_path)):
+        assert ocr.os.environ["TESSDATA_PREFIX"] == str(tmp_path)
+    assert ocr.os.environ["TESSDATA_PREFIX"] == "original"
+    monkeypatch.delenv("TESSDATA_PREFIX")
+    with ocr._tessdata(ConfiguracaoOcr(tessdata=tmp_path)):
+        pass
+    assert "TESSDATA_PREFIX" not in ocr.os.environ
+
+
+@pytest.mark.ocr
+@pytest.mark.skipif(not TEM_TESSERACT, reason="Tesseract não instalado")
+def test_tessdata_com_so_o_portugues(tmp_path):
+    origem = ocr._pasta_dos_idiomas(Path(shutil.which("tesseract")))
+    if origem is None or not (origem / "por.traineddata").is_file():
+        pytest.skip("por.traineddata não encontrado")
+    pasta = tmp_path / "meus idiomas"
+    pasta.mkdir()
+    shutil.copy(origem / "por.traineddata", pasta)
+    cfg = ConfiguracaoOcr(tessdata=pasta)
+    diagnostico = ocr.verificar(cfg)
+    assert diagnostico.ok, diagnostico.linhas
+    assert "Idiomas instalados: por" in diagnostico.linhas
+    leitor = ocr.criar_leitor(cfg, tmp_path / "cache")
+    assert set(leitor.modelos) == {"por"} and len(leitor.modelos["por"]) == 64
+    pdf = criar_pdf_imagem_de(AMOSTRAS / "Decreto 60929.pdf", tmp_path / "img.pdf")
+    assert "60.929" in leitor.ler(pdf, 1).texto

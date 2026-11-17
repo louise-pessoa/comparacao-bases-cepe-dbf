@@ -283,7 +283,7 @@ def test_sem_variavel_de_ambiente_nao_ha_sinalizacao(tmp_path):
 
 _VARIAVEIS_OCR = (
     "OCR_ATIVO", "TESSERACT_CMD", "OCR_IDIOMA", "OCR_DPI", "OCR_TIMEOUT", "OCR_CONFIANCA_MEDIA",
-    "OCR_CONFIANCA_CRITICA", "OCR_SIMILARIDADE_DUPLICATA", "OCR_GRAVAR_NA_BASE", "PASTA_CACHE_OCR",
+    "OCR_CONFIANCA_CRITICA", "OCR_SIMILARIDADE_DUPLICATA", "OCR_GRAVAR_NA_BASE", "PASTA_CACHE_OCR", "OCR_TESSDATA",
 )
 
 
@@ -337,3 +337,9 @@ def test_cache_do_ocr_nao_pode_ficar_dentro_da_base(tmp_path, sem_ocr_no_ambient
     env.write_text(f"PASTA_DBF={base}\nPASTA_CACHE_OCR={base / 'cache'}\n", encoding="utf-8")
     with pytest.raises(ErroConfiguracao, match="PASTA_CACHE_OCR"):
         carregar_configuracao(env)
+
+
+def test_ocr_tessdata_relativo_a_raiz(tmp_path, sem_ocr_no_ambiente):
+    env = tmp_path / ".env"
+    env.write_text("OCR_TESSDATA=dados/tessdata\n", encoding="utf-8")
+    assert carregar_configuracao(env).ocr.tessdata == RAIZ / "dados" / "tessdata"

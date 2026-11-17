@@ -64,7 +64,9 @@ como hoje. Isso mantém o CI e quem não tem o Tesseract funcionando, e permite 
 - `ler_pagina(pagina, ajustes) -> PaginaOcr(texto, palavras[(texto, confiança, caixa)], confianca_media, versao)`.
 - Renderização: `pagina.get_pixmap(dpi=OCR_DPI, colorspace=GRAY)`; imagem entregue ao pytesseract sem passar por
   arquivo do projeto.
-- Tesseract: idioma `por`, `--oem 1` (LSTM), `--psm` conforme o nível da cascata. Versão do Tesseract e do `por.traineddata`
+- Tesseract: idioma `por`, `--oem 1` (LSTM), `--psm` conforme o nível da cascata (padrão 3: o 1 exigiria também o
+  `osd.traineddata`). *Decisão de 17/11/2026:* `OCR_TESSDATA` permite usar uma pasta de idiomas fora da instalação,
+  porque gravar em Program Files exige administrador. Versão do Tesseract e do `por.traineddata`
   lidas uma vez (`get_tesseract_version`) e guardadas em cada resultado.
 - **Cache** em `dados/cache ocr/`: um JSON por (SHA-256 do PDF, página, nível, DPI, versão do Tesseract). O OCR de um
   caderno de 2010 leva segundos por página e a cascata relê o caderno; sem cache, o lote histórico ficaria lento. Gravação
@@ -88,7 +90,7 @@ página não existe). Passa por níveis próprios, cada um uma nova leitura OCR 
 
 | Nível | Leitura | Para quê |
 |---|---|---|
-| O1 | 300 dpi, `--psm 1` (Tesseract detecta colunas) | caso comum |
+| O1 | 300 dpi, `--psm 3` (segmentação automática; detecta colunas) | caso comum |
 | O2 | 400 dpi, pré-processamento: tons de cinza, binarização (Otsu), correção de inclinação | digitalização ruim ou torta |
 | O3 | página cortada em colunas (faixas verticais em branco), cada coluna com `--psm 4`, em ordem | colunas misturadas pelo O1 |
 
@@ -167,6 +169,7 @@ Nenhum serviço de OCR externo: os textos da base da DBF não saem da máquina.
 OCR_ATIVO=auto                  # auto: liga se achar o Tesseract; sim: exige; nao: desliga
 TESSERACT_CMD=                  # ex.: C:\Program Files\Tesseract-OCR\tesseract.exe (em branco: procura no PATH)
 OCR_IDIOMA=por
+OCR_TESSDATA=                   # pasta com o por.traineddata, se não der para gravar na do Tesseract (sem admin)
 OCR_DPI=300
 OCR_CONFIANCA_MEDIA=85          # provisórios; definidos na fase 2
 OCR_CONFIANCA_CRITICA=70

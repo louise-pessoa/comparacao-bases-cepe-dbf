@@ -368,8 +368,23 @@ com uma linha `OCR_*` inválida no `.env`, código 2.
 |---|---|
 | `Tesseract não encontrado no PATH` | informe `TESSERACT_CMD` no `.env` |
 | `TESSERACT_CMD=... não é o executável do Tesseract` | o caminho tem de terminar em `tesseract.exe` |
-| `falta o idioma por` | rode o instalador de novo marcando Portuguese, ou copie o `por.traineddata` (repositório oficial `tesseract-ocr/tessdata`) para a pasta `tessdata` do Tesseract |
+| `falta o idioma por` | rode o instalador de novo marcando Portuguese, ou use uma pasta de idiomas sua (abaixo) |
+| `Idiomas instalados: (nenhum)` | a pasta `tessdata` mostrada está vazia (instalação sem idiomas) ou uma `TESSDATA_PREFIX` aponta para outro lugar; use uma pasta de idiomas sua (abaixo) |
+| `OCR_TESSDATA=... não existe` | crie a pasta e copie o `por.traineddata` para ela |
 | `OCR_IDIOMA=... é inválido` | só o nome do idioma: `por`, ou `por+eng` |
+
+**Pasta de idiomas sem administrador.** Gravar em `C:\Program Files\Tesseract-OCR\tessdata` exige administrador. Em
+vez disso, baixe o `por.traineddata` do repositório oficial (`tesseract-ocr/tessdata`, no GitHub) para uma pasta do
+projeto e informe-a no `.env`:
+
+```powershell
+New-Item -ItemType Directory -Force dados\tessdata | Out-Null
+Invoke-WebRequest https://github.com/tesseract-ocr/tessdata/raw/main/por.traineddata -OutFile dados\tessdata\por.traineddata
+Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # uns 15 MB; poucos bytes = página de erro
+```
+
+No `.env`: `OCR_TESSDATA=dados/tessdata`. Só o `por` é necessário (o OCR não usa o `osd`). O `--verificar-ocr` mostra o
+SHA-256 do arquivo usado; ele também vai para a chave do cache do OCR, então trocar o arquivo refaz as leituras.
 
 O OCR roda só na máquina: nenhum texto vai para serviço externo, e não há rede envolvida depois da instalação.
 

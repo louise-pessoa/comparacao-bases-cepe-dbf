@@ -39,6 +39,9 @@ class ConfiguracaoOcr:
     calibração (fase 2 do plano)."""
     ativo: str = OCR_AUTO
     tesseract_cmd: Path | None = None  # None: procura "tesseract" no PATH
+    # Pasta com os .traineddata (OCR_TESSDATA). None: a do próprio Tesseract. Serve para quem
+    # não pode gravar na pasta do Tesseract (Program Files exige administrador).
+    tessdata: Path | None = None
     idioma: str = "por"
     dpi: int = 300
     timeout: int = 120  # segundos por página
@@ -223,9 +226,11 @@ def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
             f"OCR_IDIOMA={idioma!r} é inválido. Use o nome do idioma do Tesseract, por exemplo por ou por+eng."
         )
     bruto_cmd = valor("TESSERACT_CMD")
+    bruto_tessdata = valor("OCR_TESSDATA")
     return ConfiguracaoOcr(
         ativo=ativo,
         tesseract_cmd=_resolver_caminho("TESSERACT_CMD", bruto_cmd) if bruto_cmd else None,
+        tessdata=_resolver_caminho("OCR_TESSDATA", bruto_tessdata) if bruto_tessdata else None,
         idioma=idioma,
         dpi=int(_ler_numero("OCR_DPI", valor("OCR_DPI"), 300, DPI_MINIMO, DPI_MAXIMO)),
         timeout=int(_ler_numero("OCR_TIMEOUT", valor("OCR_TIMEOUT"), 120, 10, 3600)),

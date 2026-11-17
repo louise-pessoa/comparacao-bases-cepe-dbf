@@ -19,7 +19,12 @@ Decisões e limites:
   - cache em disco (`CacheOcr`), um JSON por (SHA-256 do PDF, página, ajustes, versão do
     Tesseract): o OCR leva segundos por página e a cascata relê o caderno. O cache é
     derivado: o arquivo ilegível é apagado e refeito. Gravação atômica (.tmp + os.replace);
-  - o PDF é sempre aberto só para leitura (a base da DBF também passa por aqui).
+  - o PDF é sempre aberto só para leitura (a base da DBF também passa por aqui);
+  - `OCR_TESSDATA`: pasta de idiomas fora da instalação do Tesseract (sem administrador).
+    Vai para o Tesseract pela variável TESSDATA_PREFIX, só durante a chamada; o SHA-256 dos
+    .traineddata usados entra na chave do cache (outro modelo, outra leitura);
+  - o modo de segmentação padrão é o 3 (automático, sem detecção de orientação): o 1
+    precisaria também do osd.traineddata, e as páginas do Diário não vêm giradas.
 """
 
 from __future__ import annotations
@@ -28,6 +33,8 @@ import hashlib
 import json
 import os
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -46,11 +53,11 @@ class ErroOcr(Exception):
 
 @dataclass(frozen=True)
 class AjustesOcr:
-    """Como ler a página. `psm` é o modo de segmentação do Tesseract (1: automático com
-    detecção de orientação; 4: uma coluna; 6: um bloco)."""
+    """Como ler a página. `psm` é o modo de segmentação do Tesseract (3: automático; 4: uma
+    coluna; 6: um bloco)."""
     idioma: str = "por"
     dpi: int = 300
-    psm: int = 1
+    psm: int = 3
     timeout: int = 120
 
     def __post_init__(self) -> None:
@@ -105,12 +112,35 @@ class PaginaOcr:
 # ----------------------------------------------------------------------------
 
 
+@contextmanager
+def _tessdata(cfg: ConfiguracaoOcr) -> Iterator[None]:
+    """Com OCR_TESSDATA, o Tesseract chamado dentro do bloco usa essa pasta de idiomas."""
+    if cfg.tessdata is None:
+        yield
+        return
+    anterior = os.environ.get("TESSDATA_PREFIX")
+    os.environ["TESSDATA_PREFIX"] = str(cfg.tessdata)
+    try:
+        yield
+    finally:
+        if anterior is None:
+            os.environ.pop("TESSDATA_PREFIX", None)
+        else:
+            os.environ["TESSDATA_PREFIX"] = anterior
+
+
+def _conferir_tessdata(cfg: ConfiguracaoOcr) -> None:
+    if cfg.tessdata is not None and not cfg.tessdata.is_dir():
+        raise ErroOcr(f"OCR_TESSDATA={cfg.tessdata} não existe. Crie a pasta e copie o por.traineddata para ela.")
+
+
 def localizar_tesseract(cfg: ConfiguracaoOcr) -> Path | None:
     """O executável do Tesseract, ou None se o OCR está desligado ou (com OCR_ATIVO=auto)
     não foi encontrado. Levanta `ErroOcr` com OCR_ATIVO=sim e Tesseract ausente, e sempre
     que TESSERACT_CMD aponta para algo que não é o Tesseract."""
     if cfg.ativo == OCR_NAO:
         return None
+    _conferir_tessdata(cfg)
     if cfg.tesseract_cmd is not None:
         caminho = cfg.tesseract_cmd
         if caminho.name.casefold() not in _NOMES_DO_EXECUTAVEL:
@@ -272,8 +302,14 @@ class LeitorOcr:
         self.cache = cache
         self.versao = versao_do_tesseract(executavel)
         self._hashes: dict[tuple[str, int, int], str] = {}
+        with _tessdata(cfg):
+            pasta = cfg.tessdata or _pasta_dos_idiomas(executavel)
+        self.modelos = {
+            idioma: sha256_do_arquivo(arquivo) if pasta and (arquivo := pasta / f"{idioma}.traineddata").is_file() else ""
+            for idioma in cfg.idioma.split("+")
+        }
 
-    def ajustes(self, psm: int = 1, dpi: int | None = None) -> AjustesOcr:
+    def ajustes(self, psm: int = 3, dpi: int | None = None) -> AjustesOcr:
         return AjustesOcr(idioma=self.cfg.idioma, dpi=dpi or self.cfg.dpi, psm=psm, timeout=self.cfg.timeout)
 
     def _hash(self, caminho: Path) -> str:
@@ -290,6 +326,7 @@ class LeitorOcr:
         chave = {
             "formato": VERSAO_DO_CACHE, "pdf": self._hash(caminho), "pagina": numero_pagina,
             "ajustes": asdict(ajustes) | {"timeout": None}, "tesseract": self.versao,
+            "modelos": self.modelos,
         }
         if self.cache is not None and (guardado := self.cache.obter(chave)) is not None:
             return guardado
@@ -297,7 +334,8 @@ class LeitorOcr:
             with pymupdf.open(caminho) as doc:
                 if not 1 <= numero_pagina <= doc.page_count:
                     raise ErroOcr(f"{caminho.name}: não há página {numero_pagina}")
-                lido = ler_pagina(doc[numero_pagina - 1], ajustes, self.executavel, self.versao)
+                with _tessdata(self.cfg):
+                    lido = ler_pagina(doc[numero_pagina - 1], ajustes, self.executavel, self.versao)
         except ErroOcr:
             raise
         except Exception as erro:
@@ -383,6 +421,13 @@ def verificar(cfg: ConfiguracaoOcr) -> Diagnostico:
             False,
         )
     linhas.append(f"Executável: {executavel}")
+    if cfg.tessdata is not None:
+        linhas.append(f"OCR_TESSDATA: {cfg.tessdata}")
+    with _tessdata(cfg):
+        return _verificar_com(cfg, executavel, linhas)
+
+
+def _verificar_com(cfg: ConfiguracaoOcr, executavel: Path, linhas: list[str]) -> Diagnostico:
     try:
         versao = versao_do_tesseract(executavel)
         idiomas = idiomas_do_tesseract(executavel)
@@ -393,14 +438,14 @@ def verificar(cfg: ConfiguracaoOcr) -> Diagnostico:
     pasta = _pasta_dos_idiomas(executavel)
     linhas.append(f"Pasta dos idiomas (tessdata) usada pelo Tesseract: {pasta or '(não identificada)'}")
     prefixo = os.environ.get("TESSDATA_PREFIX")
-    if prefixo:
+    if prefixo and cfg.tessdata is None:
         linhas.append(f"TESSDATA_PREFIX (variável de ambiente): {prefixo}")
     faltam = [i for i in cfg.idioma.split("+") if i not in idiomas]
     if faltam:
         if not idiomas:
             linhas.append(
-                "Nenhum idioma: o Tesseract não achou nenhum .traineddata nessa pasta. Confira se ela existe e "
-                "tem eng.traineddata; se TESSDATA_PREFIX aponta para outro lugar, corrija ou apague a variável."
+                "Nenhum idioma: o Tesseract não achou nenhum .traineddata nessa pasta. Copie o por.traineddata "
+                "para ela, ou, sem permissão de gravar nela, para uma pasta sua informada em OCR_TESSDATA no .env."
             )
         return Diagnostico(
             linhas + [
