@@ -390,16 +390,25 @@ def verificar(cfg: ConfiguracaoOcr) -> Diagnostico:
         return Diagnostico(linhas + [f"ERRO: {erro}"], False)
     linhas.append(f"Versão: {versao}")
     linhas.append(f"Idiomas instalados: {', '.join(idiomas) or '(nenhum)'}")
+    pasta = _pasta_dos_idiomas(executavel)
+    linhas.append(f"Pasta dos idiomas (tessdata) usada pelo Tesseract: {pasta or '(não identificada)'}")
+    prefixo = os.environ.get("TESSDATA_PREFIX")
+    if prefixo:
+        linhas.append(f"TESSDATA_PREFIX (variável de ambiente): {prefixo}")
     faltam = [i for i in cfg.idioma.split("+") if i not in idiomas]
     if faltam:
+        if not idiomas:
+            linhas.append(
+                "Nenhum idioma: o Tesseract não achou nenhum .traineddata nessa pasta. Confira se ela existe e "
+                "tem eng.traineddata; se TESSDATA_PREFIX aponta para outro lugar, corrija ou apague a variável."
+            )
         return Diagnostico(
             linhas + [
                 f"ERRO: falta o idioma {', '.join(faltam)} (OCR_IDIOMA={cfg.idioma}). Instale o "
-                f"{faltam[0]}.traineddata na pasta tessdata (ver docs/uso.md, 'OCR')."
+                f"{faltam[0]}.traineddata nessa pasta (ver docs/uso.md, 'OCR')."
             ],
             False,
         )
-    pasta = _pasta_dos_idiomas(executavel)
     for idioma in cfg.idioma.split("+"):
         arquivo = pasta / f"{idioma}.traineddata" if pasta else None
         if arquivo is not None and arquivo.is_file():
