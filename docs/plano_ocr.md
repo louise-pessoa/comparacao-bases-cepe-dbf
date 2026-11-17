@@ -279,7 +279,7 @@ para a `main` num PR só, depois de testada.
    fase 0.
 2. **Anos cobertos.** Depende do levantamento: se as páginas digitalizadas forem todas de antes de 2010, o OCR também
    depende da cascata antiga (fecho, colunas) e o piloto deve ser num desses anos.
-4. **Páginas ilegíveis no separador, já agora:** tratar a página com texto ilegível como a digitalizada (aviso no
-   `--separar` e caderno guardado na limpeza) antes mesmo do OCR, para não perder atos em silêncio.
 3. **Onde fica o reprovado no piloto:** o plano usa `dados/erros`. Uma pasta própria (`dados/conferir ocr`) deixaria a
    revisão mais fácil, ao custo de mais uma pasta na limpeza e na validação.
+4. **Páginas ilegíveis no separador, já agora:** tratar a página com texto ilegível como a digitalizada (aviso no
+   `--separar` e caderno guardado na limpeza) antes mesmo do OCR, para não perder atos em silêncio.
