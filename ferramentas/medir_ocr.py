@@ -17,7 +17,8 @@ Duas medições:
   B. Pares da base (`--parte base`). Para cada decreto da DBF dos cadernos (aprovado na
      leitura em cascata) cujo arquivo na base é imagem ou tem texto ilegível, lê a base por
      OCR e compara com o texto do caderno (`comparacao.comparar_textos`): é a situação real
-     da fase 5. Como controle, compara também cada decreto com o OCR da base de OUTRO número
+     da fase 5. Duas medidas (ver `MEDIDAS`): similaridade (o texto todo) e cobertura (quanto
+     do decreto do caderno está na base, ignorando o que sobra na base). Como controle, compara também cada decreto com o OCR da base de OUTRO número
      (os decretos têm muito texto padrão em comum). O limiar de duplicata
      (OCR_SIMILARIDADE_DUPLICATA) tem de ficar acima dos pares de números diferentes, com
      margem, e abaixo da maioria dos pares de mesmo número. Os pares de mesmo número abaixo
@@ -253,6 +254,14 @@ def tabela_paginas(resultado: dict[str, dict[int, Gabarito]]) -> str:
 # ----------------------------------------------------------------------------
 
 
+# As duas medidas da parte B. Similaridade: o texto inteiro dos dois lados (o que sobra na
+# base também pesa). Cobertura: a fração do texto do decreto do caderno que aparece, na ordem,
+# no OCR da base; o que sobra na base não pesa. Em 2010 o PDF da base é um recorte da página
+# do Diário, com o cabeçalho da página e pedaços dos atos vizinhos (Decretos 34732 e 34746):
+# a similaridade cai, a cobertura não.
+MEDIDAS = ("similaridade", "cobertura")
+
+
 @dataclass
 class Par:
     rotulo: str  # "20200115_PoderExecutivo.pdf p. 3 | Decreto 48563"
@@ -261,7 +270,17 @@ class Par:
     texto_base: str
     confianca_base: float
     similaridade: float = 0.0
-    trechos: tuple[str, ...] = ()
+    cobertura: float = 0.0
+    trechos: tuple[str, ...] = ()  # primeiras diferenças com texto do caderno que falta na base
+
+
+def medir_par(texto_ato: str, texto_base: str) -> tuple[float, float, tuple[str, ...]]:
+    """(similaridade, cobertura, trechos do caderno que faltam na base)."""
+    comparacao = comparar_textos(texto_ato, texto_base, limite=None)
+    elementos = len(palavras(texto_ato))
+    cobertura = 1 - comparacao.so_no_ato / elementos if elementos else 1.0
+    faltam = tuple(t for t in comparacao.trechos if "[caderno: (nada) |" not in t)[:3]
+    return comparacao.similaridade, cobertura, faltam
 
 
 def ler_base_por_ocr(pdf: Path, leitor) -> tuple[str, float]:
@@ -299,27 +318,30 @@ def pares_da_base(pastas: list[Path], base: Path, leitor, max_pares: int | None,
                 except Exception as erro:  # ErroOcr, PDF quebrado
                     falhas.append(f"{nome}: OCR falhou: {erro}")
                     continue
-                comparacao = comparar_textos(ato.texto, texto, limite=3)
+                similaridade, cobertura, trechos = medir_par(ato.texto, texto)
                 pares.append(Par(
                     f"{caderno.name} p. {ato.pagina_inicial} | {ato.especie.nome} {ato.numero}", nome,
-                    ato.texto, texto, confianca, comparacao.similaridade, comparacao.trechos,
+                    ato.texto, texto, confianca, similaridade, cobertura, trechos,
                 ))
                 if max_pares is not None and len(pares) >= max_pares:
                     return pares
     return pares
 
 
-def controles(pares: list[Par]) -> list[float]:
-    """Similaridade de cada decreto com o OCR da base do par SEGUINTE (outro número)."""
+def controles(pares: list[Par]) -> dict[str, list[float]]:
+    """Cada decreto contra o OCR da base do par SEGUINTE (outro número), nas duas medidas."""
+    resultado: dict[str, list[float]] = {medida: [] for medida in MEDIDAS}
     if len(pares) < 2:
-        return []
-    return [
-        comparar_textos(par.texto_ato, pares[(i + 1) % len(pares)].texto_base, limite=0).similaridade
-        for i, par in enumerate(pares)
-    ]
+        return resultado
+    for i, par in enumerate(pares):
+        similaridade, cobertura, _ = medir_par(par.texto_ato, pares[(i + 1) % len(pares)].texto_base)
+        resultado["similaridade"].append(similaridade)
+        resultado["cobertura"].append(cobertura)
+    return resultado
 
 
-def sugerir_limiar(pares: list[Par], diferentes: list[float]) -> float | None:
+def sugerir_limiar(diferentes: list[float]) -> float | None:
+    """O par de números diferentes mais parecido + MARGEM_DO_LIMIAR (no máximo 0,99)."""
     if not diferentes:
         return None
     return round(min(max(diferentes) + MARGEM_DO_LIMIAR, 0.99), 2)
@@ -334,30 +356,32 @@ def _distribuicao(valores: list[float]) -> str:
     return "; ".join(partes)
 
 
-def tabela_base(pares: list[Par], diferentes: list[float]) -> str:
+def tabela_base(pares: list[Par], diferentes: dict[str, list[float]]) -> str:
     linhas = ["B. Pares da base (texto do caderno x OCR do PDF da base em imagem ou ilegível)"]
     if not pares:
         return "\n".join(linhas + ["  nenhum decreto da DBF dos cadernos tem arquivo em imagem na base"])
-    mesmos = [p.similaridade for p in pares]
-    linhas.append(f"  mesmo número ({len(pares)} pares): {_distribuicao(mesmos)}")
-    if diferentes:
-        linhas.append(f"  números diferentes ({len(diferentes)} pares, controle): {_distribuicao(diferentes)}; "
-                      f"o mais parecido: {max(diferentes):.1%}")
-    limiar = sugerir_limiar(pares, diferentes)
-    if limiar is None:
-        linhas.append("  sugestão: (poucos pares para o controle)")
-        return "\n".join(linhas)
-    abaixo = sorted((p for p in pares if p.similaridade < limiar), key=lambda p: p.similaridade)
-    linhas.append(f"  sugestão: OCR_SIMILARIDADE_DUPLICATA = {limiar:.2f} (o par de números diferentes mais "
-                  f"parecido + {MARGEM_DO_LIMIAR:.0%}); {len(pares) - len(abaixo)} de {len(pares)} pares de mesmo "
-                  "número ficam como duplicata")
-    if abaixo:
-        linhas.append("  mesmo número abaixo do limiar (conferir à mão: erro do OCR ou texto diferente?):")
-        for par in abaixo:
-            linhas.append(f"    {par.rotulo} | base {par.arquivo_base} | {par.similaridade:.1%}, "
-                          f"confiança do OCR {par.confianca_base:.0f}")
-            for trecho in par.trechos[:2]:
-                linhas.append(f"      {trecho}")
+    for medida in MEDIDAS:
+        mesmos = [getattr(p, medida) for p in pares]
+        controle = diferentes.get(medida, [])
+        linhas.append(f"\n  {medida.upper()}")
+        linhas.append(f"  mesmo número ({len(pares)} pares): {_distribuicao(mesmos)}")
+        limiar = sugerir_limiar(controle)
+        if limiar is None:
+            linhas.append("  sugestão: (poucos pares para o controle)")
+            continue
+        linhas.append(f"  números diferentes ({len(controle)} pares, controle): {_distribuicao(controle)}; "
+                      f"o mais parecido: {max(controle):.1%}")
+        abaixo = sorted((p for p in pares if getattr(p, medida) < limiar), key=lambda p: getattr(p, medida))
+        linhas.append(f"  limiar sugerido: {limiar:.2f} (o par de números diferentes mais parecido + "
+                      f"{MARGEM_DO_LIMIAR:.0%}); {len(pares) - len(abaixo)} de {len(pares)} pares de mesmo número "
+                      "ficam como duplicata")
+        if abaixo:
+            linhas.append("  mesmo número abaixo do limiar (conferir à mão: erro do OCR ou texto diferente?):")
+            for par in abaixo:
+                linhas.append(f"    {par.rotulo} | base {par.arquivo_base} | similaridade {par.similaridade:.1%}, "
+                              f"cobertura {par.cobertura:.1%}, confiança do OCR {par.confianca_base:.0f}")
+                for trecho in par.trechos[:2]:
+                    linhas.append(f"      {trecho}")
     return "\n".join(linhas)
 
 
@@ -426,8 +450,10 @@ def main(argv: list[str] | None = None) -> int:
         print("\n" + tabela_base(pares, diferentes))
         dados["base"] = {
             "pares": [{"rotulo": p.rotulo, "arquivo": p.arquivo_base, "similaridade": p.similaridade,
-                       "confianca": p.confianca_base, "trechos": list(p.trechos)} for p in pares],
-            "diferentes": diferentes, "limiar_sugerido": sugerir_limiar(pares, diferentes),
+                       "cobertura": p.cobertura, "confianca": p.confianca_base, "trechos": list(p.trechos)}
+                      for p in pares],
+            "diferentes": diferentes,
+            "limiar_sugerido": {medida: sugerir_limiar(diferentes[medida]) for medida in MEDIDAS},
         }
     for falha in falhas:
         print(f"AVISO: {falha}", file=sys.stderr)

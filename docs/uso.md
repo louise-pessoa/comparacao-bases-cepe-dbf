@@ -438,9 +438,11 @@ python -m ferramentas.medir_ocr dados/historico/2010 dados/historico/2020 --json
   palavras e de números por ano e o erro por faixa de confiança, com a sugestão de `OCR_CONFIANCA_CRITICA` e
   `OCR_CONFIANCA_MEDIA`. `--dpi 300,400` compara resoluções. **Parte B** (`--parte base`): para cada decreto da DBF
   dos cadernos cujo arquivo na base é imagem ou tem texto ilegível, lê a base por OCR e compara com o texto do
-  caderno; como controle, compara cada decreto com a base de outro número. Sugere `OCR_SIMILARIDADE_DUPLICATA` (o par
-  de números diferentes mais parecido + 5%) e lista os pares de mesmo número abaixo dele, com as primeiras
-  diferenças, para conferir à mão. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
+  caderno em duas medidas: similaridade (o texto todo) e cobertura (quanto do decreto do caderno está na base,
+  ignorando o que sobra nela, como o cabeçalho da página e pedaços dos atos vizinhos nos recortes de 2010). Como
+  controle, compara cada decreto com a base de outro número. Para cada medida, sugere um limiar (o par de números
+  diferentes mais parecido + 5%) e lista os pares de mesmo número abaixo dele, com o texto do caderno que falta na
+  base, para conferir à mão. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
   rodar de novo é rápido. Leva alguns segundos por página lida. Não apague os cadernos de 2010 e 2020 antes de rodar:
   são o material da calibração.
 

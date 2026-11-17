@@ -113,16 +113,30 @@ def test_pares_da_base_so_com_arquivo_em_imagem_e_controle(tmp_path):
     assert 0.9 < pares[1].similaridade < 1.0 and any("doze" in t for t in pares[1].trechos)
     assert "Decreto 60931.pdf" not in leitor.lidos
     diferentes = mo.controles(pares)
-    assert len(diferentes) == 2 and max(diferentes) < pares[1].similaridade
-    limiar = mo.sugerir_limiar(pares, diferentes)
-    assert limiar == round(min(max(diferentes) + mo.MARGEM_DO_LIMIAR, 0.99), 2)
+    assert len(diferentes["similaridade"]) == 2 and max(diferentes["similaridade"]) < pares[1].similaridade
+    assert max(diferentes["cobertura"]) < pares[1].cobertura
+    limiar = mo.sugerir_limiar(diferentes["cobertura"])
+    assert limiar == round(min(max(diferentes["cobertura"]) + mo.MARGEM_DO_LIMIAR, 0.99), 2)
     tabela = mo.tabela_base(pares, diferentes)
-    assert "mesmo número (2 pares)" in tabela and "OCR_SIMILARIDADE_DUPLICATA" in tabela
+    assert "mesmo número (2 pares)" in tabela and "COBERTURA" in tabela and "limiar sugerido" in tabela
     assert mo.pares_da_base([cadernos], base, leitor, 1, []) == pares[:1]
 
 
 def test_tabela_da_base_sem_pares():
-    assert "nenhum decreto da DBF" in mo.tabela_base([], [])
+    assert "nenhum decreto da DBF" in mo.tabela_base([], {})
+
+
+def test_cobertura_ignora_o_que_sobra_na_base():
+    """Decretos 34732 e 34746 (2010): a base é um recorte da página do Diário, com o cabeçalho
+    da página e o fim do decreto vizinho."""
+    ato = decreto("34.746", "ALFA LTDA")
+    base = ("Recife, 19 de março de 2010 Diário Oficial do Estado de Pernambuco - Poder Executivo\n"
+            "Art. 3º Este Decreto entra em vigor na data de sua publicação.\n" + ato)
+    similaridade, cobertura, trechos = mo.medir_par(ato, base)
+    assert cobertura == pytest.approx(1.0) and similaridade < 0.9
+    assert trechos == ()  # nada do caderno falta na base
+    _, cobertura_com_erro, faltam = mo.medir_par(ato, base.replace("doze", "dez"))
+    assert cobertura_com_erro < 1.0 and any("doze" in t for t in faltam)
 
 
 def test_main_pasta_inexistente_e_dpi_invalido(tmp_path):

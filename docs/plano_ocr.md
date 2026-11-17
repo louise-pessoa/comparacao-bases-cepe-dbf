@@ -41,6 +41,20 @@ Conclusões:
 - *Decisão de 17/11/2026 (questão 4):* a página com texto ilegível passou a contar como página sem texto no separador
   (aviso no `--separar` e no catálogo; a limpeza guarda o caderno).
 
+## Calibração (fase 2), primeira rodada, 17/11/2026
+
+Rodada curta (`medir_ocr`, 10 páginas por ano e 20 pares da base, cadernos de 2010 e 2020, 300 dpi):
+
+- **Páginas de texto:** acerto de palavras 96,7% (2010) e 98,4% (2020); de números, 93,8% e 97,7%. Palavras com
+  confiança 95 ou mais erram 0,5%; de 90 a 95, 2,2%; de 85 a 90, 9,5%; abaixo de 85, de 21% a 60%. Sugestões:
+  `OCR_CONFIANCA_CRITICA = 90` e `OCR_CONFIANCA_MEDIA = 95`, as mesmas da amostra de 2026.
+- **Base:** 18 dos 20 pares de mesmo número com similaridade de 95% ou mais; o controle de números diferentes chegou
+  a 89,8%. Os 2 pares abaixo (Decretos 34732 e 34746, de 2010) não eram outro texto: **o PDF da base de 2010 é um
+  recorte da página do Diário**, com o cabeçalho da página ("Diário Oficial do Estado de Pernambuco - Poder
+  Executivo, Recife, 19 de março de 2010") e o fim do decreto vizinho. A similaridade pune esse texto a mais. Por
+  isso a ferramenta passou a medir também a **cobertura** (quanto do decreto do caderno está na base, ignorando o que
+  sobra nela). Falta a rodada completa para escolher a medida e o limiar da fase 5.
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:
