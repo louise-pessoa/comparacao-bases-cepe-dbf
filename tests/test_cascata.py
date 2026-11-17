@@ -170,6 +170,7 @@ def test_especie_sem_fecho_anterior_fica_como_esta():
 
 TEXTO_BASE = " ".join(f"palavra{i}" for i in range(200))
 INTRUSO = " ".join(f"intruso{i}" for i in range(40))
+I1, I2 = " ".join(INTRUSO.split()[:20]), " ".join(INTRUSO.split()[20:])
 
 
 @pytest.mark.parametrize(
@@ -200,6 +201,21 @@ INTRUSO = " ".join(f"intruso{i}" for i in range(40))
          TEXTO_BASE.replace("palavra100", "palavra100 a b c d e"), INTRUSO),
         (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO),
          TEXTO_BASE.replace("palavra100", "palavra100 a b c d e f"), None),
+        # o trecho partido por palavras que coincidem por acaso com o decreto (Decreto 35.629/2010: o "5"
+        # de "5.811.272,00"): até 2 juntam os pedaços num bloco só; com 3, ficam dois pedaços de 20
+        *[
+            (TEXTO_BASE.replace("palavra100", f"palavra100 {I1} {comum} {I2}"),
+             TEXTO_BASE.replace("palavra100", f"palavra100 {comum}"), esperado)
+            for comum, esperado in [
+                ("5", f"{I1} 5 {I2}"), ("5 6", f"{I1} 5 6 {I2}"), ("5 6 7", None),
+            ]
+        ],
+        # as palavras no lugar do segundo pedaço também contam: 6 é demais
+        (TEXTO_BASE.replace("palavra100", f"palavra100 {I1} 5 {I2}"),
+         TEXTO_BASE.replace("palavra100", "palavra100 5 a b c d e f"), None),
+        # 6 palavras só na leitura por coluna, em outro ponto: diferença demais
+        (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO),
+         TEXTO_BASE.replace("palavra150", "palavra150 a b c d e f"), None),
         # caixa e pontuação não contam como diferença
         (TEXTO_BASE.replace("palavra100", "palavra100 " + INTRUSO).upper() + " .", TEXTO_BASE, INTRUSO.upper()),
     ],
