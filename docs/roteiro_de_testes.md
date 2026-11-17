@@ -143,4 +143,16 @@ python -m ferramentas.levantar_digitalizadas dados\historico --ocr --exemplos 10
       dois exemplos e confira se o número bate com a página.
 - [ ] Nada mudou no G: nem em `dados\historico`; só apareceu `dados\cache ocr`.
 
+Fase 2 (calibração; não baixa nada):
+
+```powershell
+python -m ferramentas.medir_ocr dados\historico\2010 dados\historico\2020 --json calibracao.json
+```
+
+- [ ] A parte A mostra, por ano, o acerto de palavras e de números e as duas sugestões de confiança.
+- [ ] A parte B mostra quantos pares de mesmo número e de números diferentes foram comparados e a sugestão de
+      `OCR_SIMILARIDADE_DUPLICATA`; abra dois ou três pares listados abaixo do limiar (o PDF da base e a página do
+      caderno) e anote se a diferença é do OCR ou do texto.
+- [ ] Guarde o `calibracao.json`.
+
 **Se algo falhar:** guarde o comando, a saída completa e o número do item.

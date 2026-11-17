@@ -6,7 +6,8 @@ Situação: **em implementação** na branch `claude/plano-ocr-tesseract`. Escri
 |---|---|
 | 0 — ambiente e levantamento | pronta e rodada na máquina da DBF (17/11/2026); resultado abaixo |
 | 1 — `leitura/ocr.py`, configuração e cache | pronta |
-| 2 a 6 | a fazer |
+| 2 — calibração | ferramenta pronta (`ferramentas/medir_ocr.py`); falta rodar nos cadernos de 2010 e 2020 |
+| 3 a 6 | a fazer (ordem: 5, depois 3, 4 e 6) |
 
 *Decisão de 16/11/2026:* as fases são feitas e testadas nesta branch, um commit por fase; o merge na `main` só acontece
 depois de todas testadas (não há merge só do plano).

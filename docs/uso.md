@@ -407,6 +407,7 @@ python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decr
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # vários meses do lote histórico
 python -m ferramentas.levantar_digitalizadas dados/historico [--base PASTA] [--ocr]  # onde o OCR vai atuar
+python -m ferramentas.medir_ocr dados/historico/2010 dados/historico/2020 --json calibracao.json  # limiares do OCR
 ```
 
 - `localizar_exemplos` só lê `dados/cadernos`. Copia cada página achada, uma por PDF, para `dados/exemplos` (sem
@@ -431,3 +432,15 @@ python -m ferramentas.levantar_digitalizadas dados/historico [--base PASTA] [--o
   página pode ser o anexo dele). O resultado fica no cache do OCR, então a segunda rodada é rápida. Só com `--base`
   (sem pastas), não lê cadernos. `--json ARQUIVO`
   grava tudo; `--exemplos N` muda quantos exemplos aparecem. Sai com código 1 se algum PDF não puder ser lido.
+- `medir_ocr` só lê e não baixa nada (fase 2 do [plano do OCR](plano_ocr.md)). Usa o Tesseract e a base do `.env` (ou
+  `--base`). **Parte A** (`--parte paginas`): sorteia, sempre as mesmas, `--paginas-por-ano N` páginas com texto dos
+  cadernos (padrão 20), lê cada uma por OCR e compara com o texto do PDF, sem depender da ordem das colunas: acerto de
+  palavras e de números por ano e o erro por faixa de confiança, com a sugestão de `OCR_CONFIANCA_CRITICA` e
+  `OCR_CONFIANCA_MEDIA`. `--dpi 300,400` compara resoluções. **Parte B** (`--parte base`): para cada decreto da DBF
+  dos cadernos cujo arquivo na base é imagem ou tem texto ilegível, lê a base por OCR e compara com o texto do
+  caderno; como controle, compara cada decreto com a base de outro número. Sugere `OCR_SIMILARIDADE_DUPLICATA` (o par
+  de números diferentes mais parecido + 5%) e lista os pares de mesmo número abaixo dele, com as primeiras
+  diferenças, para conferir à mão. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
+  rodar de novo é rápido. Leva alguns segundos por página lida. Não apague os cadernos de 2010 e 2020 antes de rodar:
+  são o material da calibração.
+
