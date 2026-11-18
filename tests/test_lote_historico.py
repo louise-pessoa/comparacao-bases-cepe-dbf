@@ -305,3 +305,22 @@ def test_main_recusa_comecar_com_pasta_no_formato_antigo(cfg, monkeypatch, capsy
     assert (historico / "2020" / "2020-03").is_dir()
     with pytest.raises(SystemExit):
         lh.main(["--reorganizar", "--de", "2020-03"])
+
+
+def test_conflito_de_manifesto_mostra_os_campos_diferentes(tmp_path):
+    from dbf_cepe import captura
+
+    historico = tmp_path / "historico"
+    nova, antiga = historico / "2010" / "2010-09", historico / "2010-09"
+    nova.mkdir(parents=True)
+    antiga.mkdir()
+    comum = {"url": "u", "tamanho": 10, "sha256": "abc"}
+    captura.gravar_manifesto(nova, {"20100901_PoderExecutivo.pdf": {**comum, "baixado_em": "2026-11-10",
+                                                                    "processado_em": "2026-11-12", "processamento": {}}})
+    captura.gravar_manifesto(antiga, {"20100901_PoderExecutivo.pdf": {**comum, "baixado_em": "2026-11-17"}})
+    (juncao,) = lh.reorganizar(historico)
+    texto = "\n".join(juncao.conflitos)
+    assert "baixado_em (1)" in texto and "processado_em (1)" in texto
+    assert "mesmo sha256 (mesmo arquivo) nos dois: 1 de 1" in texto
+    assert "baixado_em: pasta solta 2026-11-17 | pasta do ano 2026-11-10" in texto
+    assert "processamento: só em pasta do ano" in texto

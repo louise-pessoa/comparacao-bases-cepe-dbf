@@ -182,6 +182,33 @@ def _sha256(arquivo: Path) -> str:
     return resumo.hexdigest()
 
 
+def diferencas_do_manifesto(antigo: dict, atual: dict, diferentes: list[str]) -> list[str]:
+    """Que campos diferem entre as entradas do mesmo caderno nos dois manifestos, quantas
+    vezes, e o exemplo do primeiro. Serve para decidir a junção à mão: só `baixado_em`
+    diferente, com o mesmo `sha256`, é o mesmo caderno baixado duas vezes."""
+    campos: Counter[str] = Counter()
+    mesmo_arquivo = 0
+    for chave in diferentes:
+        a, b = antigo[chave], atual[chave]
+        campos.update(c for c in a.keys() | b.keys() if a.get(c) != b.get(c))
+        mesmo_arquivo += bool(a.get("sha256")) and a.get("sha256") == b.get("sha256")
+    linhas = [
+        "  campos diferentes: " + ", ".join(f"{c} ({n})" for c, n in campos.most_common()),
+        f"  mesmo sha256 (mesmo arquivo) nos dois: {mesmo_arquivo} de {len(diferentes)}",
+    ]
+    exemplo = diferentes[0]
+    for campo in sorted(c for c in campos if c != "processamento"):
+        a, b = antigo[exemplo].get(campo, "(ausente)"), atual[exemplo].get(campo, "(ausente)")
+        if a != b:
+            linhas.append(f"  {exemplo} | {campo}: pasta solta {a} | pasta do ano {b}")
+    if "processamento" in campos:
+        tem = [nome for nome, m in (("pasta solta", antigo[exemplo]), ("pasta do ano", atual[exemplo]))
+               if "processamento" in m]
+        linhas.append(f"  {exemplo} | processamento: só em {', '.join(tem) or 'nenhuma'}"
+                      if len(tem) < 2 else f"  {exemplo} | processamento: diferente nas duas")
+    return linhas
+
+
 def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
     """Como juntar `antiga` em `nova` sem sobrescrever nada (só lê)."""
     juncao = Juncao(antiga, nova)
@@ -204,6 +231,7 @@ def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
                     f"{captura.NOME_MANIFESTO}: {len(diferentes)} caderno(s) com dados diferentes nas duas pastas "
                     f"(ex.: {diferentes[0]})"
                 )
+                juncao.conflitos += diferencas_do_manifesto(antigo, atual, diferentes)
             else:
                 juncao.manifesto = {**atual, **antigo}
         elif item.name == limpeza_dos_cadernos.NOME_SIMULACAO:
