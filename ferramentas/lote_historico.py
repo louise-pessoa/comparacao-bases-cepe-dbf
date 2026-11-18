@@ -158,23 +158,109 @@ def pastas_no_formato_antigo(historico: Path | None = None) -> list[Path]:
     return sorted(p for p in historico.iterdir() if p.is_dir() and _MES_NO_FORMATO_ANTIGO.match(p.name))
 
 
-def reorganizar(historico: Path | None = None, mover: bool = False) -> tuple[list[tuple[Path, Path]], list[str]]:
-    """Move cada dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM. Sem `mover`, só
-    devolve o que faria. Nunca junta pastas: se o destino já existe, a pasta fica e o
-    motivo vai para a segunda lista."""
-    historico = historico or PASTA_HISTORICO
-    movidas: list[tuple[Path, Path]] = []
-    problemas: list[str] = []
-    for antiga in pastas_no_formato_antigo(historico):
-        nova = pasta_do_mes(antiga.name, historico)
-        if nova.exists():
-            problemas.append(f"{antiga} não foi movida: {nova} já existe (junte as duas à mão)")
-            continue
-        if mover:
-            nova.parent.mkdir(parents=True, exist_ok=True)
-            antiga.rename(nova)
-        movidas.append((antiga, nova))
-    return movidas, problemas
+@dataclass
+class Juncao:
+    """O que fazer para levar uma pasta de mês solta (dados/historico/AAAA-MM) para dentro da
+    pasta do ano. `conflitos` não vazio: nada é feito com esta pasta."""
+    antiga: Path
+    nova: Path
+    mover_pasta: bool = False  # o destino não existe: a pasta inteira é movida
+    mover: list[str] = field(default_factory=list)  # arquivos levados para o destino
+    repetidos: list[str] = field(default_factory=list)  # idênticos no destino: a cópia solta é apagada
+    descartar: list[str] = field(default_factory=list)  # a simulação da limpeza (é refeita)
+    manifesto: dict | None = None  # manifesto combinado, se as duas pastas tinham manifesto
+    conflitos: list[str] = field(default_factory=list)
+
+
+def _sha256(arquivo: Path) -> str:
+    import hashlib
+
+    resumo = hashlib.sha256()
+    with open(arquivo, "rb") as entrada:
+        for bloco in iter(lambda: entrada.read(1 << 20), b""):
+            resumo.update(bloco)
+    return resumo.hexdigest()
+
+
+def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
+    """Como juntar `antiga` em `nova` sem sobrescrever nada (só lê)."""
+    juncao = Juncao(antiga, nova)
+    if not nova.exists():
+        juncao.mover_pasta = True
+        return juncao
+    for item in sorted(antiga.iterdir()):
+        destino = nova / item.name
+        if item.is_dir():
+            juncao.conflitos.append(f"{item.name}: subpasta (junte à mão)")
+        elif item.name == captura.NOME_MANIFESTO:
+            try:
+                antigo, atual = captura.ler_manifesto(antiga), captura.ler_manifesto(nova)
+            except captura.ErroCaptura as erro:
+                juncao.conflitos.append(str(erro))
+                continue
+            diferentes = sorted(k for k in antigo.keys() & atual.keys() if antigo[k] != atual[k])
+            if diferentes:
+                juncao.conflitos.append(
+                    f"{captura.NOME_MANIFESTO}: {len(diferentes)} caderno(s) com dados diferentes nas duas pastas "
+                    f"(ex.: {diferentes[0]})"
+                )
+            else:
+                juncao.manifesto = {**atual, **antigo}
+        elif item.name == limpeza_dos_cadernos.NOME_SIMULACAO:
+            juncao.descartar.append(item.name)
+        elif not destino.exists():
+            juncao.mover.append(item.name)
+        elif _sha256(item) == _sha256(destino):
+            juncao.repetidos.append(item.name)
+        else:
+            juncao.conflitos.append(f"{item.name}: existe nas duas pastas com conteúdo diferente")
+    return juncao
+
+
+def executar_juncao(juncao: Juncao) -> None:
+    """Faz o planejado (só se não houver conflito). O manifesto é gravado antes de mover os
+    arquivos, e a pasta solta só é removida se ficar vazia."""
+    if juncao.conflitos:
+        return
+    if juncao.mover_pasta:
+        juncao.nova.parent.mkdir(parents=True, exist_ok=True)
+        juncao.antiga.rename(juncao.nova)
+        return
+    if juncao.manifesto is not None:
+        captura.gravar_manifesto(juncao.nova, juncao.manifesto)
+        (juncao.antiga / captura.NOME_MANIFESTO).unlink()
+    for nome in juncao.mover:
+        (juncao.antiga / nome).rename(juncao.nova / nome)
+    for nome in juncao.repetidos + juncao.descartar:
+        (juncao.antiga / nome).unlink()
+    juncao.antiga.rmdir()
+
+
+def reorganizar(historico: Path | None = None, mover: bool = False) -> list[Juncao]:
+    """Leva cada dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM: move a pasta, ou,
+    se o destino já existe, junta as duas (ver `planejar_juncao`). Sem `mover`, só planeja.
+    A pasta com conflito fica como está."""
+    juncoes = [planejar_juncao(antiga, pasta_do_mes(antiga.name, historico)) for antiga in pastas_no_formato_antigo(historico)]
+    if mover:
+        for juncao in juncoes:
+            executar_juncao(juncao)
+    return juncoes
+
+
+def descrever(juncao: Juncao, feito: bool) -> list[str]:
+    verbo = "" if feito else " (simulação)"
+    if juncao.conflitos:
+        return [f"{juncao.antiga}: NÃO mexida, junte à mão:"] + [f"    {c}" for c in juncao.conflitos]
+    if juncao.mover_pasta:
+        return [f"{juncao.antiga} -> {juncao.nova}{verbo}"]
+    partes = [f"{len(juncao.mover)} arquivo(s) movido(s)"]
+    if juncao.repetidos:
+        partes.append(f"{len(juncao.repetidos)} idêntico(s) já no destino (cópia solta apagada)")
+    if juncao.manifesto is not None:
+        partes.append(f"manifestos combinados ({len(juncao.manifesto)} cadernos)")
+    if juncao.descartar:
+        partes.append("simulação da limpeza descartada (rode o --limpar-cadernos --simular de novo)")
+    return [f"{juncao.antiga} juntada a {juncao.nova}{verbo}: {'; '.join(partes)}"]
 
 
 def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
@@ -254,17 +340,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.reorganizar:
         if args.de or args.ate or args.manter_cadernos:
             parser.error("--reorganizar só se combina com --executar")
-        movidas, problemas = reorganizar(mover=args.executar)
-        verbo = "movida" if args.executar else "seria movida"
-        for antiga, nova in movidas:
-            print(f"{antiga} -> {nova} ({verbo})")
-        for problema in problemas:
-            print(f"AVISO: {problema}", file=sys.stderr)
-        if not movidas and not problemas:
+        try:
+            juncoes = reorganizar(mover=args.executar)
+        except OSError as erro:
+            print(f"Erro: {erro}", file=sys.stderr)
+            return 2
+        for juncao in juncoes:
+            for linha in descrever(juncao, args.executar):
+                print(linha, file=sys.stderr if juncao.conflitos else sys.stdout)
+        if not juncoes:
             print(f"Nada a reorganizar em {PASTA_HISTORICO}.")
-        elif movidas and not args.executar:
+        elif not args.executar and any(not j.conflitos for j in juncoes):
             print("Simulação: rode de novo com --executar para mover.")
-        return 1 if problemas else 0
+        return 1 if any(j.conflitos for j in juncoes) else 0
     if args.de is None or args.ate is None:
         parser.error("informe --de e --ate (ou use --reorganizar)")
     try:

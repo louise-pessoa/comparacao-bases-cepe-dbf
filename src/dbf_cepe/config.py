@@ -141,12 +141,29 @@ def _se_sobrepoem(a: Path, b: Path) -> bool:
     return partes_a[:menor] == partes_b[:menor]
 
 
+_MES_DO_HISTORICO = re.compile(r"^\d{4}-\d{2}$")
+
+
+def _recusar_mes_fora_do_ano(pasta_cadernos: Path) -> None:
+    """PASTA_CADERNOS=dados/historico/AAAA-MM é o formato antigo do lote histórico: o mês fica
+    fora da pasta do ano e, se o mês já existe em dados/historico/AAAA/AAAA-MM, é baixado de novo
+    numa segunda pasta (decisão de 17/11/2026; caso de 2010-09 e 2010-10)."""
+    if pasta_cadernos.parent.name.casefold() == "historico" and _MES_DO_HISTORICO.match(pasta_cadernos.name):
+        certa = pasta_cadernos.parent / pasta_cadernos.name[:4] / pasta_cadernos.name
+        raise ErroConfiguracao(
+            f"PASTA_CADERNOS={pasta_cadernos} é uma pasta de mês fora da pasta do ano. Use {certa} "
+            "(no PowerShell: $pasta = \"dados\\historico\\$($mes.Substring(0,4))\\$mes\"). "
+            "Para juntar uma pasta assim que já exista: python -m ferramentas.lote_historico --reorganizar"
+        )
+
+
 def validar_configuracao(cfg: Configuracao) -> None:
     """Recusa pastas iguais ou aninhadas (a da DBF e as de trabalho).
 
     Principal risco: com PASTA_TEMP igual à pasta da DBF, todo decreto da base
     seria visto como "já existe na DBF" e apagado.
     """
+    _recusar_mes_fora_do_ano(cfg.pasta_cadernos)
     pastas = _pastas_nomeadas(cfg)
     conflitos = [
         f"{nome_a} ({pasta_a}) e {nome_b} ({pasta_b})"

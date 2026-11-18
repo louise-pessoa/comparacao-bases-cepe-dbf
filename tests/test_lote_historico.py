@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date
 
+from pathlib import Path
+
 import pytest
 
 import lote_historico as lh
@@ -229,21 +231,65 @@ def test_pasta_do_mes_fica_dentro_do_ano():
     assert lh.pasta_do_mes("2020-03") == lh.PASTA_HISTORICO / "2020" / "2020-03"
 
 
-def test_reorganizar_simula_move_e_nao_junta(tmp_path):
+def _manifesto(pasta: Path, **arquivos) -> None:
+    from dbf_cepe import captura
+
+    pasta.mkdir(parents=True, exist_ok=True)
+    captura.gravar_manifesto(pasta, {nome: {"sha256": valor} for nome, valor in arquivos.items()})
+
+
+def test_reorganizar_move_a_pasta_inteira_quando_o_destino_nao_existe(tmp_path):
     historico = tmp_path / "historico"
-    (historico / "2010-03").mkdir(parents=True)
-    (historico / "2010-03" / "manifesto.json").write_text("{}", encoding="utf-8")
-    (historico / "2020-04").mkdir()
-    (historico / "2020" / "2020-04").mkdir(parents=True)  # destino já existe: não junta
+    _manifesto(historico / "2010-03", **{"20100301_PoderExecutivo.pdf": "a"})
     (historico / "2021").mkdir()  # pasta de ano: não é mês antigo
-    movidas, problemas = lh.reorganizar(historico)
-    assert [(a.name, n.relative_to(historico).as_posix()) for a, n in movidas] == [("2010-03", "2010/2010-03")]
+    (juncao,) = lh.reorganizar(historico)
+    assert juncao.mover_pasta and juncao.nova == historico / "2010" / "2010-03"
     assert (historico / "2010-03").exists()  # simulação: nada mudou
-    assert len(problemas) == 1 and "2020-04" in problemas[0]
     lh.reorganizar(historico, mover=True)
-    assert (historico / "2010" / "2010-03" / "manifesto.json").read_text(encoding="utf-8") == "{}"
-    assert not (historico / "2010-03").exists() and (historico / "2020-04").exists()
-    assert lh.pastas_no_formato_antigo(historico) == [historico / "2020-04"]
+    assert (historico / "2010" / "2010-03" / "manifesto.json").exists()
+    assert not (historico / "2010-03").exists()
+    assert lh.pastas_no_formato_antigo(historico) == []
+
+
+def test_reorganizar_junta_com_o_mes_que_ja_esta_na_pasta_do_ano(tmp_path):
+    """Caso de 2010-09: o mês foi baixado de novo numa pasta solta depois da reorganização."""
+    from dbf_cepe import captura
+
+    historico = tmp_path / "historico"
+    nova, antiga = historico / "2010" / "2010-09", historico / "2010-09"
+    _manifesto(nova, **{"20100901_PoderExecutivo.pdf": "a"})
+    (nova / "20100901_PoderExecutivo.pdf").write_bytes(b"caderno 1")
+    _manifesto(antiga, **{"20100901_PoderExecutivo.pdf": "a", "20100902_PoderExecutivo.pdf": "b"})
+    (antiga / "20100901_PoderExecutivo.pdf").write_bytes(b"caderno 1")  # idêntico
+    (antiga / "20100902_PoderExecutivo.pdf").write_bytes(b"caderno 2")  # novo
+    (antiga / "limpeza_simulada.json").write_text("{}", encoding="utf-8")
+    (juncao,) = lh.reorganizar(historico)
+    assert not juncao.conflitos and not juncao.mover_pasta
+    assert juncao.mover == ["20100902_PoderExecutivo.pdf"] and juncao.repetidos == ["20100901_PoderExecutivo.pdf"]
+    assert (antiga / "20100902_PoderExecutivo.pdf").exists()  # simulação
+    lh.reorganizar(historico, mover=True)
+    assert not antiga.exists()
+    assert sorted(p.name for p in nova.iterdir()) == [
+        "20100901_PoderExecutivo.pdf", "20100902_PoderExecutivo.pdf", "manifesto.json"]
+    assert set(captura.ler_manifesto(nova)) == {"20100901_PoderExecutivo.pdf", "20100902_PoderExecutivo.pdf"}
+
+
+@pytest.mark.parametrize("conflito", ["arquivo", "manifesto", "subpasta"])
+def test_reorganizar_com_conflito_nao_mexe_em_nada(tmp_path, conflito):
+    historico = tmp_path / "historico"
+    nova, antiga = historico / "2010" / "2010-09", historico / "2010-09"
+    _manifesto(nova, **{"20100901_PoderExecutivo.pdf": "a"})
+    (nova / "20100901_PoderExecutivo.pdf").write_bytes(b"caderno 1")
+    _manifesto(antiga, **{"20100901_PoderExecutivo.pdf": "b" if conflito == "manifesto" else "a"})
+    (antiga / "20100901_PoderExecutivo.pdf").write_bytes(b"outro" if conflito == "arquivo" else b"caderno 1")
+    (antiga / "20100902_PoderExecutivo.pdf").write_bytes(b"caderno 2")
+    if conflito == "subpasta":
+        (antiga / "sub").mkdir()
+    antes = sorted(p.relative_to(historico).as_posix() for p in historico.rglob("*"))
+    (juncao,) = lh.reorganizar(historico, mover=True)
+    assert juncao.conflitos
+    assert sorted(p.relative_to(historico).as_posix() for p in historico.rglob("*")) == antes
+    assert "NÃO mexida" in lh.descrever(juncao, True)[0]
 
 
 def test_main_recusa_comecar_com_pasta_no_formato_antigo(cfg, monkeypatch, capsys, tmp_path):
@@ -254,7 +300,7 @@ def test_main_recusa_comecar_com_pasta_no_formato_antigo(cfg, monkeypatch, capsy
     assert lh.main(["--de", "2020-04", "--ate", "2020-04"]) == 2
     assert "--reorganizar --executar" in capsys.readouterr().err
     assert lh.main(["--reorganizar"]) == 0
-    assert "seria movida" in capsys.readouterr().out
+    assert "(simulação)" in capsys.readouterr().out
     assert lh.main(["--reorganizar", "--executar"]) == 0
     assert (historico / "2020" / "2020-03").is_dir()
     with pytest.raises(SystemExit):

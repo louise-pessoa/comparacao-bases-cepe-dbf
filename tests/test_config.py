@@ -343,3 +343,12 @@ def test_ocr_tessdata_relativo_a_raiz(tmp_path, sem_ocr_no_ambiente):
     env = tmp_path / ".env"
     env.write_text("OCR_TESSDATA=dados/tessdata\n", encoding="utf-8")
     assert carregar_configuracao(env).ocr.tessdata == RAIZ / "dados" / "tessdata"
+
+
+def test_pasta_de_mes_fora_da_pasta_do_ano_e_recusada(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("PASTA_CADERNOS=dados/historico/2010-09\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao, match=r"historico.2010.2010-09"):
+        carregar_configuracao(env)
+    env.write_text("PASTA_CADERNOS=dados/historico/2010/2010-09\n", encoding="utf-8")
+    assert carregar_configuracao(env).pasta_cadernos == RAIZ / "dados/historico/2010/2010-09"
