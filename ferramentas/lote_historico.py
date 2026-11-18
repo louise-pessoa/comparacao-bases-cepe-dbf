@@ -169,6 +169,7 @@ class Juncao:
     repetidos: list[str] = field(default_factory=list)  # idênticos no destino: a cópia solta é apagada
     descartar: list[str] = field(default_factory=list)  # a simulação da limpeza (é refeita)
     manifesto: dict | None = None  # manifesto combinado, se as duas pastas tinham manifesto
+    entradas_combinadas: int = 0  # o mesmo caderno nos dois manifestos, combinado (`combinar_entradas`)
     conflitos: list[str] = field(default_factory=list)
 
 
@@ -180,6 +181,32 @@ def _sha256(arquivo: Path) -> str:
         for bloco in iter(lambda: entrada.read(1 << 20), b""):
             resumo.update(bloco)
     return resumo.hexdigest()
+
+
+# Campos que podem diferir entre as duas entradas do MESMO arquivo: o mês baixado duas vezes
+# (data do download) e processado numa das pastas só (caso de 2010-09, 18/11/2026).
+_CAMPOS_COMBINAVEIS = {"baixado_em", "processado_em", "processamento"}
+
+
+def combinar_entradas(solta: dict, do_ano: dict) -> dict | None:
+    """A entrada do mesmo caderno nos dois manifestos, combinada; None se não for seguro.
+    Só combina o mesmo arquivo (sha256, tamanho e url iguais) com diferença apenas na data do
+    download e no processamento: fica o processamento de quem o tem (os dois com processamento
+    diferente: None) e a data do download mais antiga. Caderno marcado como apagado em uma das
+    pastas (`apagado_em`) nunca é combinado."""
+    if not solta.get("sha256") or any(solta.get(c) != do_ano.get(c) for c in ("sha256", "tamanho", "url")):
+        return None
+    diferentes = {c for c in solta.keys() | do_ano.keys() if solta.get(c) != do_ano.get(c)}
+    if not diferentes <= _CAMPOS_COMBINAVEIS:
+        return None
+    com_processamento = [e for e in (solta, do_ano) if "processamento" in e]
+    if len(com_processamento) == 2 and {"processamento", "processado_em"} & diferentes:
+        return None
+    base = dict(com_processamento[0] if com_processamento else do_ano)
+    datas = [e["baixado_em"] for e in (solta, do_ano) if e.get("baixado_em")]
+    if datas:
+        base["baixado_em"] = min(datas)
+    return base
 
 
 def diferencas_do_manifesto(antigo: dict, atual: dict, diferentes: list[str]) -> list[str]:
@@ -226,6 +253,9 @@ def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
                 juncao.conflitos.append(str(erro))
                 continue
             diferentes = sorted(k for k in antigo.keys() & atual.keys() if antigo[k] != atual[k])
+            combinadas = {k: c for k in diferentes if (c := combinar_entradas(antigo[k], atual[k])) is not None}
+            diferentes = [k for k in diferentes if k not in combinadas]
+            juncao.entradas_combinadas = len(combinadas)
             if diferentes:
                 juncao.conflitos.append(
                     f"{captura.NOME_MANIFESTO}: {len(diferentes)} caderno(s) com dados diferentes nas duas pastas "
@@ -233,7 +263,7 @@ def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
                 )
                 juncao.conflitos += diferencas_do_manifesto(antigo, atual, diferentes)
             else:
-                juncao.manifesto = {**atual, **antigo}
+                juncao.manifesto = {**atual, **antigo, **combinadas}
         elif item.name == limpeza_dos_cadernos.NOME_SIMULACAO:
             juncao.descartar.append(item.name)
         elif not destino.exists():
@@ -286,6 +316,9 @@ def descrever(juncao: Juncao, feito: bool) -> list[str]:
         partes.append(f"{len(juncao.repetidos)} idêntico(s) já no destino (cópia solta apagada)")
     if juncao.manifesto is not None:
         partes.append(f"manifestos combinados ({len(juncao.manifesto)} cadernos)")
+    if juncao.entradas_combinadas:
+        partes.append(f"{juncao.entradas_combinadas} caderno(s) nos dois manifestos com o mesmo arquivo: mantido o "
+                      "processamento e a data do primeiro download")
     if juncao.descartar:
         partes.append("simulação da limpeza descartada (rode o --limpar-cadernos --simular de novo)")
     return [f"{juncao.antiga} juntada a {juncao.nova}{verbo}: {'; '.join(partes)}"]

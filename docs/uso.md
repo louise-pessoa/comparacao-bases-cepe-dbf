@@ -92,7 +92,8 @@ python -m ferramentas.lote_historico --reorganizar --executar  # move
 
   O `lote_historico` não começa enquanto houver pasta no formato antigo, para não baixar de novo um mês que já existe.
   Se o mês já existe na pasta do ano (foi baixado de novo numa pasta solta), o `--reorganizar` junta as duas:
-  move os arquivos novos, apaga as cópias idênticas (mesmo SHA-256), combina os manifestos e descarta a simulação da
+  move os arquivos novos, apaga as cópias idênticas (mesmo SHA-256), combina os manifestos (o mesmo caderno nos dois,
+  com o mesmo arquivo, fica com o processamento de quem o tem e a data do primeiro download) e descarta a simulação da
   limpeza (rode o `--limpar-cadernos --simular` de novo). Com qualquer conflito (o mesmo nome com outro conteúdo, o
   mesmo caderno com dados diferentes nos dois manifestos, uma subpasta), a pasta solta fica como está e o motivo é
   mostrado. Desde 18/11/2026, `PASTA_CADERNOS` apontando para uma pasta de mês solta (`dados\historico\AAAA-MM`) é

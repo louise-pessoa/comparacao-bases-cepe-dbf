@@ -307,20 +307,63 @@ def test_main_recusa_comecar_com_pasta_no_formato_antigo(cfg, monkeypatch, capsy
         lh.main(["--reorganizar", "--de", "2020-03"])
 
 
-def test_conflito_de_manifesto_mostra_os_campos_diferentes(tmp_path):
+COMUM = {"url": "u", "tamanho": 10, "sha256": "abc"}
+PROCESSADO = {"processado_em": "2026-11-18T12:58:05", "processamento": {"decretos": 3}}
+
+
+def _dois_manifestos(tmp_path, solta: dict, do_ano: dict):
     from dbf_cepe import captura
 
     historico = tmp_path / "historico"
     nova, antiga = historico / "2010" / "2010-09", historico / "2010-09"
     nova.mkdir(parents=True)
     antiga.mkdir()
-    comum = {"url": "u", "tamanho": 10, "sha256": "abc"}
-    captura.gravar_manifesto(nova, {"20100901_PoderExecutivo.pdf": {**comum, "baixado_em": "2026-11-10",
-                                                                    "processado_em": "2026-11-12", "processamento": {}}})
-    captura.gravar_manifesto(antiga, {"20100901_PoderExecutivo.pdf": {**comum, "baixado_em": "2026-11-17"}})
+    captura.gravar_manifesto(nova, {"20100901_PoderExecutivo.pdf": do_ano})
+    captura.gravar_manifesto(antiga, {"20100901_PoderExecutivo.pdf": solta})
+    (nova / "20100901_PoderExecutivo.pdf").write_bytes(b"caderno")
+    (antiga / "20100901_PoderExecutivo.pdf").write_bytes(b"caderno")
+    return historico, nova, antiga
+
+
+def test_mes_baixado_duas_vezes_e_processado_na_pasta_solta_e_juntado(tmp_path):
+    """Caso de 2010-09 (18/11/2026): os mesmos 37 cadernos nas duas pastas; a do ano baixada em
+    16/11 e nunca processada; a solta baixada em 17/11 e processada em 18/11."""
+    from dbf_cepe import captura
+
+    historico, nova, antiga = _dois_manifestos(
+        tmp_path,
+        solta={**COMUM, "baixado_em": "2026-11-17T19:04:48+00:00", **PROCESSADO},
+        do_ano={**COMUM, "baixado_em": "2026-11-16T18:57:55+00:00"},
+    )
+    (juncao,) = lh.reorganizar(historico)
+    assert juncao.conflitos == [] and juncao.entradas_combinadas == 1
+    assert "mantido o processamento" in lh.descrever(juncao, False)[0]
+    lh.reorganizar(historico, mover=True)
+    assert not antiga.exists()
+    entrada = captura.ler_manifesto(nova)["20100901_PoderExecutivo.pdf"]
+    assert entrada == {**COMUM, "baixado_em": "2026-11-16T18:57:55+00:00", **PROCESSADO}
+
+
+@pytest.mark.parametrize(
+    ("solta", "do_ano"),
+    [
+        ({**COMUM, "sha256": "outro", **PROCESSADO}, COMUM),  # outro arquivo
+        ({**COMUM, **PROCESSADO}, {**COMUM, "processado_em": "x", "processamento": {"decretos": 1}}),  # dois processamentos
+        ({**COMUM, "apagado_em": "2026-11-18"}, COMUM),  # apagado numa das pastas
+    ],
+)
+def test_entradas_que_nao_se_combinam(tmp_path, solta, do_ano):
+    assert lh.combinar_entradas(solta, do_ano) is None
+    historico, _, antiga = _dois_manifestos(tmp_path, solta, do_ano)
+    (juncao,) = lh.reorganizar(historico, mover=True)
+    assert juncao.conflitos and antiga.exists()
+
+
+def test_conflito_de_manifesto_mostra_os_campos_diferentes(tmp_path):
+    historico, _, _ = _dois_manifestos(
+        tmp_path, {**COMUM, "baixado_em": "2026-11-17", "url": "outra"}, {**COMUM, "baixado_em": "2026-11-10"}
+    )
     (juncao,) = lh.reorganizar(historico)
     texto = "\n".join(juncao.conflitos)
-    assert "baixado_em (1)" in texto and "processado_em (1)" in texto
-    assert "mesmo sha256 (mesmo arquivo) nos dois: 1 de 1" in texto
+    assert "baixado_em (1)" in texto and "url (1)" in texto
     assert "baixado_em: pasta solta 2026-11-17 | pasta do ano 2026-11-10" in texto
-    assert "processamento: só em pasta do ano" in texto
