@@ -49,6 +49,7 @@ from dbf_cepe.leitura.criterio import da_dbf
 from dbf_cepe.leitura.reader import StatusLeitura, _ilegivel, _pagina_digitalizada, ler_pdf
 from dbf_cepe.leitura.separador import ErroSeparacao, data_do_caderno, limpar_ligaduras
 from dbf_cepe.pipeline.comparacao import comparar_textos, palavras
+from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr
 
 # Faixas de confiança do Tesseract (limite inferior de cada uma).
 FAIXAS_DE_CONFIANCA = (0, 50, 70, 80, 85, 90, 95)
@@ -260,6 +261,11 @@ def tabela_paginas(resultado: dict[str, dict[int, Gabarito]]) -> str:
 # do Diário, com o cabeçalho da página e pedaços dos atos vizinhos (Decretos 34732 e 34746):
 # a similaridade cai, a cobertura não.
 MEDIDAS = ("similaridade", "cobertura")
+# Terceira medida (a que decide, desde 19/11/2026): quantas diferenças o OCR não explica
+# (`pipeline/comparacao_ocr.py`). Similaridade e cobertura não separaram o mesmo decreto (ruído
+# do OCR) de outro decreto do mesmo modelo de texto (até 93,7% e 95,4%).
+FAIXAS_DE_DIFERENCAS = ((0, 0), (1, 1), (2, 2), (3, 5), (6, None))
+MAX_PARES_LISTADOS = 40
 
 
 @dataclass
@@ -272,6 +278,8 @@ class Par:
     similaridade: float = 0.0
     cobertura: float = 0.0
     trechos: tuple[str, ...] = ()  # primeiras diferenças com texto do caderno que falta na base
+    palavras_base: tuple[tuple[str, float], ...] = ()  # (palavra, confiança) do OCR da base
+    nao_explicadas: tuple[str, ...] = ()  # diferenças que o OCR não explica
 
 
 def medir_par(texto_ato: str, texto_base: str) -> tuple[float, float, tuple[str, ...]]:
@@ -283,14 +291,20 @@ def medir_par(texto_ato: str, texto_base: str) -> tuple[float, float, tuple[str,
     return comparacao.similaridade, cobertura, faltam
 
 
-def ler_base_por_ocr(pdf: Path, leitor) -> tuple[str, float]:
-    """Texto do OCR de todas as páginas (até MAX_PAGINAS_DA_BASE) e a confiança média."""
+def ler_base_por_ocr(pdf: Path, leitor) -> tuple[str, float, tuple[tuple[str, float], ...]]:
+    """Texto do OCR de todas as páginas (até MAX_PAGINAS_DA_BASE), a confiança média e as
+    palavras com a confiança."""
     with pymupdf.open(pdf) as doc:
         paginas = min(doc.page_count, MAX_PAGINAS_DA_BASE)
     lidas = [leitor.ler(pdf, numero) for numero in range(1, paginas + 1)]
     palavras_lidas = [p for lida in lidas for p in lida.palavras]
     confianca = sum(p.confianca for p in palavras_lidas) / len(palavras_lidas) if palavras_lidas else 0.0
-    return "\n".join(lida.texto for lida in lidas), confianca
+    return "\n".join(lida.texto for lida in lidas), confianca, tuple((p.texto, p.confianca) for p in palavras_lidas)
+
+
+def _critica(leitor) -> float:
+    cfg = getattr(leitor, "cfg", None)
+    return getattr(cfg, "confianca_critica", 90.0)
 
 
 def pares_da_base(pastas: list[Path], base: Path, leitor, max_pares: int | None, falhas: list[str]) -> list[Par]:
@@ -314,30 +328,86 @@ def pares_da_base(pastas: list[Path], base: Path, leitor, max_pares: int | None,
                     continue
                 vistos.add(nome)
                 try:
-                    texto, confianca = ler_base_por_ocr(base / nome, leitor)
+                    texto, confianca, palavras_base = ler_base_por_ocr(base / nome, leitor)
                 except Exception as erro:  # ErroOcr, PDF quebrado
                     falhas.append(f"{nome}: OCR falhou: {erro}")
                     continue
                 similaridade, cobertura, trechos = medir_par(ato.texto, texto)
+                resultado = comparar_com_ocr(ato.texto, palavras_base, _critica(leitor))
                 pares.append(Par(
                     f"{caderno.name} p. {ato.pagina_inicial} | {ato.especie.nome} {ato.numero}", nome,
-                    ato.texto, texto, confianca, similaridade, cobertura, trechos,
+                    ato.texto, texto, confianca, similaridade, cobertura, trechos, palavras_base,
+                    tuple(str(d) for d in resultado.nao_explicadas),
                 ))
                 if max_pares is not None and len(pares) >= max_pares:
                     return pares
     return pares
 
 
-def controles(pares: list[Par]) -> dict[str, list[float]]:
-    """Cada decreto contra o OCR da base do par SEGUINTE (outro número), nas duas medidas."""
-    resultado: dict[str, list[float]] = {medida: [] for medida in MEDIDAS}
+def controles(pares: list[Par], confianca_critica: float = 90.0) -> dict[str, list]:
+    """Cada decreto contra o OCR da base do par SEGUINTE (outro número), nas três medidas
+    ("nao_explicadas": quantas diferenças o OCR não explica; "exemplos_controle": o par de
+    controle com menos diferenças não explicadas e quais são)."""
+    resultado: dict[str, list] = {medida: [] for medida in (*MEDIDAS, "nao_explicadas")}
     if len(pares) < 2:
         return resultado
+    menor: tuple[int, str, list[str]] | None = None
     for i, par in enumerate(pares):
-        similaridade, cobertura, _ = medir_par(par.texto_ato, pares[(i + 1) % len(pares)].texto_base)
+        outro = pares[(i + 1) % len(pares)]
+        similaridade, cobertura, _ = medir_par(par.texto_ato, outro.texto_base)
+        diferencas = comparar_com_ocr(par.texto_ato, outro.palavras_base, confianca_critica).nao_explicadas
         resultado["similaridade"].append(similaridade)
         resultado["cobertura"].append(cobertura)
+        resultado["nao_explicadas"].append(len(diferencas))
+        if menor is None or len(diferencas) < menor[0]:
+            menor = (len(diferencas), f"{par.rotulo} x base {outro.arquivo_base}", [str(d) for d in diferencas[:5]])
+    resultado["exemplos_controle"] = [menor] if menor else []
     return resultado
+
+
+def _faixa_de_diferencas(quantas: int) -> tuple[int, int | None]:
+    return next(f for f in FAIXAS_DE_DIFERENCAS if quantas >= f[0] and (f[1] is None or quantas <= f[1]))
+
+
+def _distribuicao_de_diferencas(valores: list[int]) -> str:
+    contagem = Counter(_faixa_de_diferencas(v) for v in valores)
+    rotulos = {(0, 0): "0", (1, 1): "1", (2, 2): "2", (3, 5): "3 a 5", (6, None): "6 ou mais"}
+    return "; ".join(f"{rotulos[f]}: {contagem[f]}" for f in FAIXAS_DE_DIFERENCAS)
+
+
+def tabela_diferencas(pares: list[Par], diferentes: dict[str, list]) -> str:
+    """A medida que decide: diferenças que o OCR não explica, no mesmo número e no controle."""
+    linhas = ["\n  DIFERENÇAS NÃO EXPLICADAS PELO OCR (a medida da fase 5; ver pipeline/comparacao_ocr.py)"]
+    mesmos = [len(p.nao_explicadas) for p in pares]
+    linhas.append(f"  mesmo número ({len(pares)} pares): {_distribuicao_de_diferencas(mesmos)}")
+    controle = diferentes.get("nao_explicadas", [])
+    if not controle:
+        return "\n".join(linhas + ["  sugestão: (poucos pares para o controle)"])
+    linhas.append(f"  números diferentes ({len(controle)} pares, controle): {_distribuicao_de_diferencas(controle)}")
+    for quantas, rotulo, exemplos in diferentes.get("exemplos_controle", []):
+        linhas.append(f"  controle com menos diferenças ({quantas}): {rotulo}")
+        linhas += [f"      {e}" for e in exemplos]
+    if min(controle) == 0:
+        linhas.append("  ATENÇÃO: há par de números diferentes sem nenhuma diferença não explicada: a regra NÃO separa; "
+                      "não use na fase 5 sem rever")
+    else:
+        duplicatas = sum(1 for q in mesmos if q == 0)
+        linhas.append(f"  regra: duplicata se 0 diferenças não explicadas (o controle tem no mínimo {min(controle)}); "
+                      f"{duplicatas} de {len(pares)} pares de mesmo número ficam como duplicata, o resto vai para conferir")
+        tolerancias = [k for k in (1, 2) if k < min(controle)]
+        if tolerancias:
+            linhas.append("  se aceitasse até k diferenças não explicadas: " + "; ".join(
+                f"k = {k}: {sum(1 for q in mesmos if q <= k)} de {len(pares)} como duplicata" for k in tolerancias))
+    restantes = sorted((p for p in pares if p.nao_explicadas), key=lambda p: len(p.nao_explicadas))
+    if restantes:
+        linhas.append("  mesmo número com diferença não explicada (vão para conferir; olhe se é OCR ou texto diferente):")
+        for par in restantes[:MAX_PARES_LISTADOS]:
+            linhas.append(f"    {par.rotulo} | base {par.arquivo_base} | {len(par.nao_explicadas)} diferença(s), "
+                          f"confiança do OCR {par.confianca_base:.0f}")
+            linhas += [f"      {d}" for d in par.nao_explicadas[:3]]
+        if len(restantes) > MAX_PARES_LISTADOS:
+            linhas.append(f"    ... e mais {len(restantes) - MAX_PARES_LISTADOS} (lista completa no --json)")
+    return "\n".join(linhas)
 
 
 def sugerir_limiar(diferentes: list[float]) -> float | None:
@@ -375,14 +445,7 @@ def tabela_base(pares: list[Par], diferentes: dict[str, list[float]]) -> str:
         linhas.append(f"  limiar sugerido: {limiar:.2f} (o par de números diferentes mais parecido + "
                       f"{MARGEM_DO_LIMIAR:.0%}); {len(pares) - len(abaixo)} de {len(pares)} pares de mesmo número "
                       "ficam como duplicata")
-        if abaixo:
-            linhas.append("  mesmo número abaixo do limiar (conferir à mão: erro do OCR ou texto diferente?):")
-            for par in abaixo:
-                linhas.append(f"    {par.rotulo} | base {par.arquivo_base} | similaridade {par.similaridade:.1%}, "
-                              f"cobertura {par.cobertura:.1%}, confiança do OCR {par.confianca_base:.0f}")
-                for trecho in par.trechos[:2]:
-                    linhas.append(f"      {trecho}")
-    return "\n".join(linhas)
+    return "\n".join(linhas) + tabela_diferencas(pares, diferentes)
 
 
 # ----------------------------------------------------------------------------
@@ -446,11 +509,12 @@ def main(argv: list[str] | None = None) -> int:
         }
     if args.parte in ("base", "tudo"):
         pares = pares_da_base(args.pastas, base, leitor, args.max_pares, falhas)
-        diferentes = controles(pares)
+        diferentes = controles(pares, _critica(leitor))
         print("\n" + tabela_base(pares, diferentes))
         dados["base"] = {
             "pares": [{"rotulo": p.rotulo, "arquivo": p.arquivo_base, "similaridade": p.similaridade,
-                       "cobertura": p.cobertura, "confianca": p.confianca_base, "trechos": list(p.trechos)}
+                       "cobertura": p.cobertura, "confianca": p.confianca_base, "trechos": list(p.trechos),
+                       "nao_explicadas": list(p.nao_explicadas)}
                       for p in pares],
             "diferentes": diferentes,
             "limiar_sugerido": {medida: sugerir_limiar(diferentes[medida]) for medida in MEDIDAS},

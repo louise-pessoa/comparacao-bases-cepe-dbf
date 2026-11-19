@@ -112,13 +112,17 @@ def test_pares_da_base_so_com_arquivo_em_imagem_e_controle(tmp_path):
     assert pares[0].similaridade == pytest.approx(1.0)
     assert 0.9 < pares[1].similaridade < 1.0 and any("doze" in t for t in pares[1].trechos)
     assert "Decreto 60931.pdf" not in leitor.lidos
+    assert pares[0].nao_explicadas == ()
+    assert len(pares[1].nao_explicadas) == 1 and "doze" in pares[1].nao_explicadas[0]
     diferentes = mo.controles(pares)
+    assert min(diferentes["nao_explicadas"]) >= 2  # outra empresa, outro número
     assert len(diferentes["similaridade"]) == 2 and max(diferentes["similaridade"]) < pares[1].similaridade
     assert max(diferentes["cobertura"]) < pares[1].cobertura
     limiar = mo.sugerir_limiar(diferentes["cobertura"])
     assert limiar == round(min(max(diferentes["cobertura"]) + mo.MARGEM_DO_LIMIAR, 0.99), 2)
     tabela = mo.tabela_base(pares, diferentes)
     assert "mesmo número (2 pares)" in tabela and "COBERTURA" in tabela and "limiar sugerido" in tabela
+    assert "DIFERENÇAS NÃO EXPLICADAS" in tabela and "1 de 2 pares de mesmo número ficam como duplicata" in tabela
     assert mo.pares_da_base([cadernos], base, leitor, 1, []) == pares[:1]
 
 

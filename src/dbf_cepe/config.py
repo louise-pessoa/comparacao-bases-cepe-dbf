@@ -35,8 +35,8 @@ _IDIOMA_DO_TESSERACT = re.compile(r"^[a-z_]{3,20}(?:\+[a-z_]{3,20}){0,3}$")
 
 @dataclass(frozen=True)
 class ConfiguracaoOcr:
-    """Variáveis OCR_* do .env (ver docs/plano_ocr.md). Os limiares são provisórios até a
-    calibração (fase 2 do plano)."""
+    """Variáveis OCR_* do .env (ver docs/plano_ocr.md). As confianças vêm da calibração de
+    19/11/2026 (fase 2): palavra com confiança 90 ou mais erra até 2,9%; abaixo, 10% ou mais."""
     ativo: str = OCR_AUTO
     tesseract_cmd: Path | None = None  # None: procura "tesseract" no PATH
     # Pasta com os .traineddata (OCR_TESSDATA). None: a do próprio Tesseract. Serve para quem
@@ -45,8 +45,8 @@ class ConfiguracaoOcr:
     idioma: str = "por"
     dpi: int = 300
     timeout: int = 120  # segundos por página
-    confianca_media: float = 85.0
-    confianca_critica: float = 70.0
+    confianca_media: float = 95.0
+    confianca_critica: float = 90.0
     similaridade_duplicata: float = 0.95
     gravar_na_base: bool = False  # piloto: só vira True depois de conferido à mão
 
@@ -251,8 +251,8 @@ def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
         idioma=idioma,
         dpi=int(_ler_numero("OCR_DPI", valor("OCR_DPI"), 300, DPI_MINIMO, DPI_MAXIMO)),
         timeout=int(_ler_numero("OCR_TIMEOUT", valor("OCR_TIMEOUT"), 120, 10, 3600)),
-        confianca_media=_ler_numero("OCR_CONFIANCA_MEDIA", valor("OCR_CONFIANCA_MEDIA"), 85, 0, 100),
-        confianca_critica=_ler_numero("OCR_CONFIANCA_CRITICA", valor("OCR_CONFIANCA_CRITICA"), 70, 0, 100),
+        confianca_media=_ler_numero("OCR_CONFIANCA_MEDIA", valor("OCR_CONFIANCA_MEDIA"), 95, 0, 100),
+        confianca_critica=_ler_numero("OCR_CONFIANCA_CRITICA", valor("OCR_CONFIANCA_CRITICA"), 90, 0, 100),
         similaridade_duplicata=_ler_numero(
             "OCR_SIMILARIDADE_DUPLICATA", valor("OCR_SIMILARIDADE_DUPLICATA"), 0.95, 0.5, 1
         ),

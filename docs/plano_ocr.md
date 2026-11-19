@@ -55,6 +55,26 @@ Rodada curta (`medir_ocr`, 10 páginas por ano e 20 pares da base, cadernos de 2
   isso a ferramenta passou a medir também a **cobertura** (quanto do decreto do caderno está na base, ignorando o que
   sobra nela). Falta a rodada completa para escolher a medida e o limiar da fase 5.
 
+## Calibração completa, 19/11/2026
+
+`medir_ocr` com 20 páginas por ano e todos os decretos da DBF dos cadernos de 2010 e 2020 com a base em imagem ou
+ilegível (117 pares; Tesseract 5.5.3, `por` de `tesseract-ocr/tessdata`):
+
+- **Confiança (fechado):** palavras com confiança 95 ou mais erram 0,5%; de 90 a 95, 2,9%; de 85 a 90, 10,3%; abaixo,
+  de 22% a 62%. Acerto de palavras 98,8% (2010) e 98,3% (2020); de números, 96,9% e 96,2%.
+  **`OCR_CONFIANCA_CRITICA = 90` e `OCR_CONFIANCA_MEDIA = 95`**, agora os padrões em `config.py`.
+- **Similaridade e cobertura não servem para decidir duplicata:** o mesmo decreto ficou de 61% a 99% (as
+  digitalizações de 2020 têm confiança de 83 a 91 e muito ruído: "estímulo" -> "estimulo", "PRODEPE" -> "PRODEFE",
+  "IV" -> "[ V", "65ª" -> "65º", "48.565" -> "48,565", "o" -> "6") e decretos diferentes do mesmo modelo de texto
+  chegaram a 93,7% de similaridade e 95,4% de cobertura (os decretos vizinhos de um caderno diferem só em número,
+  data, empresa e CNPJ). Com o limiar acima do controle, quase nenhum par de mesmo número seria duplicata.
+- **Nova medida: diferenças que o OCR não explica** (`pipeline/comparacao_ocr.py`, que a fase 5 vai usar). Compara
+  palavra a palavra; letras trocadas (com as confusões típicas do OCR) e números lidos com confiança abaixo de 90 são
+  ruído; número diferente lido com confiança, outra palavra, ou texto do caderno faltando na base são diferenças de
+  verdade; o que sobra na base é ignorado. Regra proposta: **duplicata só com 0 diferenças não explicadas**; com
+  qualquer uma, conferir. Nas amostras de 2026, o mesmo decreto deu 0 e o controle 11 ou mais. Falta rodar nos 117
+  pares.
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:

@@ -448,8 +448,10 @@ python -m ferramentas.medir_ocr dados/historico/2010 dados/historico/2020 --json
   caderno em duas medidas: similaridade (o texto todo) e cobertura (quanto do decreto do caderno está na base,
   ignorando o que sobra nela, como o cabeçalho da página e pedaços dos atos vizinhos nos recortes de 2010). Como
   controle, compara cada decreto com a base de outro número. Para cada medida, sugere um limiar (o par de números
-  diferentes mais parecido + 5%) e lista os pares de mesmo número abaixo dele, com o texto do caderno que falta na
-  base, para conferir à mão. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
+  diferentes mais parecido + 5%). A medida que decide é a terceira, **diferenças não explicadas pelo OCR**
+  (`pipeline/comparacao_ocr.py`): mostra quantas há no mesmo número e no controle, a regra "duplicata só com 0" e
+  quantos pares ficariam como duplicata, e lista os pares de mesmo número com alguma diferença não explicada, para
+  conferir à mão se é OCR ou texto diferente. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
   rodar de novo é rápido. Leva alguns segundos por página lida. Não apague os cadernos de 2010 e 2020 antes de rodar:
   são o material da calibração.
 
