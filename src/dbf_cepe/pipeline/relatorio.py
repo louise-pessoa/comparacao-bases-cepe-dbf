@@ -140,7 +140,7 @@ def _relatar_caderno(
         elif indice is not None and ja_existe(indice, nome):
             situacao = "já existe na DBF"
             if comparar and cfg.pasta_dbf is not None:
-                situacao += _comparar_com_a_base(cfg.pasta_dbf / nome, nome, ato, resumo)
+                situacao += _comparar_com_a_base(cfg.pasta_dbf / nome, nome, ato, resumo, cfg)
         elif indice is None:
             situacao = "base da DBF não consultada"
         elif gravar:
@@ -172,6 +172,10 @@ def _relatar_caderno(
 def _descrever(comparado: comparacao.Comparacao) -> str:
     if not comparado.lido:
         return f" (PDF da base não lido: {comparado.detalhe})"
+    if comparado.por_ocr:
+        if comparado.identico:
+            return f" ({comparado.detalhe}: nenhuma diferença que o OCR não explique)"
+        return f" ({comparado.detalhe}: {comparado.total_trechos} diferença(s) que o OCR não explica)"
     if comparado.identico:
         return " (texto idêntico ao da base)"
     return (
@@ -181,9 +185,9 @@ def _descrever(comparado: comparacao.Comparacao) -> str:
 
 
 def _comparar_com_a_base(
-    pdf_base: Path, nome: str, ato: AtoSeparado, resumo: ResumoRelatorio
+    pdf_base: Path, nome: str, ato: AtoSeparado, resumo: ResumoRelatorio, cfg: Configuracao | None = None
 ) -> str:
-    comparado = comparacao.comparar_com_base(ato.texto, pdf_base)
+    comparado = comparacao.comparar_com_base(ato.texto, pdf_base, cfg)
     resumo.comparacoes.append((nome, comparado))
     for trecho in comparado.trechos:
         log.info("%s | diferença: %s", nome, trecho)
@@ -197,7 +201,8 @@ def _comparar_com_a_base(
 def _resumir_comparacoes(resumo: ResumoRelatorio) -> None:
     if not resumo.comparacoes:
         return
-    lidas = [(n, c) for n, c in resumo.comparacoes if c.lido]
+    lidas = [(n, c) for n, c in resumo.comparacoes if c.lido and not c.por_ocr]
+    por_ocr = [(n, c) for n, c in resumo.comparacoes if c.lido and c.por_ocr]
     log.info("Comparação com a base (%d decreto(s) que já existem):", len(resumo.comparacoes))
     log.info("  %3d  texto idêntico", sum(c.identico for _, c in lidas))
     faixas = ((0.99, "similaridade de 99% a menos de 100%"), (0.95, "similaridade de 95% a menos de 99%"), (0.0, "similaridade abaixo de 95%"))
@@ -206,7 +211,10 @@ def _resumir_comparacoes(resumo: ResumoRelatorio) -> None:
         da_faixa = [(n, c) for n, c in restantes if c.similaridade >= piso]
         log.info("  %3d  %s", len(da_faixa), titulo)
         restantes = [(n, c) for n, c in restantes if c.similaridade < piso]
-    log.info("  %3d  PDF da base não lido", len(resumo.comparacoes) - len(lidas))
+    if por_ocr:
+        log.info("  %3d  base lida por OCR, sem diferença que o OCR não explique", sum(c.identico for _, c in por_ocr))
+        log.info("  %3d  base lida por OCR, com diferença (vai para conferir)", sum(not c.identico for _, c in por_ocr))
+    log.info("  %3d  PDF da base não lido", len(resumo.comparacoes) - len(lidas) - len(por_ocr))
     diferentes = sorted((par for par in lidas if not par[1].identico), key=lambda par: par[1].similaridade)
     for nome, comparado in diferentes[:20]:
         log.info("  menos parecidos: %s (%.2f%%)", nome, comparado.similaridade * 100)
@@ -245,8 +253,12 @@ def _gravar_publicacao(
     pasta_dbf = cfg.pasta_dbf
     publicacao = Publicacao(ato.data_publicacao, ato.caderno, ato.pagina_inicial, ato.marcado_como_republicacao)
 
+    lidos_por_ocr: set[str] = set()
+
     def identico(nome_base: str) -> bool | None:
-        comparado = comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base)
+        comparado = comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base, cfg)
+        if comparado.por_ocr:
+            lidos_por_ocr.add(nome_base)
         return comparado.identico if comparado.lido else None
 
     outros_textos = contexto.textos_no_lote.get((ato.especie.nome, ato.numero), set())
@@ -259,6 +271,8 @@ def _gravar_publicacao(
     if plano.acao is Acao.JA_REGISTRADA:
         return "já registrado (mesma publicação)"
     if plano.acao is Acao.DUPLICATA:
+        if plano.arquivo_identico in lidos_por_ocr:
+            return "já existe na DBF (base lida por OCR, sem diferença)"
         return "já existe na DBF (texto idêntico)"
     if plano.acao is Acao.BASE_IMAGEM:
         return "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)"
@@ -330,6 +344,8 @@ def relatorio_dos_cadernos(
         if registro.operacao_em_andamento is not None:
             log.warning("O registro tem uma operação interrompida; o próximo lote a desfaz ou conclui.")
         contexto = ContextoDaGravacao(registro, listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia))
+    if cfg.pasta_dbf is not None and (gravar or comparar):
+        comparacao.leitor_ocr(cfg)  # configuração do OCR inválida: erro agora, antes de separar
     resumo = ResumoRelatorio()
     # Primeiro separa todos os cadernos: com --gravar, a decisão de cada ato depende de o
     # mesmo número aparecer com outro texto em outro caderno do lote.

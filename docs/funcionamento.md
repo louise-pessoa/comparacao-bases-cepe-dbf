@@ -189,7 +189,8 @@ Extra). *Decisões de 06/11/2026:*
 | Mesmo dia, edição normal e Extra | a normal conta como a mais antiga; no mesmo caderno, vale a página |
 | Arquivo da base sem registro, texto idêntico (critério de `comparacao.py`) | duplicata |
 | Arquivo da base sem registro, texto diferente | PDF normalizado em `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`; nada muda na base |
-| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
+| Arquivo da base sem registro, digitalizado ou com texto ilegível, **com o OCR ativo** | o PDF da base é lido por OCR (`pipeline/comparacao_ocr.py`): sem nenhuma diferença que o OCR não explique, é duplicata e o registro anota `duplicata (base lida por OCR)`; com qualquer diferença, ou com o OCR de confiança média abaixo de 80, vai para conferência (as diferenças aparecem no `--conferir`). Nunca grava nem renomeia na base por causa do OCR. *Decisão de 23/11/2026 (fase 5 do [plano do OCR](plano_ocr.md))* |
+| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar), **sem OCR** (OCR desligado, Tesseract ausente, OCR sem texto aproveitável ou PDF com mais de 10 páginas) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
 | A mesma publicação (data, caderno e página) já no registro | ignorada: rodar o lote de novo não muda nada |
 
 - **Duas passagens no lote.** A primeira lê a data de publicação de cada PDF de pendentes e ordena o lote; a segunda

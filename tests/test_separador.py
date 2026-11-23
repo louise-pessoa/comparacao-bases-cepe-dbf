@@ -368,3 +368,40 @@ def test_pagina_ilegivel_nao_muda_o_texto_do_caderno(tmp_path):
 def test_pagina_em_branco_nao_e_ilegivel(tmp_path):
     pdf = criar_pdf_texto(tmp_path / "c.pdf", "primeira página", "")
     assert ler_caderno(pdf)[2] == ()
+
+
+# ----------------------------------------------------------------------------
+# Cabeçalho da página no meio do texto da página (Decreto 35.553/2010)
+# ----------------------------------------------------------------------------
+
+TITULO = "Diário Oficial do Estado de Pernambuco - Poder Executivo"
+DATA = "Recife, 4 de setembro de 2010"
+ANTES = [f"linha {i} do decreto" for i in range(6)]
+DEPOIS = [f"continuação {i}" for i in range(3)]
+
+
+@pytest.mark.parametrize(
+    ("meio", "fica"),
+    [
+        (["4", TITULO, DATA], []),  # como no caderno de 04/09/2010
+        ([DATA, TITULO, "7"], []),  # a ordem inversa (29/10/2010)
+        ([TITULO, DATA], []),  # sem o número da página
+        ([TITULO + " ", " " + DATA], []),  # espaços nas pontas
+        # uma linha só fica: citação do Diário Oficial ou uma data
+        ([TITULO], [TITULO]),
+        ([DATA], [DATA]),
+        # título e data não vizinhos ficam
+        ([TITULO, "texto do decreto", DATA], [TITULO, "texto do decreto", DATA]),
+        # o número só sai junto do cabeçalho; uma data de ato (com ponto) não é a do topo
+        (["4", TITULO, DATA + "."], ["4", TITULO, DATA + "."]),
+        # "Diário Oficial do Estado de Pernambuco" seguido de outro texto não é o título
+        ([TITULO + " de 2010", DATA], [TITULO + " de 2010", DATA]),
+    ],
+)
+def test_cabecalho_da_pagina_no_meio_sai_so_como_conjunto(meio, fica):
+    assert _separador._sem_topo(ANTES + meio + DEPOIS) == ANTES + fica + DEPOIS
+
+
+def test_numero_da_pagina_so_de_um_lado():
+    linhas = ANTES + ["5", "4", TITULO, DATA, "6"] + DEPOIS
+    assert _separador._sem_topo(linhas) == ANTES + ["5", "6"] + DEPOIS

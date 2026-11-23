@@ -20,7 +20,10 @@ o lote):
      conta como já existente (`Acao.BASE_IMAGEM`), a não ser que haja sinal de
      republicação: a marca "(REPUBLICADO ...)" no caderno, outra publicação do mesmo
      número com texto diferente no registro ou no mesmo lote. Com sinal, vai para
-     conferência. Decisão de 10/11/2026.
+     conferência. Decisão de 10/11/2026. Com o OCR ativo (fase 5, 23/11/2026), o PDF da base
+     em imagem é lido por OCR antes (`comparacao.comparar_com_base`): sem diferença que o OCR
+     não explique conta como idêntico (duplicata); com diferença, vai para conferência. Só o
+     OCR sem texto aproveitável continua em `BASE_IMAGEM`.
   5. A mesma publicação (mesma data, caderno e página) já registrada é ignorada:
      rodar o mesmo lote de novo não muda nada.
 
@@ -57,6 +60,9 @@ class Plano:
     ordem: int | None = None  # GRAVAR: 0 = original, 1 = republicação, 2 = republicação 2...
     renomeacoes: tuple[tuple[str, str], ...] = ()  # (de, para) na base, na ordem de execução
     avisos: tuple[str, ...] = ()
+    # DUPLICATA por arquivo da base sem registro: qual arquivo deu idêntico (quem chama sabe se
+    # foi comparado por OCR e anota isso no registro).
+    arquivo_identico: str | None = None
 
     @property
     def republicacao(self) -> bool:
@@ -131,6 +137,7 @@ def planejar(
                 Acao.DUPLICATA,
                 f"{nome_padrao}: texto idêntico ao de {identico} (arquivo da base sem registro)",
                 avisos=tuple(avisos),
+                arquivo_identico=identico,
             )
         if all(igual is None for igual in resultados.values()):
             sinais = []

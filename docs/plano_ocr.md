@@ -7,7 +7,9 @@ Situação: **em implementação** na branch `claude/plano-ocr-tesseract`. Escri
 | 0 — ambiente e levantamento | pronta e rodada na máquina da DBF (17/11/2026); resultado abaixo |
 | 1 — `leitura/ocr.py`, configuração e cache | pronta |
 | 2 — calibração | ferramenta pronta (`ferramentas/medir_ocr.py`); falta rodar nos cadernos de 2010 e 2020 |
-| 3 a 6 | a fazer (ordem: 5, depois 3, 4 e 6) |
+| 2 — calibração | pronta e rodada (19 e 23/11/2026): confiança 90/95; duplicata só com 0 diferenças não explicadas |
+| 5 — base em imagem | implementada (23/11/2026); falta o teste na máquina da DBF |
+| 3, 4 e 6 | a fazer |
 
 *Decisão de 16/11/2026:* as fases são feitas e testadas nesta branch, um commit por fase; o merge na `main` só acontece
 depois de todas testadas (não há merge só do plano).
@@ -88,8 +90,16 @@ com 2, 15 de 3 a 5 e 21 com 6 ou mais. O que sobrava no mesmo número:
 - lixo no texto do caderno ("2.00.3.00.4", "Governo do Estado 2.00.3.00") e texto do caderno faltando na base ("Art.
   1º" em alterações de 2010, assinaturas no 48743): continuam conferir.
 
-*Decisão proposta:* duplicata só com **0** diferenças não explicadas (sem tolerância de 1 ou 2: uma republicação
-costuma mudar um único número).
+*Decisão de 23/11/2026:* duplicata só com **0** diferenças não explicadas (sem tolerância de 1 ou 2: uma republicação
+costuma mudar um único número). Com a regra de uma letra, na segunda rodada: 67 de 117 pares de mesmo número sem
+diferença; o controle, 5 ou mais em todos os 117.
+
+**Fase 5, como ficou:** `comparacao.comparar_com_base(texto, pdf, cfg)` lê por OCR o PDF da base em imagem ou com
+texto ilegível (até 10 páginas) e aplica `comparacao_ocr.comparar_com_ocr`. Idêntico só com 0 diferenças não
+explicadas e confiança média do OCR de 80 ou mais (abaixo disso, o 34732/2010 com 71, o OCR não decide). OCR com
+menos de 20 palavras conta como não lido (`base é imagem`, como antes). O registro anota `duplicata (base lida por
+OCR)`. Lote, `--separar --gravar`/`--comparar` e `--conferir` usam a mesma comparação; o leitor de OCR é criado uma vez
+por execução, e uma configuração inválida do OCR dá erro no início.
 
 ## Objetivo e escopo
 

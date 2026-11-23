@@ -32,7 +32,7 @@ from dbf_cepe.config import Configuracao, ErroConfiguracao
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.pipeline import armazenamento
-from dbf_cepe.pipeline.comparacao import Comparacao, comparar_textos
+from dbf_cepe.pipeline.comparacao import Comparacao, comparar_por_ocr, comparar_textos, leitor_ocr
 from dbf_cepe.pipeline.duplicidade import chave_nome, listar_nomes
 from dbf_cepe.pipeline.registro import CONFERIR, GRAVADO, Entrada, ErroRegistro, Registro
 from dbf_cepe.regras.especies import Especie
@@ -68,7 +68,11 @@ def _arquivo_da_base(especie: Especie, numero: str, nomes: set[str]) -> str | No
     return familia[0] if familia else None
 
 
-def preparar(pdf: Path, pasta_dbf: Path, nomes_na_base: set[str], registro: Registro) -> Item:
+def preparar(
+    pdf: Path, pasta_dbf: Path, nomes_na_base: set[str], registro: Registro, cfg: Configuracao | None = None
+) -> Item:
+    """O PDF da conferência, identificado e comparado com o arquivo da base. Com `cfg` e o OCR
+    ativo, a base em imagem ou com texto ilegível é lida por OCR (`comparacao.comparar_por_ocr`)."""
     item = Item(pdf, entrada=registro.entrada_da_conferencia(pdf.name))
     leitura = ler_pdf(pdf)
     if leitura.status is not StatusLeitura.OK:
@@ -84,6 +88,8 @@ def preparar(pdf: Path, pasta_dbf: Path, nomes_na_base: set[str], registro: Regi
         base = ler_pdf(pasta_dbf / item.nome_base)
         if base.status is StatusLeitura.OK:
             item.comparacao = comparar_textos(leitura.texto, base.texto, limite=None)
+        elif base.status is StatusLeitura.IMAGEM and cfg is not None and (leitor := leitor_ocr(cfg)) is not None:
+            item.comparacao = comparar_por_ocr(leitura.texto, pasta_dbf / item.nome_base, leitor)
         else:
             item.comparacao = Comparacao(lido=False, detalhe=f"{base.status.value}: {base.detalhe}")
     return item
@@ -103,6 +109,16 @@ def descrever(item: Item, todas: bool = False, mostrar: int = 3) -> list[str]:
         linhas.append("      a base não tem arquivo deste número")
     elif not c.lido:
         linhas.append(f"      o PDF da base não tem texto para comparar ({c.detalhe}); o do Diário está no PDF da conferência")
+    elif c.por_ocr:
+        linhas.append(
+            f"      {c.detalhe}: "
+            + ("nenhuma diferença que o OCR não explique" if c.identico
+               else f"{c.total_trechos} diferença(s) que o OCR não explica (o resto é ruído do OCR)")
+        )
+        trechos = c.trechos if todas else c.trechos[:mostrar]
+        linhas += [f"      {_trecho(t)}" for t in trechos]
+        if len(trechos) < len(c.trechos):
+            linhas.append(f"      ... e mais {len(c.trechos) - len(trechos)} (v para ver todas)")
     elif c.identico:
         linhas.append("      texto idêntico ao da base")
     else:
@@ -170,11 +186,12 @@ def conferir(
     if not pdfs:
         escrever(f"Nada para conferir em {cfg.conferir_duplicata}.")
         return resumo
+    leitor_ocr(cfg)  # configuração do OCR inválida: erro antes de começar
     nomes = listar_nomes(cfg.pasta_dbf)
     modo = " [SIMULAÇÃO: só mostra as diferenças]" if simular else ""
     escrever(f"{len(pdfs)} PDF(s) para conferir{modo}.")
     for posicao, pdf in enumerate(pdfs, start=1):
-        item = preparar(pdf, cfg.pasta_dbf, nomes, registro)
+        item = preparar(pdf, cfg.pasta_dbf, nomes, registro, cfg)
         escrever("")
         escrever(f"[{posicao}/{len(pdfs)}] " + (f"{pdf.name}: {item.erro}" if item.erro else descrever(item)[0]))
         if item.erro:

@@ -155,4 +155,19 @@ python -m ferramentas.medir_ocr dados\historico\2010 dados\historico\2020 --json
       caderno) e anote se a diferença é do OCR ou do texto.
 - [ ] Guarde o `calibracao.json`.
 
+Fase 5 (base em imagem lida por OCR), num mês já baixado de 2020, só simulando:
+
+```powershell
+python main.py --separar dados\historico\2020\2020-01 --comparar
+python main.py --separar dados\historico\2020\2020-01 --gravar
+python main.py --simular
+```
+
+- [ ] O `--comparar` mostra no resumo "base lida por OCR, sem diferença" e "base lida por OCR, com diferença" no lugar
+      de parte dos "PDF da base não lido".
+- [ ] O `--gravar` diz `já existe na DBF (base lida por OCR, sem diferença)` para os decretos da base em imagem sem
+      diferença; nenhum deles vai para pendentes.
+- [ ] O `--simular` começa com `OCR ativo (Tesseract ...)`.
+- [ ] Nada mudou no G:.
+
 **Se algo falhar:** guarde o comando, a saída completa e o número do item.
