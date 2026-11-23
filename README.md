@@ -60,6 +60,7 @@ python main.py                                               # lote de verdade: 
 python main.py --conferir [--simular]                       # revisa a pasta "conferir duplicata" pelo terminal
 python main.py --limpar-cadernos PASTA [--mes AAAA-MM] [--simular]  # apaga os cadernos já processados
 python main.py --catalogar dados/cadernos [--com-base]      # CSV de todos os atos (só lê)
+python main.py --verificar-ocr                               # o Tesseract (OCR) está pronto? (só lê)
 ```
 
 Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. Rode os lotes em **ordem cronológica** (dos
@@ -74,7 +75,7 @@ Um mês por vez, em ordem cronológica, cada mês na própria pasta e **sempre c
 
 ```powershell
 $mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
-$pasta = "dados\historico\$mes"
+$pasta = "dados\historico\$($mes.Substring(0,4))\$mes"   # um ano por pasta: dados\historico\2020\2020-02
 $env:PASTA_CADERNOS = $pasta                                 # baixa na pasta do mês, não em dados\cadernos
 python main.py --baixar --fonte s3 --de $de --ate $ate
 Remove-Item Env:PASTA_CADERNOS
@@ -126,6 +127,7 @@ tests/               testes automatizados
 - [`docs/uso.md`](docs/uso.md): como rodar cada modo, o que ele mostra, e problemas de rede e de base.
 - [`docs/funcionamento.md`](docs/funcionamento.md): como funciona por dentro, decisões e limitações.
 - [`docs/roteiro_de_testes.md`](docs/roteiro_de_testes.md): o que conferir antes de aceitar uma mudança.
+- [`docs/plano_ocr.md`](docs/plano_ocr.md): plano da leitura por OCR com o Tesseract; em implementação (fases 0 e 1 prontas).
 
 ## Como ler o código
 

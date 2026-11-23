@@ -37,7 +37,13 @@ Casos de borda tratados (viram `avisos`, nunca descarte silencioso):
     "A GOVERNADORA/O GOVERNADOR"; pode ser citação);
   - fecho não encontrado (fim do ato estimado pelo próximo ato);
   - mesmo número duas vezes no caderno (republicação "por incorreção");
-  - páginas digitalizadas (atos nelas não podem ser vistos sem OCR).
+  - páginas digitalizadas ou com texto ilegível (atos nelas não podem ser vistos sem
+    OCR). A página ilegível tem texto, mas a fonte não converte os caracteres para
+    Unicode e sai como códigos de controle (`reader._ilegivel`); conta como página sem
+    texto, junto com as digitalizadas (`paginas_digitalizadas`), para o aviso e para a
+    limpeza não apagar o caderno. O texto dela continua no texto do caderno, como antes
+    (decisão de 17/11/2026: nos cadernos de 2010 a 2026 baixados, as 31 páginas assim
+    eram balanços de empresas, sem decreto).
 """
 
 from __future__ import annotations
@@ -53,7 +59,7 @@ import pymupdf
 from dbf_cepe.regras.especies import ESPECIES_ATIVAS, Especie
 from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras  # uma fonte só
 from dbf_cepe.regras.regras_atos import identificar as identificar_atos
-from dbf_cepe.leitura.reader import _pagina_digitalizada
+from dbf_cepe.leitura.reader import _ilegivel, _pagina_digitalizada
 
 # Linhas de cabeçalho/rodapé de página do Diário Oficial de Pernambuco. Só são
 # removidas nas primeiras linhas de cada página (ver LINHAS_DE_TOPO).
@@ -76,6 +82,9 @@ PADROES_TOPO_DE_PAGINA: tuple[re.Pattern[str], ...] = (
     ),
 )
 LINHAS_DE_TOPO = 4
+
+# Início do aviso das páginas sem texto (catálogo, relatório e limpeza usam o mesmo).
+AVISO_PAGINAS_SEM_TEXTO = "páginas digitalizadas ou com texto ilegível"
 
 # Expediente do Diário: o quadro com governador(a), vice, secretários, preços de
 # publicação e endereço da CEPE, impresso uma vez por caderno. Quando ele divide a página
@@ -372,7 +381,8 @@ def _montar_texto(
     """Texto do caderno sem cabeçalhos de página.
 
     Devolve (texto, início_de_cada_página, páginas_digitalizadas); o segundo
-    item permite descobrir em que página cai qualquer posição do texto. Com
+    item permite descobrir em que página cai qualquer posição do texto. O terceiro traz
+    também as páginas com texto ilegível (ver o início do módulo). Com
     `por_coluna`, cada página é lida na ordem visual (`linhas_por_coluna`; a página
     em que a posição das linhas não confere sai na ordem do PDF).
     """
@@ -381,7 +391,8 @@ def _montar_texto(
     digitalizadas: list[int] = []
     posicao = 0
     for numero, pagina in enumerate(doc, start=1):
-        if _pagina_digitalizada(pagina, pagina.get_text("text")):
+        texto_do_pdf = pagina.get_text("text")
+        if _pagina_digitalizada(pagina, texto_do_pdf) or (texto_do_pdf.strip() and _ilegivel(texto_do_pdf)):
             digitalizadas.append(numero)
         linhas = (linhas_por_coluna(pagina) if por_coluna else None) or _linhas_da_pagina(pagina)
         trecho = limpar_ligaduras("\n".join(linhas) + "\n")
@@ -560,7 +571,7 @@ def separar_caderno(
     ]
     if digitalizadas:
         avisos.append(
-            f"páginas digitalizadas {list(digitalizadas)}: atos nelas não foram "
+            f"{AVISO_PAGINAS_SEM_TEXTO} {list(digitalizadas)}: atos nelas não foram "
             "vistos (precisam de OCR)"
         )
     if not atos and not digitalizadas and not texto.strip():

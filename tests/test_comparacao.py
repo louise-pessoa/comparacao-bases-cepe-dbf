@@ -184,7 +184,7 @@ def test_relatorio_mostra_diferenca_e_resumo_por_faixa(cfg, caplog, monkeypatch)
     monkeypatch.setattr(
         comparacao,
         "comparar_com_base",
-        lambda texto, pdf: Comparacao(lido=True, similaridade=0.97, so_no_ato=3, so_na_base=4),
+        lambda texto, pdf, cfg=None: Comparacao(lido=True, similaridade=0.97, so_no_ato=3, so_na_base=4),
     )
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
@@ -268,7 +268,7 @@ def test_relatorio_mostra_as_diferencas_e_quantas_faltam(cfg, caplog, monkeypatc
     monkeypatch.setattr(
         comparacao,
         "comparar_com_base",
-        lambda texto, pdf: Comparacao(
+        lambda texto, pdf, cfg=None: Comparacao(
             lido=True, similaridade=0.99, so_no_ato=10, so_na_base=10,
             trechos=("...a [caderno: x | base: y] b...",), total_trechos=3,
         ),

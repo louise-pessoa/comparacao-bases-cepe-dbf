@@ -65,6 +65,12 @@ terminam no meio delas.
 - Cada decreto leva a **data de publicação**, que é a data do caderno tirada do nome do arquivo (`AAAAMMDD_...`), e o
   nome do caderno. Com `--gravar`, os dois vão nos metadados do PDF de pendentes (campo Keywords) e acompanham o decreto
   até a etapa 5. O `manifesto.json` não é usado para isso.
+- **Página sem texto:** a página digitalizada e, desde 17/11/2026, a página com **texto ilegível** (a fonte não converte
+  os caracteres para Unicode e eles saem como códigos de controle) geram o aviso "páginas digitalizadas ou com texto
+  ilegível [...]: atos nelas não foram vistos (precisam de OCR)", no `--separar` e no catálogo, e o caderno não é
+  apagado pela limpeza. Antes, os atos da página ilegível sumiam sem aviso. O texto da página continua no texto do
+  caderno, como antes. Nos cadernos baixados (2010, 2020, 2021 e 2026), as 31 páginas ilegíveis, lidas por OCR, eram
+  balanços de empresas, sem decreto. *Decisão de 17/11/2026.*
 - Como o recorte de página não serve, o PDF de cada decreto é gerado de novo a partir do texto, em Liberation Sans, só
   com título e linhas. Antes de ser guardado, ele é relido, e o texto e o número precisam bater, senão nada é gravado.
   Esse PDF é intermediário; o layout da DBF vem na etapa 4.
@@ -100,7 +106,8 @@ Não foi alterado, para a comparação com a base não regredir; o catálogo mar
 
 **Limitações:**
 
-- O OCR em si ainda não existe: os PDFs de imagem só são separados na pasta `leitura tesseract`.
+- O OCR ainda não lê nada no pipeline: os PDFs de imagem só são separados na pasta `leitura tesseract`. A leitura das
+  páginas digitalizadas dos cadernos e dos PDFs em imagem da base está em implementação ([`plano_ocr.md`](plano_ocr.md)).
 - PDF com cabeçalho em texto (20 caracteres ou mais) e corpo em imagem não é detectado como digitalizado: é lido como
   texto, não casa com nenhum cabeçalho e vai para `dados/erros`.
 
@@ -182,7 +189,8 @@ Extra). *Decisões de 06/11/2026:*
 | Mesmo dia, edição normal e Extra | a normal conta como a mais antiga; no mesmo caderno, vale a página |
 | Arquivo da base sem registro, texto idêntico (critério de `comparacao.py`) | duplicata |
 | Arquivo da base sem registro, texto diferente | PDF normalizado em `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`; nada muda na base |
-| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
+| Arquivo da base sem registro, digitalizado ou com texto ilegível, **com o OCR ativo** | o PDF da base é lido por OCR (`pipeline/comparacao_ocr.py`): sem nenhuma diferença que o OCR não explique, é duplicata e o registro anota `duplicata (base lida por OCR)`; com qualquer diferença, ou com o OCR de confiança média abaixo de 80, vai para conferência (as diferenças aparecem no `--conferir`). Nunca grava nem renomeia na base por causa do OCR. *Decisão de 23/11/2026 (fase 5 do [plano do OCR](plano_ocr.md))* |
+| Arquivo da base sem registro, digitalizado (imagem, sem texto para comparar), **sem OCR** (OCR desligado, Tesseract ausente, OCR sem texto aproveitável ou PDF com mais de 10 páginas) | conta como já existente e o registro anota `base é imagem (não comparado)`; vai para conferência só com sinal de republicação: a marca "(REPUBLICADO ...)" no caderno, outro texto do mesmo número no mesmo lote ou no registro. *Decisão de 10/11/2026* |
 | A mesma publicação (data, caderno e página) já no registro | ignorada: rodar o lote de novo não muda nada |
 
 - **Duas passagens no lote.** A primeira lê a data de publicação de cada PDF de pendentes e ordena o lote; a segunda

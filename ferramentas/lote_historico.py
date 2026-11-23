@@ -4,7 +4,7 @@ e para no primeiro sinal de problema.
 Para cada mês, em ordem cronológica, faz o mesmo que o passo a passo de docs/uso.md
 ("Lote histórico"):
 
-    1. baixa os cadernos em dados/historico/AAAA-MM (--fonte s3 até 05/2026, resumo depois);
+    1. baixa os cadernos em dados/historico/AAAA/AAAA-MM (--fonte s3 até 05/2026, resumo depois);
     2. --separar --comparar (só lê);
     3. --separar --gravar (grava em dados/pendentes);
     4. lote simulado;
@@ -29,6 +29,15 @@ conferência fica para o fim (`python main.py --conferir`).
 Uso (da raiz do repositório, com o .env apontando para a base certa):
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06              # só simula
     python -m ferramentas.lote_historico --de 2020-03 --ate 2020-06 --executar   # grava na base
+    python -m ferramentas.lote_historico --reorganizar [--executar]  # AAAA-MM -> AAAA/AAAA-MM
+
+Pastas: um ano por pasta e, dentro dela, um mês por pasta (dados/historico/2020/2020-03;
+decisão de 17/11/2026, para o histórico de 1999 a 2026). A pasta do mês mantém o ano no nome
+para ser reconhecível sozinha. Até 17/11/2026 os meses ficavam direto em dados/historico
+(dados/historico/2020-03): o `--reorganizar` move essas pastas (sem --executar, só mostra), e o
+lote não começa enquanto houver uma, para não baixar de novo um mês que já existe. Mover não
+perde nada: o manifesto, a simulação da limpeza e o registro de publicações guardam o nome do
+caderno, não o caminho.
 
 Sem --executar, cada mês é baixado, separado e simulado, mas nada vai para a base,
 `dados/pendentes` é esvaziado no fim do mês (os PDFs gerados ali só serviam à simulação)
@@ -43,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field, replace
@@ -60,6 +70,7 @@ from dbf_cepe.pipeline.relatorio import ResumoRelatorio, relatorio_dos_cadernos
 log = logging.getLogger("pipeline")
 
 PASTA_HISTORICO = Path("dados/historico")
+_MES_NO_FORMATO_ANTIGO = re.compile(r"^\d{4}-\d{2}$")
 # Até este mês (inclusive) o histórico vem do S3; depois, do site atual da CEPE.
 ULTIMO_MES_DO_S3 = date(2026, 5, 1)
 SIMILARIDADE_MINIMA = 0.95
@@ -134,8 +145,187 @@ def _esvaziar_pendentes(cfg: Configuracao) -> None:
         pdf.unlink()
 
 
+def pasta_do_mes(nome: str, historico: Path | None = None) -> Path:
+    """dados/historico/AAAA/AAAA-MM."""
+    return (historico or PASTA_HISTORICO) / nome[:4] / nome
+
+
+def pastas_no_formato_antigo(historico: Path | None = None) -> list[Path]:
+    """As pastas de mês direto em dados/historico (AAAA-MM), do formato anterior a 17/11/2026."""
+    historico = historico or PASTA_HISTORICO
+    if not historico.is_dir():
+        return []
+    return sorted(p for p in historico.iterdir() if p.is_dir() and _MES_NO_FORMATO_ANTIGO.match(p.name))
+
+
+@dataclass
+class Juncao:
+    """O que fazer para levar uma pasta de mês solta (dados/historico/AAAA-MM) para dentro da
+    pasta do ano. `conflitos` não vazio: nada é feito com esta pasta."""
+    antiga: Path
+    nova: Path
+    mover_pasta: bool = False  # o destino não existe: a pasta inteira é movida
+    mover: list[str] = field(default_factory=list)  # arquivos levados para o destino
+    repetidos: list[str] = field(default_factory=list)  # idênticos no destino: a cópia solta é apagada
+    descartar: list[str] = field(default_factory=list)  # a simulação da limpeza (é refeita)
+    manifesto: dict | None = None  # manifesto combinado, se as duas pastas tinham manifesto
+    entradas_combinadas: int = 0  # o mesmo caderno nos dois manifestos, combinado (`combinar_entradas`)
+    conflitos: list[str] = field(default_factory=list)
+
+
+def _sha256(arquivo: Path) -> str:
+    import hashlib
+
+    resumo = hashlib.sha256()
+    with open(arquivo, "rb") as entrada:
+        for bloco in iter(lambda: entrada.read(1 << 20), b""):
+            resumo.update(bloco)
+    return resumo.hexdigest()
+
+
+# Campos que podem diferir entre as duas entradas do MESMO arquivo: o mês baixado duas vezes
+# (data do download) e processado numa das pastas só (caso de 2010-09, 18/11/2026).
+_CAMPOS_COMBINAVEIS = {"baixado_em", "processado_em", "processamento"}
+
+
+def combinar_entradas(solta: dict, do_ano: dict) -> dict | None:
+    """A entrada do mesmo caderno nos dois manifestos, combinada; None se não for seguro.
+    Só combina o mesmo arquivo (sha256, tamanho e url iguais) com diferença apenas na data do
+    download e no processamento: fica o processamento de quem o tem (os dois com processamento
+    diferente: None) e a data do download mais antiga. Caderno marcado como apagado em uma das
+    pastas (`apagado_em`) nunca é combinado."""
+    if not solta.get("sha256") or any(solta.get(c) != do_ano.get(c) for c in ("sha256", "tamanho", "url")):
+        return None
+    diferentes = {c for c in solta.keys() | do_ano.keys() if solta.get(c) != do_ano.get(c)}
+    if not diferentes <= _CAMPOS_COMBINAVEIS:
+        return None
+    com_processamento = [e for e in (solta, do_ano) if "processamento" in e]
+    if len(com_processamento) == 2 and {"processamento", "processado_em"} & diferentes:
+        return None
+    base = dict(com_processamento[0] if com_processamento else do_ano)
+    datas = [e["baixado_em"] for e in (solta, do_ano) if e.get("baixado_em")]
+    if datas:
+        base["baixado_em"] = min(datas)
+    return base
+
+
+def diferencas_do_manifesto(antigo: dict, atual: dict, diferentes: list[str]) -> list[str]:
+    """Que campos diferem entre as entradas do mesmo caderno nos dois manifestos, quantas
+    vezes, e o exemplo do primeiro. Serve para decidir a junção à mão: só `baixado_em`
+    diferente, com o mesmo `sha256`, é o mesmo caderno baixado duas vezes."""
+    campos: Counter[str] = Counter()
+    mesmo_arquivo = 0
+    for chave in diferentes:
+        a, b = antigo[chave], atual[chave]
+        campos.update(c for c in a.keys() | b.keys() if a.get(c) != b.get(c))
+        mesmo_arquivo += bool(a.get("sha256")) and a.get("sha256") == b.get("sha256")
+    linhas = [
+        "  campos diferentes: " + ", ".join(f"{c} ({n})" for c, n in campos.most_common()),
+        f"  mesmo sha256 (mesmo arquivo) nos dois: {mesmo_arquivo} de {len(diferentes)}",
+    ]
+    exemplo = diferentes[0]
+    for campo in sorted(c for c in campos if c != "processamento"):
+        a, b = antigo[exemplo].get(campo, "(ausente)"), atual[exemplo].get(campo, "(ausente)")
+        if a != b:
+            linhas.append(f"  {exemplo} | {campo}: pasta solta {a} | pasta do ano {b}")
+    if "processamento" in campos:
+        tem = [nome for nome, m in (("pasta solta", antigo[exemplo]), ("pasta do ano", atual[exemplo]))
+               if "processamento" in m]
+        linhas.append(f"  {exemplo} | processamento: só em {', '.join(tem) or 'nenhuma'}"
+                      if len(tem) < 2 else f"  {exemplo} | processamento: diferente nas duas")
+    return linhas
+
+
+def planejar_juncao(antiga: Path, nova: Path) -> Juncao:
+    """Como juntar `antiga` em `nova` sem sobrescrever nada (só lê)."""
+    juncao = Juncao(antiga, nova)
+    if not nova.exists():
+        juncao.mover_pasta = True
+        return juncao
+    for item in sorted(antiga.iterdir()):
+        destino = nova / item.name
+        if item.is_dir():
+            juncao.conflitos.append(f"{item.name}: subpasta (junte à mão)")
+        elif item.name == captura.NOME_MANIFESTO:
+            try:
+                antigo, atual = captura.ler_manifesto(antiga), captura.ler_manifesto(nova)
+            except captura.ErroCaptura as erro:
+                juncao.conflitos.append(str(erro))
+                continue
+            diferentes = sorted(k for k in antigo.keys() & atual.keys() if antigo[k] != atual[k])
+            combinadas = {k: c for k in diferentes if (c := combinar_entradas(antigo[k], atual[k])) is not None}
+            diferentes = [k for k in diferentes if k not in combinadas]
+            juncao.entradas_combinadas = len(combinadas)
+            if diferentes:
+                juncao.conflitos.append(
+                    f"{captura.NOME_MANIFESTO}: {len(diferentes)} caderno(s) com dados diferentes nas duas pastas "
+                    f"(ex.: {diferentes[0]})"
+                )
+                juncao.conflitos += diferencas_do_manifesto(antigo, atual, diferentes)
+            else:
+                juncao.manifesto = {**atual, **antigo, **combinadas}
+        elif item.name == limpeza_dos_cadernos.NOME_SIMULACAO:
+            juncao.descartar.append(item.name)
+        elif not destino.exists():
+            juncao.mover.append(item.name)
+        elif _sha256(item) == _sha256(destino):
+            juncao.repetidos.append(item.name)
+        else:
+            juncao.conflitos.append(f"{item.name}: existe nas duas pastas com conteúdo diferente")
+    return juncao
+
+
+def executar_juncao(juncao: Juncao) -> None:
+    """Faz o planejado (só se não houver conflito). O manifesto é gravado antes de mover os
+    arquivos, e a pasta solta só é removida se ficar vazia."""
+    if juncao.conflitos:
+        return
+    if juncao.mover_pasta:
+        juncao.nova.parent.mkdir(parents=True, exist_ok=True)
+        juncao.antiga.rename(juncao.nova)
+        return
+    if juncao.manifesto is not None:
+        captura.gravar_manifesto(juncao.nova, juncao.manifesto)
+        (juncao.antiga / captura.NOME_MANIFESTO).unlink()
+    for nome in juncao.mover:
+        (juncao.antiga / nome).rename(juncao.nova / nome)
+    for nome in juncao.repetidos + juncao.descartar:
+        (juncao.antiga / nome).unlink()
+    juncao.antiga.rmdir()
+
+
+def reorganizar(historico: Path | None = None, mover: bool = False) -> list[Juncao]:
+    """Leva cada dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM: move a pasta, ou,
+    se o destino já existe, junta as duas (ver `planejar_juncao`). Sem `mover`, só planeja.
+    A pasta com conflito fica como está."""
+    juncoes = [planejar_juncao(antiga, pasta_do_mes(antiga.name, historico)) for antiga in pastas_no_formato_antigo(historico)]
+    if mover:
+        for juncao in juncoes:
+            executar_juncao(juncao)
+    return juncoes
+
+
+def descrever(juncao: Juncao, feito: bool) -> list[str]:
+    verbo = "" if feito else " (simulação)"
+    if juncao.conflitos:
+        return [f"{juncao.antiga}: NÃO mexida, junte à mão:"] + [f"    {c}" for c in juncao.conflitos]
+    if juncao.mover_pasta:
+        return [f"{juncao.antiga} -> {juncao.nova}{verbo}"]
+    partes = [f"{len(juncao.mover)} arquivo(s) movido(s)"]
+    if juncao.repetidos:
+        partes.append(f"{len(juncao.repetidos)} idêntico(s) já no destino (cópia solta apagada)")
+    if juncao.manifesto is not None:
+        partes.append(f"manifestos combinados ({len(juncao.manifesto)} cadernos)")
+    if juncao.entradas_combinadas:
+        partes.append(f"{juncao.entradas_combinadas} caderno(s) nos dois manifestos com o mesmo arquivo: mantido o "
+                      "processamento e a data do primeiro download")
+    if juncao.descartar:
+        partes.append("simulação da limpeza descartada (rode o --limpar-cadernos --simular de novo)")
+    return [f"{juncao.antiga} juntada a {juncao.nova}{verbo}: {'; '.join(partes)}"]
+
+
 def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
-    pasta = PASTA_HISTORICO / mes.nome
+    pasta = pasta_do_mes(mes.nome)
     log.info("===== %s (fonte %s) =====", mes.nome, mes.fonte)
 
     downloads = capturar(replace(cfg, pasta_cadernos=pasta), mes.inicio, mes.fim, False, mes.fonte)
@@ -198,14 +388,41 @@ def resumo_do_mes(mes: Mes, executado: bool = True) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--de", type=_mes_iso, required=True, metavar="AAAA-MM", help="primeiro mês")
-    parser.add_argument("--ate", type=_mes_iso, required=True, metavar="AAAA-MM", help="último mês, inclusive")
+    parser.add_argument("--de", type=_mes_iso, metavar="AAAA-MM", help="primeiro mês")
+    parser.add_argument("--ate", type=_mes_iso, metavar="AAAA-MM", help="último mês, inclusive")
+    parser.add_argument("--reorganizar", action="store_true",
+                        help="move dados/historico/AAAA-MM para dados/historico/AAAA/AAAA-MM "
+                        "(sem --executar, só mostra)")
     parser.add_argument("--executar", action="store_true",
                         help="grava na base da DBF (sem isto, cada mês só é baixado, separado e simulado)")
     parser.add_argument("--manter-cadernos", action="store_true",
                         help="com --executar: não apaga os cadernos processados no fim de cada mês")
     args = parser.parse_args(argv)
+    if args.reorganizar:
+        if args.de or args.ate or args.manter_cadernos:
+            parser.error("--reorganizar só se combina com --executar")
+        try:
+            juncoes = reorganizar(mover=args.executar)
+        except OSError as erro:
+            print(f"Erro: {erro}", file=sys.stderr)
+            return 2
+        for juncao in juncoes:
+            for linha in descrever(juncao, args.executar):
+                print(linha, file=sys.stderr if juncao.conflitos else sys.stdout)
+        if not juncoes:
+            print(f"Nada a reorganizar em {PASTA_HISTORICO}.")
+        elif not args.executar and any(not j.conflitos for j in juncoes):
+            print("Simulação: rode de novo com --executar para mover.")
+        return 1 if any(j.conflitos for j in juncoes) else 0
+    if args.de is None or args.ate is None:
+        parser.error("informe --de e --ate (ou use --reorganizar)")
     try:
+        antigas = pastas_no_formato_antigo()
+        if antigas:
+            raise ErroDeUso(
+                f"{len(antigas)} pasta(s) de mês no formato antigo em {PASTA_HISTORICO} (ex.: {antigas[0].name}); "
+                "rode antes: python -m ferramentas.lote_historico --reorganizar --executar"
+            )
         lista = meses(args.de, args.ate)
         cfg = carregar_configuracao()
         if cfg.pasta_dbf is None:
@@ -245,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{conferir} decreto(s) foram para 'conferir duplicata': rode python main.py --conferir")
         if not args.manter_cadernos:
             print("Os cadernos deles ficaram guardados; depois do --conferir, apague-os com "
-                  "python main.py --limpar-cadernos dados\\historico\\AAAA-MM --simular (e sem --simular).")
+                  "python main.py --limpar-cadernos dados\\historico\\AAAA\\AAAA-MM --simular (e sem --simular).")
     if feitos and feitos[-1].parada:
         print(f"\nParou em {feitos[-1].nome}. Resolva e rode de novo a partir de --de {feitos[-1].nome}.")
         return 1

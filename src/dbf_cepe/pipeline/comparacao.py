@@ -23,6 +23,14 @@ da base de 2020 não as têm. Contado ponto a ponto, um pontilhado pesava como u
 e derrubava a similaridade de decretos iguais para 86% a 94% (Decreto 48.584,
 janeiro de 2020). Medido em 10/11/2026.
 
+PDF da base em imagem ou com texto ilegível (fase 5 do plano do OCR, 23/11/2026): com o OCR
+ativo (`config.ConfiguracaoOcr`; `comparar_com_base(..., cfg)`), o PDF é lido por OCR e
+comparado pela regra calibrada em 19 e 23/11/2026 (`comparacao_ocr.comparar_com_ocr`): é
+"idêntico" só sem nenhuma diferença que o OCR não explique. Nunca é idêntico com o OCR de
+confiança média abaixo de `CONFIANCA_MINIMA_DA_BASE`; e o OCR com menos de
+`MIN_PALAVRAS_DO_OCR` palavras (página em branco, imagem que não é texto) conta como não lido,
+como antes do OCR. O PDF com mais de `MAX_PAGINAS_OCR_DA_BASE` páginas não é lido por OCR.
+
 Só LÊ o PDF da base.
 """
 
@@ -31,11 +39,25 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pymupdf
 
 from dbf_cepe.leitura.identificador import normalizar_espacos
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.leitura.separador import limpar_ligaduras
+
+if TYPE_CHECKING:
+    from dbf_cepe.config import Configuracao
+    from dbf_cepe.leitura.ocr import LeitorOcr
+
+MAX_PAGINAS_OCR_DA_BASE = 10
+MIN_PALAVRAS_DO_OCR = 20
+# Na calibração, os PDFs da base com OCR de confiança média abaixo disto (Decreto 34732/2010,
+# 71) tinham diferenças de verdade e muito ruído: o OCR deles nunca decide duplicata.
+CONFIANCA_MINIMA_DA_BASE = 80.0
 
 _ELEMENTO = re.compile(r"\w+|[^\w\s]")
 _PONTILHADO = re.compile(r"(?:\.\s*){3,}|…+")
@@ -65,10 +87,16 @@ class Comparacao:
     detalhe: str = ""
     trechos: tuple[str, ...] = ()  # as primeiras diferenças, com contexto
     total_trechos: int = 0  # quantas diferenças existem ao todo
+    # Base lida por OCR: `trechos`/`total_trechos` são as diferenças que o OCR não explica.
+    por_ocr: bool = False
+    confianca_ocr: float = 0.0
 
     @property
     def identico(self) -> bool:
-        """Indique duplicidade somente quando ambos os textos foram lidos e iguais."""
+        """Indique duplicidade somente quando ambos os textos foram lidos e iguais (base lida
+        por OCR: nenhuma diferença que o OCR não explique)."""
+        if self.por_ocr:
+            return self.lido and self.total_trechos == 0
         return self.lido and self.so_no_ato == 0 and self.so_na_base == 0
 
 
@@ -102,9 +130,68 @@ def comparar_textos(texto_ato: str, texto_base: str, limite: int | None = LIMITE
     )
 
 
-def comparar_com_base(texto_ato: str, pdf_base: Path) -> Comparacao:
-    """Compara o texto do ato com o do PDF da base; nunca levanta exceção."""
+@lru_cache(maxsize=4)
+def _leitor(cfg_ocr, pasta_cache: Path):
+    from dbf_cepe.leitura import ocr
+
+    return ocr.criar_leitor(cfg_ocr, pasta_cache)
+
+
+def leitor_ocr(cfg: Configuracao) -> LeitorOcr | None:
+    """O leitor de OCR do .env (um por configuração), ou None (OCR desligado ou Tesseract
+    ausente com OCR_ATIVO=auto). Levanta `ErroConfiguracao` quando o .env pede o OCR e ele não
+    funciona: quem processa a base chama isto no início, para o erro aparecer antes de tudo."""
+    from dbf_cepe.config import ErroConfiguracao
+    from dbf_cepe.leitura.ocr import ErroOcr
+
+    try:
+        return _leitor(cfg.ocr, cfg.cache_ocr)
+    except ErroOcr as erro:
+        raise ErroConfiguracao(f"OCR: {erro} (rode python main.py --verificar-ocr)") from erro
+
+
+def comparar_por_ocr(texto_ato: str, pdf_base: Path, leitor: LeitorOcr) -> Comparacao:
+    """Compara o texto do ato com o OCR do PDF da base (ver o início do módulo). Nunca
+    levanta exceção: OCR que falha ou não acha texto dá `lido=False`."""
+    from dbf_cepe.leitura.ocr import ErroOcr
+    from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr
+
+    try:
+        with pymupdf.open(pdf_base) as doc:
+            paginas = doc.page_count
+        if paginas > MAX_PAGINAS_OCR_DA_BASE:
+            return Comparacao(lido=False, detalhe=f"imagem com {paginas} páginas (OCR só até {MAX_PAGINAS_OCR_DA_BASE})")
+        lidas = [leitor.ler(pdf_base, numero) for numero in range(1, paginas + 1)]
+    except ErroOcr as erro:
+        return Comparacao(lido=False, detalhe=f"imagem; OCR falhou: {erro}")
+    except Exception as erro:  # PDF que o PyMuPDF não abre
+        return Comparacao(lido=False, detalhe=f"imagem; {type(erro).__name__}: {erro}")
+    palavras_ocr = [(p.texto, p.confianca) for lida in lidas for p in lida.palavras]
+    if len(palavras_ocr) < MIN_PALAVRAS_DO_OCR:
+        return Comparacao(lido=False, detalhe=f"imagem; o OCR não achou texto ({len(palavras_ocr)} palavras)")
+    confianca = sum(c for _, c in palavras_ocr) / len(palavras_ocr)
+    diferencas = [str(d) for d in comparar_com_ocr(texto_ato, palavras_ocr, leitor.cfg.confianca_critica).nao_explicadas]
+    if confianca < CONFIANCA_MINIMA_DA_BASE:
+        diferencas.insert(0, f"OCR da base com confiança média {confianca:.0f} (abaixo de "
+                             f"{CONFIANCA_MINIMA_DA_BASE:.0f}): não decide duplicata")
+    geral = comparar_textos(texto_ato, "\n".join(lida.texto for lida in lidas), limite=0)
+    return Comparacao(
+        lido=True, similaridade=geral.similaridade, so_no_ato=geral.so_no_ato, so_na_base=geral.so_na_base,
+        detalhe=f"base lida por OCR (confiança média {confianca:.0f})",
+        trechos=tuple(diferencas[:LIMITE_DE_TRECHOS]), total_trechos=len(diferencas),
+        por_ocr=True, confianca_ocr=confianca,
+    )
+
+
+def comparar_com_base(texto_ato: str, pdf_base: Path, cfg: Configuracao | None = None) -> Comparacao:
+    """Compara o texto do ato com o do PDF da base; nunca levanta exceção (a não ser a
+    configuração do OCR inválida, ver `leitor_ocr`). Com `cfg` e o OCR ativo, o PDF da base em
+    imagem ou com texto ilegível é lido por OCR (`comparar_por_ocr`)."""
     leitura = ler_pdf(pdf_base)
-    if leitura.status is not StatusLeitura.OK:
-        return Comparacao(lido=False, detalhe=f"{leitura.status.value}: {leitura.detalhe}")
-    return comparar_textos(texto_ato, leitura.texto)
+    if leitura.status is StatusLeitura.OK:
+        return comparar_textos(texto_ato, leitura.texto)
+    if leitura.status is StatusLeitura.IMAGEM and cfg is not None:
+        leitor = leitor_ocr(cfg)
+        if leitor is not None:
+            return comparar_por_ocr(texto_ato, pdf_base, leitor)
+    return Comparacao(lido=False, detalhe=f"{leitura.status.value}: {leitura.detalhe}")

@@ -40,7 +40,9 @@ from dbf_cepe.pipeline.armazenamento import (
 from dbf_cepe.pipeline.duplicidade import chave_nome, ja_existe, listar_nomes
 from dbf_cepe.pipeline.normalizador import ErroNormalizacao
 from dbf_cepe.pipeline.publicacao import Publicacao, hash_do_texto, ler_do_pdf
-from dbf_cepe.pipeline.registro import BASE_IMAGEM, CONFERIR, DUPLICATA, GRAVADO, Entrada, ErroRegistro, Registro
+from dbf_cepe.pipeline.registro import (
+    BASE_IMAGEM, CONFERIR, DUPLICATA, DUPLICATA_OCR, GRAVADO, Entrada, ErroRegistro, Registro,
+)
 from dbf_cepe.pipeline.republicacao import Acao, Plano, planejar
 
 log = logging.getLogger("pipeline")
@@ -169,8 +171,14 @@ def _com_publicacao(
     pasta_dbf = cfg.pasta_dbf
     assert pasta_dbf is not None
 
+    lidos_por_ocr: set[str] = set()
+
     def identico(nome: str) -> bool | None:
-        comparado = comparacao.comparar_com_base(texto, pasta_dbf / nome)
+        comparado = comparacao.comparar_com_base(texto, pasta_dbf / nome, cfg)
+        if comparado.por_ocr:
+            lidos_por_ocr.add(nome)
+            for trecho in comparado.trechos:
+                log.info("%s | %s lido por OCR | diferença: %s", pdf.name, nome, trecho)
         return comparado.identico if comparado.lido else None
 
     plano = planejar(
@@ -185,9 +193,12 @@ def _com_publicacao(
     if plano.acao is Acao.JA_REGISTRADA:
         return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, plano.motivo, simular)
     if plano.acao in (Acao.DUPLICATA, Acao.BASE_IMAGEM):
-        estado.registro.adicionar(entrada(DUPLICATA if plano.acao is Acao.DUPLICATA else BASE_IMAGEM, None))
+        por_ocr = plano.arquivo_identico is not None and plano.arquivo_identico in lidos_por_ocr
+        situacao = BASE_IMAGEM if plano.acao is Acao.BASE_IMAGEM else DUPLICATA_OCR if por_ocr else DUPLICATA
+        estado.registro.adicionar(entrada(situacao, None))
         _salvar(estado.registro, simular)
-        return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, plano.motivo, simular)
+        motivo = plano.motivo + (" (base lida por OCR, sem diferença)" if por_ocr else "")
+        return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, motivo, simular)
     if ident.tipo is None:
         return _sem_tipo(pdf, cfg, especie.nome_arquivo(numero), ident, simular)
     if plano.acao is Acao.CONFERIR:
@@ -348,6 +359,16 @@ def ordenar_por_publicacao(pdfs: list[Path]) -> list[tuple[Path, Publicacao | No
     )
 
 
+def _anunciar_ocr(cfg: Configuracao) -> None:
+    """Cria o leitor de OCR (erro de configuração aparece aqui, antes de tudo) e diz no log se
+    os PDFs da base em imagem serão lidos por OCR."""
+    leitor = comparacao.leitor_ocr(cfg)
+    if leitor is None:
+        log.info("OCR desligado ou Tesseract não encontrado: PDF da base em imagem conta como já existente.")
+    else:
+        log.info("OCR ativo (Tesseract %s): PDF da base em imagem ou ilegível é lido por OCR.", leitor.versao)
+
+
 def executar(
     cfg: Configuracao, simular: bool = False, permitir_pasta_vazia: bool = False
 ) -> Counter[Destino]:
@@ -363,6 +384,7 @@ def executar(
     validar_configuracao(cfg)
 
     inicio = time.perf_counter()
+    _anunciar_ocr(cfg)
     nomes_na_base = listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia)
     registro = Registro.carregar(cfg.registro)  # ilegível: ErroRegistro, nada é tocado
     if registro.operacao_em_andamento is not None:

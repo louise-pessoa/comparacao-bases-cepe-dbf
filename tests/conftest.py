@@ -94,3 +94,15 @@ def texto_decreto(numero: str, ementa: str, data: str = "26 DE JUNHO DE 2026") -
         "Decreto nº 21.959, de 27 de dezembro de 1999;\n"
         "DECRETA:\nArt. 1º Fica concedido o estímulo."
     )
+
+def criar_pdf_imagem_de(origem: Path, destino: Path, dpi: int = 200) -> Path:
+    """Cópia "digitalizada" de um PDF real: cada página vira uma imagem, sem texto. Serve de
+    amostra para o OCR a partir dos decretos já versionados em tests/amostras."""
+    with pymupdf.open(origem) as fonte:
+        doc = pymupdf.open()
+        for pagina in fonte:
+            nova = doc.new_page(width=pagina.rect.width, height=pagina.rect.height)
+            nova.insert_image(nova.rect, pixmap=pagina.get_pixmap(dpi=dpi))
+        doc.save(destino)
+        doc.close()
+    return destino

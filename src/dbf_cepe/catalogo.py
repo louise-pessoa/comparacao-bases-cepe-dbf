@@ -42,7 +42,7 @@ from dbf_cepe.pipeline.duplicidade import ja_existe
 from dbf_cepe.regras.especies import DECRETO, EDITAL, PORTARIA
 from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, cita_programa_so_no_corpo, programas_do_ato
 from dbf_cepe.regras.regras_atos import Achado, identificar
-from dbf_cepe.leitura.separador import ErroSeparacao, ler_caderno
+from dbf_cepe.leitura.separador import AVISO_PAGINAS_SEM_TEXTO, ErroSeparacao, ler_caderno
 
 PASTA_PADRAO_DO_CSV = Path("dados")
 NOME_PADRAO_DO_CSV = "catalogo_atos.csv"
@@ -232,7 +232,7 @@ def catalogar_caderno(caminho: Path) -> tuple[list[LinhaDoCatalogo], list[str]]:
         avisos.append(f"{caminho.name}: o nome não começa por AAAAMMDD; data de publicação em branco")
     if digitalizadas:
         avisos.append(
-            f"{caminho.name}: páginas digitalizadas {list(digitalizadas)}: atos nelas não foram "
+            f"{caminho.name}: {AVISO_PAGINAS_SEM_TEXTO} {list(digitalizadas)}: atos nelas não foram "
             "vistos (precisam de OCR)"
         )
     linhas = [

@@ -22,6 +22,8 @@ Quatro modos, independentes por enquanto:
      nem as pastas de saída do pipeline.
   5. Limpeza: `--limpar-cadernos PASTA [--mes AAAA-MM]` apaga os cadernos já
      processados por completo, deixando o registro no manifesto (pipeline/limpeza.py).
+  6. Diagnóstico do OCR: `--verificar-ocr` confere o Tesseract do .env (executável,
+     versão, idiomas, OCR de uma página de teste). Só lê (leitura/ocr.py).
 
 Uso:
     python main.py --simular                              # lote, sem mexer em nada
@@ -33,8 +35,9 @@ Uso:
     python main.py --separar dados/cadernos --comparar   # compara o texto com o da base
     python main.py --catalogar dados/cadernos             # grava dados/catalogo_atos.csv
     python main.py --conferir [--simular]                 # revisa a pasta "conferir duplicata"
-    python main.py --limpar-cadernos dados/historico/2020-03 --simular   # o que seria apagado
-    python main.py --limpar-cadernos dados/historico/2020-03             # apaga (mesma lista)
+    python main.py --limpar-cadernos dados/historico/2020/2020-03 --simular   # o que seria apagado
+    python main.py --limpar-cadernos dados/historico/2020/2020-03             # apaga (mesma lista)
+    python main.py --verificar-ocr                        # o Tesseract está pronto?
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ from dbf_cepe.config import (
     carregar_configuracao,
 )
 from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, carregar_indice
+from dbf_cepe.leitura import ocr
 from dbf_cepe.leitura.separador import ErroSeparacao
 from dbf_cepe.pipeline.lote import Destino, executar
 from dbf_cepe.pipeline.registro import ErroRegistro
@@ -157,6 +161,19 @@ def catalogar_cadernos(caminho: Path, saida: Path | None = None, com_base: bool 
     return 1 if resultado.cadernos_com_falha else 0
 
 
+def verificar_ocr() -> int:
+    """Modo `--verificar-ocr`: imprime o diagnóstico do Tesseract. 0 = pronto (ou OCR
+    desligado de propósito); 1 = falta algo; 2 = .env inválido."""
+    try:
+        cfg = carregar_configuracao()
+    except ErroConfiguracao as erro:
+        print(f"Erro: {erro}", file=sys.stderr)
+        return 2
+    diagnostico = ocr.verificar(cfg.ocr)
+    print("\n".join(diagnostico.linhas))
+    return 0 if diagnostico.ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Interprete os modos de captura, separação, lote e catálogo e retorne seu status.
 
@@ -255,7 +272,16 @@ def main(argv: list[str] | None = None) -> int:
         help="com --catalogar: lê a lista de arquivos da base da DBF (.env) para decidir o escopo "
         "das erratas; só leitura",
     )
+    parser.add_argument(
+        "--verificar-ocr",
+        action="store_true",
+        help="confere o Tesseract configurado no .env (versão, idioma português, página de teste); só lê",
+    )
     args = parser.parse_args(argv)
+    if args.verificar_ocr:
+        if any(a is not None and a is not False for k, a in vars(args).items() if k not in ("verificar_ocr", "fonte")):
+            parser.error("--verificar-ocr não se combina com outros modos nem opções")
+        return verificar_ocr()
     if args.com_base and not args.catalogar:
         parser.error("--com-base só vale junto com --catalogar")
     if args.catalogar and (

@@ -343,6 +343,33 @@ def test_linhas_de_ato_nao_sao_topo_de_pagina(linha):
     assert not any(p.match(linha) for p in PADROES_TOPO_DE_PAGINA)
 
 
+# Página com texto que sai como códigos de controle (fonte sem conversão para Unicode), como as
+# 31 páginas de balanços de empresas nos cadernos de 2010 e 2020.
+TEXTO_ILEGIVEL = "".join(chr(c) for c in range(1, 9)) * 20
+
+
+def test_pagina_com_texto_ilegivel_conta_como_pagina_sem_texto_e_avisa(tmp_path):
+    pdf = criar_pdf_texto(tmp_path / "20200418_PoderExecutivo.pdf", decreto("48.900"), TEXTO_ILEGIVEL)
+    resultado = separar_caderno(pdf)
+    assert resultado.paginas_digitalizadas == (2,)
+    assert any("com texto ilegível [2]" in aviso and "OCR" in aviso for aviso in resultado.avisos)
+    assert [a.numero for a in resultado.atos] == ["48900"]  # a página legível continua separada
+
+
+def test_pagina_ilegivel_nao_muda_o_texto_do_caderno(tmp_path):
+    from dbf_cepe.leitura.reader import _ilegivel
+
+    pdf = criar_pdf_texto(tmp_path / "c.pdf", "primeira página", TEXTO_ILEGIVEL)
+    texto, inicios, digitalizadas, _ = ler_caderno(pdf)
+    assert digitalizadas == (2,)
+    assert "primeira página" in texto[: inicios[1]] and _ilegivel(texto[inicios[1]:])
+
+
+def test_pagina_em_branco_nao_e_ilegivel(tmp_path):
+    pdf = criar_pdf_texto(tmp_path / "c.pdf", "primeira página", "")
+    assert ler_caderno(pdf)[2] == ()
+
+
 # ----------------------------------------------------------------------------
 # Cabeçalho da página no meio do texto da página (Decreto 35.553/2010)
 # ----------------------------------------------------------------------------

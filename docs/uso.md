@@ -79,14 +79,31 @@ Para gravar na base os decretos de meses anteriores a 2026:
 - **Sempre `--fonte s3`.** O site atual da CEPE, a fonte padrão, só foi conferido para 2026. O S3 tem os cadernos
   de 2005 a 2025, mas o pipeline só lê corretamente a partir de **2020**
   ([`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite)).
-- **Cada mês na própria pasta** (`dados\historico\AAAA-MM`), com `PASTA_CADERNOS` definido só para o download. Assim
-  o mês não se mistura com `dados\cadernos`, e cada pasta tem o próprio manifesto.
+- **Cada mês na própria pasta, dentro da pasta do ano** (`dados\historico\AAAA\AAAA-MM`, ex.: `dados\historico\2020\2020-02`),
+  com `PASTA_CADERNOS` definido só para o download. Assim o mês não se mistura com `dados\cadernos`, cada pasta tem o
+  próprio manifesto, e os 27 anos do histórico não ficam em centenas de pastas lado a lado. Até 17/11/2026 os meses
+  ficavam direto em `dados\historico\AAAA-MM`; para mover essas pastas para o formato novo (nada se perde: os
+  manifestos guardam só o nome dos cadernos):
+
+```powershell
+python -m ferramentas.lote_historico --reorganizar             # mostra o que seria movido
+python -m ferramentas.lote_historico --reorganizar --executar  # move
+```
+
+  O `lote_historico` não começa enquanto houver pasta no formato antigo, para não baixar de novo um mês que já existe.
+  Se o mês já existe na pasta do ano (foi baixado de novo numa pasta solta), o `--reorganizar` junta as duas:
+  move os arquivos novos, apaga as cópias idênticas (mesmo SHA-256), combina os manifestos (o mesmo caderno nos dois,
+  com o mesmo arquivo, fica com o processamento de quem o tem e a data do primeiro download) e descarta a simulação da
+  limpeza (rode o `--limpar-cadernos --simular` de novo). Com qualquer conflito (o mesmo nome com outro conteúdo, o
+  mesmo caderno com dados diferentes nos dois manifestos, uma subpasta), a pasta solta fica como está e o motivo é
+  mostrado. Desde 18/11/2026, `PASTA_CADERNOS` apontando para uma pasta de mês solta (`dados\historico\AAAA-MM`) é
+  recusado com a indicação do caminho certo.
 
 Em PowerShell, para fevereiro de 2020:
 
 ```powershell
 $mes = "2020-02"; $de = "2020-02-01"; $ate = "2020-02-29"
-$pasta = "dados\historico\$mes"
+$pasta = "dados\historico\$($mes.Substring(0,4))\$mes"   # dados\historico\2020\2020-02
 
 $env:PASTA_CADERNOS = $pasta
 python main.py --baixar --fonte s3 --de $de --ate $ate
@@ -190,6 +207,8 @@ mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs se
 | `CONFERIR DUPLICATA (gravado em pendentes: ...)` | a base tem o número sem registro e com texto diferente; o lote manda para conferência manual |
 | `REVISÃO MANUAL (reprovado no critério de leitura: ...; não gravado)` | não grava: nenhum nível da leitura em cascata leu o decreto inteiro ([`funcionamento.md`](funcionamento.md#leitura-em-cascata)); confira o caderno e grave à mão, se for o caso |
 | `já existe na DBF (texto idêntico)` | não grava |
+| `já existe na DBF (base lida por OCR, sem diferença)` | não grava: o PDF da base é imagem ou tem texto ilegível, e o OCR dele não tem nenhuma diferença que o OCR não explique; o registro anota `duplicata (base lida por OCR)` |
+| `CONFERIR DUPLICATA` com a base lida por OCR | o OCR da base tem alguma diferença de verdade (número lido com confiança e diferente, outra palavra, texto do caderno que falta) ou confiança média abaixo de 80; o `--conferir` mostra só essas diferenças, sem o ruído do OCR |
 | `já existe na DBF (PDF da base é imagem ou ilegível; não comparado)` | não grava: o PDF da base é digitalizado, ou tem texto que sai como códigos de controle (fonte sem conversão para Unicode, comum em 2010), e não há sinal de republicação (marca "REPUBLICADO" no caderno ou outro texto do mesmo número no lote) |
 | `já registrado (mesma publicação)` | não grava (mesma data, caderno e página já no registro) |
 
@@ -197,7 +216,7 @@ O lote decide o nome final de novo, com a base daquele momento. **Caderno sem da
 base não tem; número repetido no caderno grava só a primeira ocorrência).
 
 Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
-fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada, programa
+fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada ou com texto ilegível, programa
 citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
 decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
 coluna): ...; confira o texto`), decreto com um trecho de outro ato removido (`trecho de outro ato removido (N palavras,
@@ -293,8 +312,8 @@ pergunta:
 ## Limpeza dos cadernos (`--limpar-cadernos`)
 
 ```powershell
-python main.py --limpar-cadernos dados\historico\2020-03 --simular   # lista o que seria apagado e por que o resto fica
-python main.py --limpar-cadernos dados\historico\2020-03             # apaga exatamente a lista simulada
+python main.py --limpar-cadernos dados\historico\2020\2020-03 --simular   # lista o que seria apagado e por que o resto fica
+python main.py --limpar-cadernos dados\historico\2020\2020-03        # apaga exatamente a lista simulada
 python main.py --limpar-cadernos dados\cadernos --mes 2026-09 --simular   # só os cadernos de um mês
 ```
 
@@ -303,7 +322,7 @@ Um caderno só é apagado se:
 
 1. o mês dele já acabou;
 2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes (ele anota isso no manifesto);
-3. não tem página digitalizada;
+3. não tem página digitalizada nem com texto ilegível;
 4. nenhum decreto da DBF dele ficou em revisão manual;
 5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
 6. todo decreto da DBF dele que foi para pendentes está no registro de publicações, e o que foi para "conferir
@@ -344,6 +363,50 @@ data_de_publicacao, caderno, pagina, republicacao, situacao`.
 
 O significado de cada coluna e as regras de escopo estão em [`funcionamento.md`](funcionamento.md#catálogo).
 
+## OCR (Tesseract): instalação e verificação
+
+Em implementação, na branch `claude/plano-ocr-tesseract` ([`plano_ocr.md`](plano_ocr.md)). Por enquanto o OCR só é usado
+pelo `--verificar-ocr` e pelo levantamento das páginas digitalizadas; o pipeline ainda não lê nada por OCR.
+
+1. Instale o Tesseract 5 para Windows (instalador da UB Mannheim, o indicado na documentação do Tesseract) e marque o
+   idioma **Portuguese** na instalação. Se ele já estiver instalado, basta conferir o passo 3.
+2. No `.env`, se o `tesseract` não estiver no PATH, informe o caminho do executável:
+   `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` (no WSL2: `sudo apt install tesseract-ocr
+   tesseract-ocr-por` e deixe em branco).
+3. Confira:
+
+```powershell
+python main.py --verificar-ocr
+```
+
+Mostra o executável, a versão, os idiomas instalados, o SHA-256 do `por.traineddata` e o OCR de uma página de teste
+gerada na hora. Termina com `OK: o OCR está pronto para uso.` (código 0). Com algo faltando, diz o quê e sai com código 1;
+com uma linha `OCR_*` inválida no `.env`, código 2.
+
+| Mensagem | O que fazer |
+|---|---|
+| `Tesseract não encontrado no PATH` | informe `TESSERACT_CMD` no `.env` |
+| `TESSERACT_CMD=... não é o executável do Tesseract` | o caminho tem de terminar em `tesseract.exe` |
+| `falta o idioma por` | rode o instalador de novo marcando Portuguese, ou use uma pasta de idiomas sua (abaixo) |
+| `Idiomas instalados: (nenhum)` | a pasta `tessdata` mostrada está vazia (instalação sem idiomas) ou uma `TESSDATA_PREFIX` aponta para outro lugar; use uma pasta de idiomas sua (abaixo) |
+| `OCR_TESSDATA=... não existe` | crie a pasta e copie o `por.traineddata` para ela |
+| `OCR_IDIOMA=... é inválido` | só o nome do idioma: `por`, ou `por+eng` |
+
+**Pasta de idiomas sem administrador.** Gravar em `C:\Program Files\Tesseract-OCR\tessdata` exige administrador. Em
+vez disso, baixe o `por.traineddata` do repositório oficial (`tesseract-ocr/tessdata`, no GitHub) para uma pasta do
+projeto e informe-a no `.env`:
+
+```powershell
+New-Item -ItemType Directory -Force dados\tessdata | Out-Null
+Invoke-WebRequest https://github.com/tesseract-ocr/tessdata/raw/main/por.traineddata -OutFile dados\tessdata\por.traineddata
+Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # alguns MB; com poucos KB, veio uma página de erro
+```
+
+No `.env`: `OCR_TESSDATA=dados/tessdata`. Só o `por` é necessário (o OCR não usa o `osd`). O `--verificar-ocr` mostra o
+SHA-256 do arquivo usado; ele também vai para a chave do cache do OCR, então trocar o arquivo refaz as leituras.
+
+O OCR roda só na máquina: nenhum texto vai para serviço externo, e não há rede envolvida depois da instalação.
+
 ## Ferramentas (fora do pipeline)
 
 ```bash
@@ -352,6 +415,8 @@ python -m ferramentas.regressao_separador main      # a separação dos decretos
 python -m ferramentas.regressao_separador main --detalhes  # e o que mudou, decreto a decreto
 python -m ferramentas.medir_criterio dados/cadernos  # quantos decretos, por ano, reprovam no critério da cascata
 python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # vários meses do lote histórico
+python -m ferramentas.levantar_digitalizadas dados/historico [--base PASTA] [--ocr]  # onde o OCR vai atuar
+python -m ferramentas.medir_ocr dados/historico/2010 dados/historico/2020 --json calibracao.json  # limiares do OCR
 ```
 
 - `localizar_exemplos` só lê `dados/cadernos`. Copia cada página achada, uma por PDF, para `dados/exemplos` (sem
@@ -367,4 +432,28 @@ python -m ferramentas.lote_historico --de 2020-03 --ate 2020-12 [--executar]  # 
   `fecho repetido`, `sem abertura`, `outro cabeçalho`, `expediente`, `DBF sem tipo`), com alguns exemplos. `--json
   ARQUIVO` grava tudo; `--exemplos N` muda quantos exemplos aparecem por ano. Sai com código 1 se algum caderno não
   puder ser lido. Critério e motivos: [`funcionamento.md`](funcionamento.md#cadernos-antigos-ano-limite).
+- `levantar_digitalizadas` só lê (fase 0 do [plano do OCR](plano_ocr.md)). Mostra, por ano do caderno, quantos cadernos
+  e páginas há, quantos cadernos têm página digitalizada ou com texto ilegível, e alguns exemplos com os números das
+  páginas. Com `--base PASTA`, classifica também os PDFs da base da DBF (texto, imagem, texto ilegível, corrompido) e
+  lista os que estão em imagem. Com `--ocr`, lê as páginas sem texto com o Tesseract do `.env` e conta os cabeçalhos
+  `DECRETO Nº` achados nelas e, página a página, quantas palavras o OCR leu, o começo do texto, se cita anexo ou
+  decreto e a que decreto do caderno a página pode pertencer (o que a cobre, ou o que termina até 3 páginas antes: a
+  página pode ser o anexo dele). O resultado fica no cache do OCR, então a segunda rodada é rápida. Só com `--base`
+  (sem pastas), não lê cadernos. `--json ARQUIVO`
+  grava tudo; `--exemplos N` muda quantos exemplos aparecem. Sai com código 1 se algum PDF não puder ser lido.
+- `medir_ocr` só lê e não baixa nada (fase 2 do [plano do OCR](plano_ocr.md)). Usa o Tesseract e a base do `.env` (ou
+  `--base`). **Parte A** (`--parte paginas`): sorteia, sempre as mesmas, `--paginas-por-ano N` páginas com texto dos
+  cadernos (padrão 20), lê cada uma por OCR e compara com o texto do PDF, sem depender da ordem das colunas: acerto de
+  palavras e de números por ano e o erro por faixa de confiança, com a sugestão de `OCR_CONFIANCA_CRITICA` e
+  `OCR_CONFIANCA_MEDIA`. `--dpi 300,400` compara resoluções. **Parte B** (`--parte base`): para cada decreto da DBF
+  dos cadernos cujo arquivo na base é imagem ou tem texto ilegível, lê a base por OCR e compara com o texto do
+  caderno em duas medidas: similaridade (o texto todo) e cobertura (quanto do decreto do caderno está na base,
+  ignorando o que sobra nela, como o cabeçalho da página e pedaços dos atos vizinhos nos recortes de 2010). Como
+  controle, compara cada decreto com a base de outro número. Para cada medida, sugere um limiar (o par de números
+  diferentes mais parecido + 5%). A medida que decide é a terceira, **diferenças não explicadas pelo OCR**
+  (`pipeline/comparacao_ocr.py`): mostra quantas há no mesmo número e no controle, a regra "duplicata só com 0" e
+  quantos pares ficariam como duplicata, e lista os pares de mesmo número com alguma diferença não explicada, para
+  conferir à mão se é OCR ou texto diferente. `--max-pares N` para antes; sem `--parte`, faz as duas. O OCR fica no cache, então
+  rodar de novo é rápido. Leva alguns segundos por página lida. Não apague os cadernos de 2010 e 2020 antes de rodar:
+  são o material da calibração.
 

@@ -126,4 +126,48 @@ python main.py --separar "$v\cad19" --gravar
 Os textos de 22/03/2019 vêm cortados (problema de leitura dos cadernos anteriores a 2020), por isso eles diferem do
 original e viram republicação; o teste serve para conferir os nomes, não o conteúdo.
 
+## 9. OCR (branch `claude/plano-ocr-tesseract`)
+
+Fases 0 e 1 do [plano do OCR](plano_ocr.md). Só leem: nada muda na base nem nos cadernos.
+
+```powershell
+python main.py --verificar-ocr
+python -m ferramentas.levantar_digitalizadas dados\historico --base "G:\Meu Drive\DBF\Decretos" --json levantamento.json
+python -m ferramentas.levantar_digitalizadas dados\historico --ocr --exemplos 10
+```
+
+- [ ] `--verificar-ocr` termina com `OK: o OCR está pronto para uso.` e a página de teste traz `12.345`.
+- [ ] `pytest -q -rs` não pula os testes marcados `ocr` (se pular, o Tesseract não foi achado pelo PATH).
+- [ ] O levantamento mostra a tabela por ano; guarde o `levantamento.json` (define o piloto e os anos do OCR).
+- [ ] Com `--ocr`, os cadernos com páginas digitalizadas mostram quantos cabeçalhos de decreto o OCR achou; abra um ou
+      dois exemplos e confira se o número bate com a página.
+- [ ] Nada mudou no G: nem em `dados\historico`; só apareceu `dados\cache ocr`.
+
+Fase 2 (calibração; não baixa nada):
+
+```powershell
+python -m ferramentas.medir_ocr dados\historico\2010 dados\historico\2020 --json calibracao.json
+```
+
+- [ ] A parte A mostra, por ano, o acerto de palavras e de números e as duas sugestões de confiança.
+- [ ] A parte B mostra quantos pares de mesmo número e de números diferentes foram comparados e a sugestão de
+      `OCR_SIMILARIDADE_DUPLICATA`; abra dois ou três pares listados abaixo do limiar (o PDF da base e a página do
+      caderno) e anote se a diferença é do OCR ou do texto.
+- [ ] Guarde o `calibracao.json`.
+
+Fase 5 (base em imagem lida por OCR), num mês já baixado de 2020, só simulando:
+
+```powershell
+python main.py --separar dados\historico\2020\2020-01 --comparar
+python main.py --separar dados\historico\2020\2020-01 --gravar
+python main.py --simular
+```
+
+- [ ] O `--comparar` mostra no resumo "base lida por OCR, sem diferença" e "base lida por OCR, com diferença" no lugar
+      de parte dos "PDF da base não lido".
+- [ ] O `--gravar` diz `já existe na DBF (base lida por OCR, sem diferença)` para os decretos da base em imagem sem
+      diferença; nenhum deles vai para pendentes.
+- [ ] O `--simular` começa com `OCR ativo (Tesseract ...)`.
+- [ ] Nada mudou no G:.
+
 **Se algo falhar:** guarde o comando, a saída completa e o número do item.

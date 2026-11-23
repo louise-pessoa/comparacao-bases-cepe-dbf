@@ -9,7 +9,11 @@ normalizado, nome do arquivo e situação:
   - "conferir duplicata": a base tinha um arquivo deste número sem registro e com
     texto diferente; o PDF foi para a pasta local de conferência (`arquivo`);
   - "base é imagem (não comparado)": a base tinha o número num PDF digitalizado, sem
-    texto para comparar, e não havia sinal de republicação; não foi gravada.
+    texto para comparar, e não havia sinal de republicação; não foi gravada;
+  - "duplicata (base lida por OCR)": a base tinha o número num PDF digitalizado ou com texto
+    ilegível; o OCR dele não teve nenhuma diferença que o OCR não explique
+    (`comparacao_ocr.py`); não foi gravada. Separada de "duplicata" para poder listar e
+    refazer o que foi decidido por OCR (fase 5 do plano do OCR, 23/11/2026).
 
 É com ele que a regra de republicação sabe a data de cada arquivo da base. Arquivos
 da base gravados antes deste registro existir não constam dele (ver
@@ -43,7 +47,9 @@ CONFERIR = "conferir duplicata"
 # A base tem o número, mas o PDF dela é imagem (digitalizado): não há texto para comparar.
 # Sem sinal de republicação, conta como já existente (decisão de 10/11/2026).
 BASE_IMAGEM = "base é imagem (não comparado)"
-SITUACOES = (GRAVADO, DUPLICATA, CONFERIR, BASE_IMAGEM)
+DUPLICATA_OCR = "duplicata (base lida por OCR)"
+SITUACOES = (GRAVADO, DUPLICATA, CONFERIR, BASE_IMAGEM, DUPLICATA_OCR)
+SEM_ARQUIVO = (DUPLICATA, BASE_IMAGEM, DUPLICATA_OCR)  # situações que não gravam nada
 
 
 class ErroRegistro(Exception):
@@ -88,7 +94,7 @@ class Entrada:
             if not isinstance(dados[chave], str) or not dados[chave]:
                 raise ValueError(f"{chave} inválido: {dados[chave]!r}")
         arquivo = dados.get("arquivo")
-        if situacao not in (DUPLICATA, BASE_IMAGEM) and (not isinstance(arquivo, str) or not arquivo):
+        if situacao not in SEM_ARQUIVO and (not isinstance(arquivo, str) or not arquivo):
             raise ValueError(f"arquivo inválido: {arquivo!r}")
         return cls(
             especie=dados["especie"],
