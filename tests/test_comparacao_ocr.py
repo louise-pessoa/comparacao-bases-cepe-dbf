@@ -77,3 +77,17 @@ def test_normalizar():
 def test_inciso_iii_lido_como_hi():
     assert comparar_com_ocr("nos termos do inciso III do art. 2º", ocr("nos termos do inciso HI do art . 2º")).sem_diferenca_de_verdade
     assert comparar_com_ocr("inciso III - produtos", ocr("inciso 111 - produtos")).sem_diferenca_de_verdade
+
+
+def test_uma_letra_trocada_e_ruido_do_ocr():
+    """Calibração de 23/11/2026: os casos que sobraram no mesmo decreto."""
+    for caderno, base in [("NBM / SH 5205", "NEM / SH 5205"), ("a Lei", "2 Lei"), ("A GOVERNADORA", "4 GOVERNADORA"),
+                          ("inciso V", "inciso W"), ("alínea c", "alínea 0"), ("s / n", "s / h"), ("sobre do", "sobre de")]:
+        assert comparar_com_ocr(caderno, ocr(base)).sem_diferenca_de_verdade, (caderno, base)
+
+
+def test_numero_com_um_algarismo_trocado_continua_diferenca():
+    """O número nunca entra na regra de uma letra: "193" -> "199" com confiança é conferir."""
+    resultado = comparar_com_ocr("Decreto nº 193", ocr("Decreto nº 199"))
+    assert [d.motivo for d in resultado.nao_explicadas] == ["número diferente (lido com confiança)"]
+    assert not comparar_com_ocr("ALFA LTDA", ocr("BETA LTDA")).sem_diferenca_de_verdade

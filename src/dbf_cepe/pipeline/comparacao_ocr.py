@@ -26,9 +26,11 @@ depois de alinhar os dois textos:
   - trecho trocado com número do lado do caderno: explicado só se o OCR leu esse trecho com
     confiança abaixo de `confianca_critica` e os dois são parecidos (`PARECIDO_COM_POUCA_CONFIANCA`);
     número lido com confiança alta e diferente é diferença de verdade;
-  - trecho trocado só com letras: explicado se, trocando as confusões típicas do OCR
+  - trecho trocado só com letras (do lado do caderno): explicado se difere em uma letra só
+    ("NBM" -> "NEM", "a" -> "2", "do" -> "de"), ou se, trocando as confusões típicas do OCR
     (`CONFUSOES`), os dois são muito parecidos (`PARECIDO`), ou parecidos e lidos com pouca
-    confiança.
+    confiança. Um número do lado do caderno nunca entra nesta regra: a republicação costuma
+    mudar justamente um número.
 
 Na dúvida, a diferença fica como não explicada: o decreto vai para "conferir duplicata"
 (decisão humana), nunca para descarte. Só lê.
@@ -111,6 +113,17 @@ def tokens_do_ocr(palavras_ocr: Sequence[tuple[str, float]]) -> list[_Token]:
     ])
 
 
+def _distancia(a: str, b: str) -> int:
+    """Distância de edição (inserções, remoções e trocas de um caractere)."""
+    anterior = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        atual = [i]
+        for j, cb in enumerate(b, start=1):
+            atual.append(min(anterior[j] + 1, atual[j - 1] + 1, anterior[j - 1] + (ca != cb)))
+        anterior = atual
+    return anterior[-1]
+
+
 def _parecido(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b, autojunk=False).ratio()
 
@@ -125,6 +138,8 @@ def _explicar_troca(caderno: list[_Token], base: list[_Token], confianca_critica
         if pouca_confianca and _parecido(a, b) >= PARECIDO_COM_POUCA_CONFIANCA:
             return None
         return "número diferente" + ("" if pouca_confianca else " (lido com confiança)")
+    if min(_distancia(a, b), _distancia(a.translate(CONFUSOES), b.translate(CONFUSOES))) <= 1:
+        return None  # uma letra trocada: "NBM" -> "NEM", "a" -> "2", "do" -> "de" (calibração de 23/11/2026)
     semelhanca = _parecido(a.translate(CONFUSOES), b.translate(CONFUSOES))
     if semelhanca >= PARECIDO or (pouca_confianca and semelhanca >= PARECIDO_COM_POUCA_CONFIANCA):
         return None

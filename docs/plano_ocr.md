@@ -75,6 +75,22 @@ ilegível (117 pares; Tesseract 5.5.3, `por` de `tesseract-ocr/tessdata`):
   qualquer uma, conferir. Nas amostras de 2026, o mesmo decreto deu 0 e o controle 11 ou mais. Falta rodar nos 117
   pares.
 
+## Diferenças não explicadas, 23/11/2026
+
+Nos 117 pares: o controle (números diferentes) teve **6 ou mais** diferenças não explicadas em todos os 117 (o mais
+parecido, 49680 x base do 49681, difere no número, na empresa e no produto); o mesmo número, 56 com 0, 20 com 1, 5
+com 2, 15 de 3 a 5 e 21 com 6 ou mais. O que sobrava no mesmo número:
+
+- uma letra trocada em palavra curta ("NBM" -> "NEM", o mais comum; "a" -> "2", "V" -> "W", "do" -> "de"): passou a
+  ser ruído do OCR (distância de edição 1, só com letras do lado do caderno);
+- número lido com confiança e diferente ("193" -> "199", "21.959" -> "21.859", "28.800" -> "28.600"): continua
+  diferença de verdade, porque é o que muda numa republicação;
+- lixo no texto do caderno ("2.00.3.00.4", "Governo do Estado 2.00.3.00") e texto do caderno faltando na base ("Art.
+  1º" em alterações de 2010, assinaturas no 48743): continuam conferir.
+
+*Decisão proposta:* duplicata só com **0** diferenças não explicadas (sem tolerância de 1 ou 2: uma republicação
+costuma mudar um único número).
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:
