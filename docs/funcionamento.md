@@ -250,6 +250,16 @@ baixado, o que bate com Extras ausentes do S3.
 Aplicadas em 11/11/2026 (`TIPOS_DECRETO`, em `regras_atos.py`). "Introduz modificações" sem "que concede incentivo
 (ou estímulo)" adiante continua sem tipo: é a alteração de decreto normativo.
 
+*Decisão de 17/11/2026:* o cabeçalho da página ("4 / Diário Oficial do Estado de Pernambuco - Poder Executivo / Recife, 4
+de setembro de 2010") também sai quando o PDF o guarda no meio do texto da página, e não no topo (`_cabecalho_no_meio`,
+em `leitura/separador.py`). Fora das primeiras linhas, só sai o conjunto: o título do Diário e a data do topo em linhas
+vizinhas, mais o número da página ao lado, se houver; uma linha sozinha (uma citação do Diário Oficial, uma data) fica.
+Casos que motivaram: 8 decretos de setembro a dezembro de 2010 (35.553, 35.691, 35.790...), com o cabeçalho no meio do
+texto. Medição em 3.948 decretos de 609 cadernos: 417 decretos mudam (66 da DBF; 376 de 2010, 3 de 2020, nenhum da DBF
+em 2020 ou depois), quase todos só perdendo as linhas do cabeçalho; 6, fora da DBF, passam a levar o anexo do próprio
+decreto, que o cabeçalho no meio cortava. Nenhum decreto muda de nível na cascata, e os 86 decretos de referência de
+2026 saem idênticos.
+
 *Decisão de 16/11/2026:* os códigos de controle 0x80 a 0x9F que a fonte do PDF entrega no lugar de um caractere da
 codificação do Windows (cp1252) são convertidos na limpeza do texto (`limpar_ligaduras`, em `regras_atos.py`): 0x80 vira
 "€", 0x93/0x94 viram aspas etc. Caso que motivou: o Decreto 35.237/2010, "vinho tinto, acima de 8 € a garrafa", com o €
@@ -318,10 +328,12 @@ leitura por coluna (`trecho_intruso`): se a única diferença relevante for um b
 só existe no texto aprovado (até 5 outras palavras diferentes), e a leitura por coluna passar no critério, sai a leitura
 por coluna (nível 3). O bloco pode estar no lugar de umas poucas palavras da leitura por coluna, que entram na conta das
 5 (16/11/2026: no Decreto 35.503/2010, o aviso da Casa Civil entra nos considerandos e, na leitura por coluna, no lugar
-dele fica só o número da página). A leitura por coluna sai com o aviso "trecho de outro ato removido (N palavras, lido por coluna): "..."; confira o texto".
+dele fica só o número da página). Pedaços separados por até 2 palavras que coincidem por acaso com o decreto contam como
+um bloco só (17/11/2026: no Decreto 35.629/2010, o "5" de "5.811.272,00", na tabela "ANEXO II – EXCESSO DE ARRECADAÇÃO" de
+outro ato, coincidia com um "5" do decreto e partia a tabela em dois pedaços, de 20 e 54 palavras). A leitura por coluna sai com o aviso "trecho de outro ato removido (N palavras, lido por coluna): "..."; confira o texto".
 
-Medição em 3.949 decretos de 609 cadernos (2010 a 2026): 10 decretos da DBF mudam, todos com um trecho de outro ato de
-verdade: 34.529, 35.066 e 35.503 (avisos da Casa Civil), 35.173, 36.043 (anexo de outro decreto), 37.981 (incisos de outra
+Medição em 3.949 decretos de 609 cadernos (2010 a 2026): 11 decretos da DBF mudam, todos com um trecho de outro ato de
+verdade: 34.529, 35.066 e 35.503 (avisos da Casa Civil), 35.173, 35.629 (tabela de receitas de outro ato), 36.043 (anexo de outro decreto), 37.981 (incisos de outra
 empresa), 41.559 e 47.221 (trechos dos decretos vizinhos 41.561 e 47.224), 47.192 e 48.719/2020 (aviso da Casa Civil
 sobre o ponto facultativo). Uma regra pela ordem geométrica do PDF (a página "volta para trás") foi descartada: o salto
 acontece em quase metade dos decretos de 2010 e em vários de 2020 a 2025, quase sempre sem estragar o texto.

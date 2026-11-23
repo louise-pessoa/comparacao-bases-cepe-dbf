@@ -276,13 +276,42 @@ def _sem_expediente(pagina: pymupdf.Page, linhas: list[str]) -> list[str]:
     return [texto for texto, caixa, _, _ in itens if not _dentro(caixa, quadro)]
 
 
+# O cabeçalho da página no MEIO do texto da página (o PDF pode guardá-lo depois de parte do
+# conteúdo; ex.: Decreto 35.553/2010, com "4 / Diário Oficial do Estado de Pernambuco - Poder
+# Executivo / Recife, 4 de setembro de 2010" no meio). Fora das primeiras linhas, só sai o
+# CONJUNTO: o título do Diário e a data, em linhas vizinhas, e o número da página sozinho
+# numa linha ao lado, se houver. Uma linha só (uma citação do Diário Oficial, uma data) fica.
+_TITULO_DO_DIARIO = re.compile(r"^Di[aá]rio Oficial do Estado de Pernambuco\s*[-–]\s*Poder\s+\w+\s*$")
+_DATA_DO_TOPO = PADROES_TOPO_DE_PAGINA[-1]
+_NUMERO_DA_PAGINA = re.compile(r"^\d{1,3}$")
+
+
+def _cabecalho_no_meio(linhas: list[str]) -> set[int]:
+    removidas: set[int] = set()
+    limpas = [linha.strip() for linha in linhas]
+    for i, linha in enumerate(limpas):
+        if not _TITULO_DO_DIARIO.match(linha):
+            continue
+        data = next((j for j in (i - 1, i + 1) if 0 <= j < len(limpas) and _DATA_DO_TOPO.match(limpas[j])), None)
+        if data is None:
+            continue
+        grupo = {i, data}
+        for j in (min(grupo) - 1, max(grupo) + 1):
+            if 0 <= j < len(limpas) and _NUMERO_DA_PAGINA.match(limpas[j]):
+                grupo.add(j)
+                break
+        removidas |= grupo
+    return removidas
+
+
 def _sem_topo(linhas: list[str]) -> list[str]:
-    topo = [
+    topo = {
         i
         for i, linha in enumerate(linhas[:LINHAS_DE_TOPO])
         if any(p.match(linha.strip()) for p in PADROES_TOPO_DE_PAGINA)
-    ]
-    return [linha for i, linha in enumerate(linhas) if i not in set(topo)]
+    }
+    topo |= _cabecalho_no_meio(linhas)
+    return [linha for i, linha in enumerate(linhas) if i not in topo]
 
 
 # Leitura por coluna (nível 3 da leitura em cascata, leitura/cascata.py). Um bloco de texto

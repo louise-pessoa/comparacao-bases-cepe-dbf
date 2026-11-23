@@ -9,6 +9,7 @@ import pymupdf
 import pytest
 
 from conftest import AMOSTRAS, criar_pdf_imagem, criar_pdf_texto
+from dbf_cepe.leitura import separador as _separador
 from dbf_cepe.regras.especies import DECRETO, Especie
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar, normalizar_espacos
 from dbf_cepe.leitura.separador import (
