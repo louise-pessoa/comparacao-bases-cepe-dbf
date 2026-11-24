@@ -352,3 +352,14 @@ def test_pasta_de_mes_fora_da_pasta_do_ano_e_recusada(tmp_path):
         carregar_configuracao(env)
     env.write_text("PASTA_CADERNOS=dados/historico/2010/2010-09\n", encoding="utf-8")
     assert carregar_configuracao(env).pasta_cadernos == RAIZ / "dados/historico/2010/2010-09"
+
+
+def test_ocr_pre_processamento(tmp_path, sem_ocr_no_ambiente, monkeypatch):
+    monkeypatch.delenv("OCR_PRE_PROCESSAMENTO", raising=False)
+    env = tmp_path / ".env"
+    assert carregar_configuracao(tmp_path / "nao.env").ocr.pre_processamento == "nenhum"
+    env.write_text("OCR_PRE_PROCESSAMENTO=Limpar\n", encoding="utf-8")
+    assert carregar_configuracao(env).ocr.pre_processamento == "limpar"
+    env.write_text("OCR_PRE_PROCESSAMENTO=magica\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao):
+        carregar_configuracao(env)

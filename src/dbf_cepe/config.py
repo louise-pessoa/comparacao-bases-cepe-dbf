@@ -28,6 +28,8 @@ OCR_AUTO, OCR_SIM, OCR_NAO = "auto", "sim", "nao"
 # Limites contra PDF defeituoso ou malicioso: a imagem de uma página a 600 dpi já tem
 # dezenas de milhões de pixels.
 DPI_MINIMO, DPI_MAXIMO = 150, 600
+# Tratamento da imagem antes do OCR (OCR_PRE_PROCESSAMENTO; ver leitura/ocr.py).
+PRE_PROCESSAMENTOS = ("nenhum", "binarizar", "limpar")
 # Idioma do Tesseract: só nomes de arquivo .traineddata ("por", "por+eng"). Vai para
 # a linha de comando do Tesseract, então nada além disso é aceito.
 _IDIOMA_DO_TESSERACT = re.compile(r"^[a-z_]{3,20}(?:\+[a-z_]{3,20}){0,3}$")
@@ -42,6 +44,8 @@ class ConfiguracaoOcr:
     # Pasta com os .traineddata (OCR_TESSDATA). None: a do próprio Tesseract. Serve para quem
     # não pode gravar na pasta do Tesseract (Program Files exige administrador).
     tessdata: Path | None = None
+    # Tratamento da imagem antes do OCR: "nenhum", "binarizar" ou "limpar" (ver leitura/ocr.py).
+    pre_processamento: str = "nenhum"
     idioma: str = "por"
     dpi: int = 300
     timeout: int = 120  # segundos por página
@@ -230,6 +234,15 @@ def _ler_numero(variavel: str, valor: str, padrao: float, minimo: float, maximo:
     return numero
 
 
+def _ler_pre_processamento(valor: str) -> str:
+    texto = valor.strip().casefold() or "nenhum"
+    if texto not in PRE_PROCESSAMENTOS:
+        raise ErroConfiguracao(
+            f"OCR_PRE_PROCESSAMENTO={valor!r} é inválido. Use {', '.join(PRE_PROCESSAMENTOS)}."
+        )
+    return texto
+
+
 def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
     def valor(variavel: str) -> str:
         return (valores.get(variavel) or "").strip()
@@ -257,6 +270,7 @@ def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
             "OCR_SIMILARIDADE_DUPLICATA", valor("OCR_SIMILARIDADE_DUPLICATA"), 0.95, 0.5, 1
         ),
         gravar_na_base=_ler_booleano("OCR_GRAVAR_NA_BASE", valor("OCR_GRAVAR_NA_BASE"), False),
+        pre_processamento=_ler_pre_processamento(valor("OCR_PRE_PROCESSAMENTO")),
     )
 
 

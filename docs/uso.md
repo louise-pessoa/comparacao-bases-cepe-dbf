@@ -412,6 +412,10 @@ Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # alguns 
 No `.env`: `OCR_TESSDATA=dados/tessdata`. Só o `por` é necessário (o OCR não usa o `osd`). O `--verificar-ocr` mostra o
 SHA-256 do arquivo usado; ele também vai para a chave do cache do OCR, então trocar o arquivo refaz as leituras.
 
+**Tratamento da imagem (em teste):** `OCR_PRE_PROCESSAMENTO=limpar` tira os pontinhos soltos e deixa a página em preto e
+branco antes do OCR; `binarizar` só faz o preto e branco. Serve às digitalizações ruins da base (2018 a 2020). O
+resultado de cada tratamento fica no cache separado, então dá para comparar sem perder as leituras anteriores.
+
 O OCR roda só na máquina: nenhum texto vai para serviço externo, e não há rede envolvida depois da instalação.
 
 ## Ferramentas (fora do pipeline)

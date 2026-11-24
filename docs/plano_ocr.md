@@ -101,6 +101,21 @@ menos de 20 palavras conta como não lido (`base é imagem`, como antes). O regi
 OCR)`. Lote, `--separar --gravar`/`--comparar` e `--conferir` usam a mesma comparação; o leitor de OCR é criado uma vez
 por execução, e uma configuração inválida do OCR dá erro no início.
 
+## Melhoria do OCR para as digitalizações de 2018 a 2020, 24/11/2026
+
+No lote de jan./fev. de 2020 com o OCR, só 1 de 26 decretos com a base em imagem virou duplicata; 25 foram para
+conferir. As digitalizações de 2020 (confiança de 82 a 92) trocam algarismos com confiança alta ("2019" -> "2018",
+"11.675" -> "11.575", "28.800" -> "28.600"). A 400 dpi não melhorou (5 de 49 pares de 2020 sem diferença). Enquanto
+isso, o lote roda com `OCR_ATIVO=nao`.
+
+Tratamento da imagem antes do OCR (`OCR_PRE_PROCESSAMENTO`, em `leitura/ocr.py`): `binarizar` (contraste esticado e
+limiar de Otsu) e `limpar` (filtro de mediana 3x3, depois o mesmo). Teste com 6 decretos de amostra degradados para
+imitar uma digitalização ruim (150 dpi, desfoque, fundo acinzentado, pontinhos): diferenças não explicadas, somadas,
+83 sem tratamento, 63 com `binarizar` e **12 com `limpar`**; confiança média de 69-81 para 83-94. Falta medir nas
+digitalizações reais de 2020 (`medir_ocr --parte base` com `OCR_PRE_PROCESSAMENTO=limpar`). Outra alavanca, sem código:
+o modelo `por.traineddata` do repositório `tesseract-ocr/tessdata_best` (mais preciso e mais lento), apontado por
+`OCR_TESSDATA`.
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:
