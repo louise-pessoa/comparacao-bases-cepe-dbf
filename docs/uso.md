@@ -323,7 +323,8 @@ Um caderno só é apagado se:
 1. o mês dele já acabou;
 2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes (ele anota isso no manifesto);
 3. não tem página digitalizada nem com texto ilegível;
-4. nenhum decreto da DBF dele ficou em revisão manual;
+4. nenhum decreto da DBF dele ficou em revisão manual, nem com a base em imagem ou ilegível sem comparação
+   ("já existe na DBF (PDF da base é imagem ou ilegível; não comparado)"): esse caderno fica guardado para o OCR da base;
 5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
 6. todo decreto da DBF dele que foi para pendentes está no registro de publicações, e o que foi para "conferir
    duplicata" já foi decidido no `--conferir`.
@@ -338,6 +339,12 @@ duplicata, sem decisão (rode --conferir))`).
   por isso a captura não o baixa de novo; para rebaixar, apague a entrada dele no manifesto.
 - **Cadernos baixados antes desta versão** não têm a anotação do `--separar --gravar`: rode o `--separar --gravar` de
   novo na pasta (não grava nada repetido) e depois a limpeza.
+- **Base em imagem:** o caderno com decreto da base em imagem fica (`Decreto N com a base em imagem ou ilegível, não
+  comparado (guardado para o OCR)`), para o mês ser rodado de novo com o OCR sem baixar nada: a captura não baixa de novo
+  o que está no manifesto, nem o caderno apagado. Rodar o mês de novo com o OCR atualiza o manifesto, e o caderno passa
+  a poder ser apagado. O manifesto anotado antes de 24/11/2026 não separa esse caso de "já existe na DBF": para ele, a
+  limpeza confere na base (só lê) se o PDF daquele número é imagem ou ilegível (`[manifesto antigo; conferido na
+  base]`); com a base inacessível, o caderno fica.
 - Nunca mexe na base da DBF: recusa uma pasta dentro dela.
 
 ## Catálogo (`--catalogar`)

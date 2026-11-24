@@ -38,7 +38,10 @@ O caderno processado por completo pode ser apagado (`pipeline/limpeza.py`; uso e
 caderno foi processado, com os decretos da DBF dele; a limpeza confere essa anotação contra as pastas do pipeline e o
 registro de publicações, sem reler o caderno. Decisões (09/11/2026, implementadas em 13/11/2026): a limpeza é por mês
 encerrado; o comando exige uma simulação com a mesma lista; o lote histórico, com `--executar`, apaga no fim de cada
-mês; o caderno com algo em erros, em leitura tesseract ou em conferir duplicata sem decisão fica guardado. A cascata relê
+mês; o caderno com algo em erros, em leitura tesseract ou em conferir duplicata sem decisão fica guardado. *Decisão de
+24/11/2026:* também fica o caderno com decreto da DBF cuja base é imagem ou ilegível e não foi comparada, para ser
+reprocessado com o OCR da base sem baixar de novo (o manifesto anota `BASE EM IMAGEM`; no manifesto anterior, a limpeza
+confere na base). A cascata relê
 o caderno nos níveis 2 e 3, por isso a limpeza só vem depois do lote.
 
 ## Separação dos decretos (etapa 1b)

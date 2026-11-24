@@ -10,11 +10,21 @@ Um caderno só é apagado se tudo isto for verdade (senão fica, e o motivo é m
   1. o mês dele já acabou (e, com `mes`, é o mês pedido);
   2. o `--separar --gravar` rodou nele até o fim, sem falha ao gravar em pendentes;
   3. não tem página digitalizada nem com texto ilegível (que precisaria de OCR);
-  4. nenhum decreto da DBF dele ficou em revisão manual;
+  4. nenhum decreto da DBF dele ficou em revisão manual, nem com a base em imagem sem
+     comparação (ver abaixo);
   5. nenhum PDF dele está em pendentes, erros, leitura tesseract ou conferir duplicata;
   6. todo decreto da DBF dele que foi para pendentes está no registro de publicações (o
      lote já o gravou, descartou ou mandou para conferir), e um "conferir duplicata" já foi
      decidido no `--conferir`.
+
+Base em imagem (decisão de 24/11/2026): o decreto da DBF que o `--separar --gravar` deu como "já
+existe na DBF (PDF da base é imagem ou ilegível; não comparado)" fica anotado como
+`BASE_EM_IMAGEM`, e o caderno dele é guardado: com o OCR da base (docs/plano_ocr.md, fase 5), o
+mês é rodado de novo e esses decretos são comparados, sem baixar o caderno outra vez (a captura
+não baixa de novo o que está no manifesto, nem o caderno apagado). Rodar o mês de novo atualiza
+a anotação, e o caderno pode ser apagado. O manifesto anotado antes disso (sem "versao" no
+processamento) só diz "já existe na DBF": para ele, a limpeza confere na base (só lê) se o
+arquivo daquele número é imagem ou ilegível; base inacessível, o caderno fica.
 
 O que fica no manifesto, no lugar do arquivo: o endereço, o tamanho, o SHA-256 e a data
 do download (da captura), mais `processado_em`, `processamento` (decretos, decretos da
@@ -38,6 +48,9 @@ from typing import Any
 
 from dbf_cepe import captura
 from dbf_cepe.config import Configuracao
+from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
+from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, listar_nomes
+from dbf_cepe.regras.especies import DECRETO
 from dbf_cepe.leitura.separador import AVISO_PAGINAS_SEM_TEXTO, data_do_caderno
 from dbf_cepe.pipeline.lote import listar_pdfs
 from dbf_cepe.pipeline.publicacao import ler_do_pdf
@@ -50,6 +63,13 @@ NOME_SIMULACAO = "limpeza_simulada.json"
 # do lote, tem de estar no registro de publicações.
 SITUACOES_PARA_PENDENTES = ("INÉDITO", "REPUBLICAÇÃO", "ANTERIOR À DA BASE", "CONFERIR DUPLICATA")
 REVISAO_MANUAL = "REVISÃO MANUAL"
+# Situação do decreto no manifesto quando a base tem o número num PDF em imagem ou ilegível, sem
+# comparação (o --separar --gravar o dá como "já existe na DBF (PDF da base é imagem...)").
+BASE_EM_IMAGEM = "BASE EM IMAGEM"
+JA_EXISTE = "já existe na DBF"  # no manifesto antigo, também a base em imagem
+# 2: o manifesto distingue BASE_EM_IMAGEM de JA_EXISTE (24/11/2026). Sem "versao": antes disso.
+VERSAO_DO_PROCESSAMENTO = 2
+MOTIVO_BASE_EM_IMAGEM = "Decreto {numero} com a base em imagem ou ilegível, não comparado (guardado para o OCR)"
 
 
 class ErroLimpeza(Exception):
@@ -99,6 +119,7 @@ def registrar_processamento(
         return False
     entrada["processado_em"] = _agora()
     entrada["processamento"] = {
+        "versao": VERSAO_DO_PROCESSAMENTO,
         "decretos": decretos,
         "decretos_dbf": decretos_dbf,
         "falhas": falhas,
@@ -130,12 +151,52 @@ def _pendencias_em_pastas(cfg: Configuracao) -> dict[str, list[str]]:
     return achados
 
 
-def _motivos_do_registro(nome: str, decretos_dbf: list[dict[str, Any]], registro: Registro) -> list[str]:
+class _BaseEmImagem:
+    """Para o manifesto antigo: o arquivo da base deste número é imagem ou ilegível? Só lê; lista
+    a base uma vez e guarda as respostas. Base inacessível: None (o caderno fica)."""
+
+    def __init__(self, cfg: Configuracao) -> None:
+        self.cfg = cfg
+        self._nomes: set[str] | None = None
+        self._respostas: dict[str, bool | None] = {}
+
+    def __call__(self, numero: str) -> bool | None:
+        if numero not in self._respostas:
+            self._respostas[numero] = self._consultar(numero)
+        return self._respostas[numero]
+
+    def _consultar(self, numero: str) -> bool | None:
+        if self.cfg.pasta_dbf is None:
+            return None
+        try:
+            if self._nomes is None:
+                self._nomes = listar_nomes(self.cfg.pasta_dbf, permitir_vazia=True)
+        except PastaDbfIndisponivel:
+            return None
+        familia = [n for n in self._nomes if DECRETO.e_da_familia(n, numero)]
+        return any(ler_pdf(self.cfg.pasta_dbf / n).status is StatusLeitura.IMAGEM for n in familia)
+
+
+def _motivos_do_registro(
+    nome: str, decretos_dbf: list[dict[str, Any]], registro: Registro, versao: int = VERSAO_DO_PROCESSAMENTO,
+    base_em_imagem=None,
+) -> list[str]:
     motivos = []
     for decreto in decretos_dbf:
         numero, pagina, situacao = decreto["numero"], decreto["pagina"], decreto["situacao"]
         if situacao == REVISAO_MANUAL:
             motivos.append(f"Decreto {numero} em revisão manual")
+            continue
+        if situacao == BASE_EM_IMAGEM:
+            motivos.append(MOTIVO_BASE_EM_IMAGEM.format(numero=numero))
+            continue
+        if situacao == JA_EXISTE and versao < VERSAO_DO_PROCESSAMENTO and base_em_imagem is not None:
+            resposta = base_em_imagem(numero)
+            if resposta is None:
+                motivos.append(f"Decreto {numero}: base da DBF não consultada (manifesto antigo; não dá para saber "
+                               "se a base é imagem)")
+            elif resposta:
+                motivos.append(MOTIVO_BASE_EM_IMAGEM.format(numero=numero) + " [manifesto antigo; conferido na base]")
             continue
         if situacao not in SITUACOES_PARA_PENDENTES:
             continue  # já existia na base ou no registro: nada a esperar do lote
@@ -163,6 +224,7 @@ def avaliar(cfg: Configuracao, pasta: Path, mes: date | None = None, hoje: date 
     arquivos = captura.ler_manifesto(pasta)
     registro = Registro.carregar(cfg.registro)
     pendencias = _pendencias_em_pastas(cfg)
+    base_em_imagem = _BaseEmImagem(cfg)
     mes_atual = (hoje or date.today()).replace(day=1)
     avaliacoes = []
     for caderno in sorted(p for p in pasta.glob("*.pdf") if p.is_file()):
@@ -185,7 +247,10 @@ def avaliar(cfg: Configuracao, pasta: Path, mes: date | None = None, hoje: date 
                 avaliacao.motivos.append(f"{processamento['falhas']} decreto(s) não puderam ser gravados em pendentes")
             if processamento.get("paginas_digitalizadas"):
                 avaliacao.motivos.append(f"{AVISO_PAGINAS_SEM_TEXTO}: {processamento['paginas_digitalizadas']}")
-            avaliacao.motivos += _motivos_do_registro(caderno.name, processamento.get("decretos_dbf", []), registro)
+            avaliacao.motivos += _motivos_do_registro(
+                caderno.name, processamento.get("decretos_dbf", []), registro,
+                int(processamento.get("versao") or 1), base_em_imagem,
+            )
         avaliacao.motivos += pendencias.get(caderno.name, [])
         avaliacoes.append(avaliacao)
     return avaliacoes

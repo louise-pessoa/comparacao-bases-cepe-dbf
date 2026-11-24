@@ -270,7 +270,9 @@ def _caderno_real(cfg: Configuracao, amostra: str, nome: str) -> Path:
 
 
 def test_fluxo_completo_apaga_o_caderno_processado(cfg):
-    (cfg.pasta_dbf / "Decreto 60929.pdf").write_bytes(b"%PDF-1.4")
+    # O decreto avulso da DBF, com o mesmo texto do caderno (um PDF falso seria "base ilegível" e o
+    # caderno ficaria guardado para o OCR).
+    shutil.copy(Path(__file__).parent / "amostras" / "Decreto 60929.pdf", cfg.pasta_dbf)
     _caderno_real(cfg, "Caderno 2026-06-26 (paginas 24 a 26).pdf", "20260626_PoderExecutivo.pdf")
     relatorio_dos_cadernos(cfg, cfg.pasta_cadernos, gravar=True)
     processamento = captura.ler_manifesto(cfg.pasta_cadernos)["20260626_PoderExecutivo.pdf"]["processamento"]
@@ -368,3 +370,75 @@ def test_cli_falha_ao_apagar_sai_com_1(cfg, monkeypatch):
 def test_cli_combinacoes_invalidas(argv):
     with pytest.raises(SystemExit):
         main(argv)
+
+
+# ----------------------------------------------------------------------------
+# Base em imagem: o caderno fica para o OCR (decisão de 24/11/2026)
+# ----------------------------------------------------------------------------
+
+
+def _manifesto_antigo(cfg: Configuracao, nome: str = CADERNO) -> None:
+    """Tira o "versao" do processamento, como no manifesto anotado antes de 24/11/2026."""
+    arquivos = captura.ler_manifesto(cfg.pasta_cadernos)
+    del arquivos[nome]["processamento"]["versao"]
+    captura.gravar_manifesto(cfg.pasta_cadernos, arquivos)
+
+
+def test_decreto_com_a_base_em_imagem_guarda_o_caderno(cfg):
+    _caderno(cfg, decretos_dbf=[{"numero": "48562", "pagina": 3, "situacao": limpeza.BASE_EM_IMAGEM}])
+    assert motivos(cfg) == [limpeza.MOTIVO_BASE_EM_IMAGEM.format(numero="48562")]
+
+
+def test_manifesto_antigo_confere_na_base_se_e_imagem(cfg):
+    from conftest import criar_pdf_imagem, criar_pdf_texto
+
+    _caderno(cfg, decretos_dbf=[
+        {"numero": "48562", "pagina": 3, "situacao": "já existe na DBF"},
+        {"numero": "48563", "pagina": 4, "situacao": "já existe na DBF"},
+    ])
+    _manifesto_antigo(cfg)
+    criar_pdf_imagem(cfg.pasta_dbf / "Decreto 48562.pdf")
+    criar_pdf_texto(cfg.pasta_dbf / "Decreto 48563.pdf", "DECRETO Nº 48.563 texto da base")
+    (motivo,) = motivos(cfg)
+    assert "Decreto 48562 com a base em imagem" in motivo and "manifesto antigo" in motivo
+
+
+def test_manifesto_antigo_com_a_base_em_texto_pode_ser_apagado(cfg):
+    from conftest import criar_pdf_texto
+
+    _caderno(cfg, decretos_dbf=[{"numero": "48563", "pagina": 4, "situacao": "já existe na DBF"}])
+    _manifesto_antigo(cfg)
+    criar_pdf_texto(cfg.pasta_dbf / "Decreto 48563.pdf", "DECRETO Nº 48.563 texto da base")
+    assert motivos(cfg) == []
+
+
+def test_manifesto_antigo_sem_a_base_guarda_o_caderno(cfg):
+    _caderno(cfg, decretos_dbf=[{"numero": "48563", "pagina": 4, "situacao": "já existe na DBF"}])
+    _manifesto_antigo(cfg)
+    shutil.rmtree(cfg.pasta_dbf)
+    (motivo,) = motivos(cfg)
+    assert "base da DBF não consultada" in motivo
+
+
+def test_manifesto_novo_ja_existe_nao_consulta_a_base(cfg, monkeypatch):
+    _caderno(cfg, decretos_dbf=[{"numero": "48563", "pagina": 4, "situacao": "já existe na DBF"}])
+    monkeypatch.setattr(limpeza, "ler_pdf", lambda caminho: pytest.fail("não devia ler a base"))
+    assert motivos(cfg) == []
+
+
+def test_separar_gravar_anota_a_base_em_imagem_no_manifesto(cfg, monkeypatch):
+    from conftest import criar_pdf_imagem
+    from dbf_cepe.config import ConfiguracaoOcr
+    from dbf_cepe.leitura.separador import ResultadoSeparacao
+    from dbf_cepe.pipeline import relatorio as modulo_relatorio
+    from test_base_imagem import ato, pub
+
+    sem_ocr = replace(cfg, ocr=ConfiguracaoOcr(ativo="nao"))
+    criar_pdf_imagem(cfg.pasta_dbf / "Decreto 48562.pdf")
+    caderno = _caderno(cfg, nome="20200115_PoderExecutivo.pdf", processado=False)
+    a = ato("48562", pub("2020-01-15"))
+    monkeypatch.setattr(modulo_relatorio, "separar_caderno", lambda caminho: ResultadoSeparacao((a,), 9))
+    relatorio_dos_cadernos(sem_ocr, caderno, gravar=True)
+    processamento = captura.ler_manifesto(cfg.pasta_cadernos)[caderno.name]["processamento"]
+    assert processamento["versao"] == limpeza.VERSAO_DO_PROCESSAMENTO
+    assert processamento["decretos_dbf"] == [{"numero": "48562", "pagina": 3, "situacao": limpeza.BASE_EM_IMAGEM}]
