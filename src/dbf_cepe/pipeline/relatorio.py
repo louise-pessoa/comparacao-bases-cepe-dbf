@@ -30,6 +30,8 @@ from dbf_cepe.leitura.separador import (
 
 log = logging.getLogger("pipeline")
 
+JA_EXISTE_BASE_IMAGEM = "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)"
+
 
 @dataclass
 class ResumoRelatorio:
@@ -149,9 +151,9 @@ def _relatar_caderno(
             situacao = "INÉDITO"
         resumo.situacoes[situacao.split(" (")[0]] += 1
         if e_da_dbf:
-            decretos_dbf.append(
-                {"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": situacao.split(" (")[0]}
-            )
+            # A base em imagem sem comparação fica separada no manifesto: a limpeza guarda o caderno.
+            no_manifesto = limpeza.BASE_EM_IMAGEM if situacao == JA_EXISTE_BASE_IMAGEM else situacao.split(" (")[0]
+            decretos_dbf.append({"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": no_manifesto})
         programa = "+".join(p.sigla for p in programas) or "-"
         log.info("%s | %s | %s | %s | %s", nome, paginas, tipo, programa, situacao)
         for aviso in ato.avisos:
@@ -275,7 +277,7 @@ def _gravar_publicacao(
             return "já existe na DBF (base lida por OCR, sem diferença)"
         return "já existe na DBF (texto idêntico)"
     if plano.acao is Acao.BASE_IMAGEM:
-        return "já existe na DBF (PDF da base é imagem ou ilegível; não comparado)"
+        return JA_EXISTE_BASE_IMAGEM
     rotulo = (
         "CONFERIR DUPLICATA" if plano.acao is Acao.CONFERIR
         else "REPUBLICAÇÃO" if plano.republicacao
