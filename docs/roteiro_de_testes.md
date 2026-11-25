@@ -69,7 +69,8 @@ Referência (5 cadernos):
 
 - [ ] 264 linhas: Decreto 73, Edital 38, Portaria 131, Errata 13, Republicação 9.
 - [ ] Situação: `no_escopo` 45 (30 decretos, 14 editais da DBF e 1 portaria da SF), `fora_do_escopo`
-      185 e `a_confirmar` 34.
+      188 e `a_confirmar` 31.
+- [ ] Erratas das portarias SDS 2508 e SJDH 126: `fora_do_escopo` pelo órgão do ato referido.
 - [ ] Editais da DBF: 13 `no_escopo: órgão DBF; LEI_ESPORTE` e o 017 `no_escopo: órgão DBF; PRODEAUTO`.
 - [ ] Portarias da SF: só a 200 `no_escopo: órgão SF; PRODEPE`; as outras seis `fora_do_escopo`.
 - [ ] Com `--com-base`, as erratas de decreto e edital deixam de dizer `(base não consultada: use --com-base)`.

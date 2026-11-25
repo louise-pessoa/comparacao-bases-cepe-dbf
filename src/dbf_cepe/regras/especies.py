@@ -227,7 +227,7 @@ DECRETO = Especie(
 #   - nome do arquivo: "Edital 064-2025.pdf" (número com os zeros e ano), como na base da DBF;
 #   - o credenciamento se liga ao programa pelo TEXTO do edital (`programas` abaixo, que
 #     inclui a Lei de Incentivo ao Esporte);
-#   - DBM foi informado como outro nome da DBF, mas não aparece em nenhum caderno.
+#   - DBM é outro nome da DBF: aparece nos editais de credenciamento do PEAP de setembro de 2010.
 EDITAL = Especie(
     nome="Edital",
     cabecalho=CABECALHO_EDITAL,

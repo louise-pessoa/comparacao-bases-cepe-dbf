@@ -34,7 +34,11 @@ Casos de borda tratados (viram `avisos` do achado, nunca descarte em silêncio):
   - órgão que não está no cabeçalho ("EDITAL Nº 43/2026"): o título em MAIÚSCULAS logo
     acima ("SECRETARIA DE ADMINISTRAÇÃO") vira `orgao_do_titulo`, uma pista de baixa
     confiança que só entra em `sefaz`, nunca em `orgao`;
-  - marcador de republicação que não se liga a nenhum ato conhecido.
+  - marcador de republicação que não se liga a nenhum ato conhecido;
+  - cabeçalho de edital quebrado em até 3 linhas ("EDITAL DE CREDENCIAMENTO DE ESTÍMULO À
+    ATIVIDADE PORTUÁRIA" / "DBM Nº 054/2010", setembro de 2010);
+  - errata que repete o cabeçalho do ato corrigido ("ERRATA" / "EDITAL DBF Nº 016/2020"):
+    o cabeçalho é da errata, não um edital a mais.
 
 Evidência de cada padrão (mesma convenção do projeto): "amostra" = conferido em
 caderno real; "publicado" = conferido em ato publicado, sem caderno versionado;
@@ -305,6 +309,21 @@ CABECALHO_EDITAL = re.compile(
     r"(?:\s*/\s*(?P<ano>\d{4}))?"
 )
 
+# Cabeçalho de edital quebrado em até 3 linhas, com o "Nº" obrigatório. Só vale quando
+# `CABECALHO_EDITAL` não casa e TODAS as linhas antes do número estão em maiúsculas
+# (`_cabecalho_edital_em_linhas`). Formatos vistos em 2010:
+#   EDITAL DE CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA / DBM Nº 054/2010
+#   EDITAL DE CREDENCIAMENTO DA SISTEMÁTICA DE / TRIBUTAÇÃO RELATIVA A PRODUTOS FARMACÊUTICOS Nº / 0004/2010
+# A primeira linha precisa trazer o título, e o número não pode ser de processo ("EDITAL DE
+# NOTIFICAÇÃO" / "PROCESSO SIGEPE Nº 0217330-7/2017" não vale).
+CABECALHO_EDITAL_EM_LINHAS = re.compile(
+    r"(?m)^[ \t]*EDITAL\b"
+    r"(?P<qualificador>[^\n\d]{0,90}(?:\n[^\n\d]{0,90}){1,2}?)"
+    rf"\s*{_ORDINAL}\s*"
+    rf"(?P<numero>{_NUMERO})"
+    r"(?:\s*/\s*(?P<ano>\d{4}))?"
+)
+
 # Tipo = início do título (qualificador "DE <tipo>" ou a linha seguinte ao cabeçalho).
 # Aplicado com .match(). Amostra: dbf (credenciamento), SES/SAD/FUNDARPE, FACEPE etc.
 TIPOS_EDITAL: tuple[tuple[str, re.Pattern[str], str], ...] = (
@@ -321,8 +340,9 @@ TIPOS_EDITAL: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 # Órgãos que contam como SEFAZ/DBF no escopo deste projeto. DBM foi informado pelo
-# responsável do projeto como outro nome válido da DBF; não aparece em nenhum dos
-# cadernos de amostra (evidência presumida).
+# responsável do projeto como outro nome válido da DBF ("Diretoria de Benefícios Fiscais e
+# Relações com os Municípios"); aparece nos editais de credenciamento do PEAP de setembro de
+# 2010 ("EDITAL DE CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA" / "DBM Nº 054/2010").
 ORGAOS_EDITAL_SEFAZ = frozenset({"DBF", "DBM"})
 # Órgãos da própria Fazenda que o responsável pelo projeto EXCLUIU da demanda (a DPC não
 # faz parte): reconhecidos, mas sempre fora do escopo.
@@ -543,6 +563,7 @@ class Achado:
     ato_referido: str | None = None  # errata: "Decreto 61.560", "Despacho", "?"
     ref_numero: str | None = None  # errata: número do ato referido, sem milhar
     ref_ano: str | None = None  # errata: ano do ato referido, quando consta
+    ref_orgao: str | None = None  # errata: órgão do ato referido ("DPC"), quando consta
     pagina: int | None = None  # base 1, se `inicios_de_pagina` foi passado
     # Órgão lido do título em maiúsculas acima do cabeçalho, quando o cabeçalho não o traz.
     # Pista de baixa confiança: só entra em `sefaz`, nunca em `orgao`.
@@ -559,19 +580,64 @@ def _compactar(texto: str, limite: int = 160) -> str:
 # ----------------------------------------------------------------------------
 
 
-def _qualificador(bruto: str, especie: str = "Edital") -> tuple[str | None, str | None]:
+def _qualificador(bruto: str, especie: str = "Edital", *, antes_do_numero: bool = True) -> tuple[str | None, str | None]:
     """Separa o texto entre ESPÉCIE e número em (órgão, tipo_do_titulo).
 
     Edital: "DE CREDENCIAMENTO" -> (None, "CREDENCIAMENTO"); "DBF" -> ("DBF", None).
     Portaria: "DO COMANDO-GERAL" -> ("COMANDO-GERAL", None); "SF" -> ("SF", None)
-    (o "DO/DA/DE" só introduz o nome do órgão; a portaria não traz tipo no cabeçalho)."""
+    (o "DO/DA/DE" só introduz o nome do órgão; a portaria não traz tipo no cabeçalho).
+    Edital: "DE ADITAMENTO DBM" -> ("DBM", "ADITAMENTO"), só com `antes_do_numero` (a sigla
+    colada no "Nº"; num cabeçalho sem número, a última palavra é só onde o texto foi cortado)."""
     texto = juntar_linhas(bruto)
     if not texto:
         return None, None
     m = re.match(r"(?:DE|DO|DA)\s+(.+)$", texto)
     if m:
-        return (m.group(1), None) if especie == "Portaria" else (None, m.group(1))
+        if especie == "Portaria":
+            return m.group(1), None
+        # "DE ADITAMENTO DBM" / "DE CREDENCIAMENTO ... PORTUÁRIA DBM" (2010): a sigla do órgão
+        # vem no fim, depois do tipo.
+        sigla = _sigla_no_fim(m.group(1)) if antes_do_numero else None
+        if sigla and m.group(1) != sigla:
+            return sigla, m.group(1)[: -len(sigla)].rstrip(" -–—")
+        return None, m.group(1)
+    if especie == "Edital" and _classificar(TIPOS_EDITAL, texto, inicio=True):
+        # "EDITAL CREDENCIAMENTO DO CRÉDITO PRESUMIDO / AÇOS PLANOS Nº 001/2010": é o tipo, sem "DE".
+        return (_sigla_no_fim(texto) if antes_do_numero else None), texto
     return texto, None
+
+
+# Sigla de órgão: 2 a 5 letras maiúsculas sem acento ("DBF", "DPC", "SF", "SEE/SEGP"). As
+# preposições e os tributos ("EDITAL DE INTIMAÇÃO ICD Nº 4/2018", "... IPVA Nº 001/2020") não
+# contam; palavras maiores ("PLANOS", "EDITAL") também não.
+_SIGLA_NO_FIM = re.compile(r"(?:^|[\s(-])([A-Z]{2,5}(?:/[A-Z]{2,5})*)\s*$")
+_NAO_E_SIGLA = frozenset({
+    "DE", "DO", "DA", "DOS", "DAS", "NO", "NA", "NOS", "NAS", "AO", "AOS", "EM", "E", "OU",
+    "PARA", "POR", "PELO", "PELA", "COM", "SEM", "QUE", "LEI",
+    "ICMS", "IPVA", "ICD", "ITCMD", "ISS", "TAXA",
+})
+
+
+def _sigla_no_fim(texto: str) -> str | None:
+    """Sigla de órgão no fim do texto ("... PORTUÁRIA DBM" -> "DBM"), ou None."""
+    m = _SIGLA_NO_FIM.search(texto.strip())
+    return m.group(1) if m and m.group(1) not in _NAO_E_SIGLA else None
+
+
+_NUMERO_DE_PROCESSO = re.compile(r"\bPROC(?:ESSO|\.)")
+
+
+def _cabecalho_edital_em_linhas(texto: str, posicao: int) -> re.Match[str] | None:
+    """`CABECALHO_EDITAL_EM_LINHAS` em `posicao`, só se o título até o número estiver todo em
+    maiúsculas (um parágrafo do corpo, com minúsculas, nunca vira parte do cabeçalho)."""
+    m = CABECALHO_EDITAL_EM_LINHAS.match(texto, posicao)
+    if not m or any(c.islower() for c in m["qualificador"]):
+        return None
+    if not m["qualificador"].split("\n", 1)[0].strip() or _NUMERO_DE_PROCESSO.search(m["qualificador"]):
+        # "EDITAL" sozinho na linha, ou "PROCESSO SEI Nº 2300000212..." / "PROC. Nº 037.2017" antes
+        # do número: o número é de outra coisa.
+        return None
+    return m
 
 
 def _so_ate_o_numero(resto_da_linha: str) -> str:
@@ -706,6 +772,7 @@ class AtoReferido:
     numero: str | None  # sem milhar e sem ano: "61560", "010"
     ano: str | None
     destino: str  # "decreto" | "edital" | "portaria" | "outro"
+    orgao: str | None = None  # sigla logo antes do "nº" ("Edital DPC nº 014/2020" -> "DPC")
 
     @property
     def rotulo(self) -> str:
@@ -725,6 +792,10 @@ def ato_referido_da_errata(trecho: str) -> AtoReferido:
         return AtoReferido(None, None, None, None, "outro")
     especie = achado.group(1)
     especie = especie[0].upper() + especie[1:].lower()
+    orgao = None
+    if achado.group(2):  # entre a espécie e o "nº": "Edital DPC nº" -> "DPC"
+        meio = re.sub(rf"{_ORDINAL}\s*$", "", resto[achado.end(1) : achado.start(2)].rstrip())
+        orgao = _sigla_no_fim(meio)
     numero_texto = achado.group(2).rstrip(".,;-") if achado.group(2) else None
     numero = ano = None
     if numero_texto:
@@ -736,7 +807,7 @@ def ato_referido_da_errata(trecho: str) -> AtoReferido:
             data = data_no_texto(resto[achado.end() : achado.end() + 80])
             ano = data[:4] if data else None
     return AtoReferido(
-        especie, numero_texto, numero, ano, DESTINOS_ERRATA.get(especie.casefold(), "outro")
+        especie, numero_texto, numero, ano, DESTINOS_ERRATA.get(especie.casefold(), "outro"), orgao
     )
 
 
@@ -878,6 +949,36 @@ def _herdar_titulo_do_bloco(texto: str, atos: list[Achado]) -> list[Achado]:
     return saida
 
 
+_JANELA_DA_ERRATA = 300  # caracteres do começo da errata em que se lê o ato referido
+
+
+def _absorver_cabecalho_corrigido(atos: list[Achado], erratas: list[Achado]) -> tuple[list[Achado], list[Achado]]:
+    """A errata que repete o cabeçalho do ato corrigido ("ERRATA" / "EDITAL DBF Nº 016/2020" /
+    "Onde se lê: ...") não é um ato novo: o cabeçalho é absorvido pela errata, que passa a ir
+    até o fim do trecho dele. Vale quando o cabeçalho fica no começo da errata (a mesma janela
+    em que se lê o ato referido) e é da mesma espécie, número e ano do ato referido."""
+    absorvidos: set[int] = set()
+    saida_erratas = []
+    for errata in erratas:
+        for i, ato in enumerate(atos):
+            if (
+                i not in absorvidos
+                and errata.posicao < ato.posicao < errata.posicao + _JANELA_DA_ERRATA
+                and ato.especie.casefold() == errata.destino
+                and ato.numero is not None
+                and (ato.numero.lstrip("0") or "0") == ((errata.ref_numero or "").lstrip("0") or "0")
+                and (errata.ref_ano is None or ato.ano is None or errata.ref_ano == ato.ano)
+            ):
+                absorvidos.add(i)
+                errata = _com(
+                    errata, fim=max(errata.fim, ato.fim),
+                    ref_orgao=errata.ref_orgao or ato.orgao, ref_ano=errata.ref_ano or ato.ano,
+                )
+                break
+        saida_erratas.append(errata)
+    return [a for i, a in enumerate(atos) if i not in absorvidos], saida_erratas
+
+
 def _com(achado: Achado, **mudancas) -> Achado:
     return Achado(**{**achado.__dict__, **mudancas})
 
@@ -947,6 +1048,8 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
             while texto[posicao] in " \t":
                 posicao += 1
             completo = cabecalho_re.match(texto, inicio.start())
+            if completo is None and especie == "Edital":
+                completo = _cabecalho_edital_em_linhas(texto, inicio.start())
             avisos: list[str] = []
             fim_cabecalho = completo.end() if completo else inicio.end()
             if completo:
@@ -957,7 +1060,7 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
                 numero, ano = None, None
                 avisos.append(f"cabeçalho de {especie.lower()} sem número identificável")
                 resto_da_linha = texto[inicio.end() : _fim_da_linha(texto, inicio.end())]
-                orgao, tipo_do_titulo = _qualificador(_so_ate_o_numero(resto_da_linha), especie)
+                orgao, tipo_do_titulo = _qualificador(_so_ate_o_numero(resto_da_linha), especie, antes_do_numero=False)
             linha_fim = _fim_da_linha(texto, fim_cabecalho)
             fim = fim_do_trecho(posicao + 1)
             data = data_no_texto(texto[fim_cabecalho:linha_fim])
@@ -1018,10 +1121,11 @@ def identificar(texto: str, inicios_de_pagina: list[int] | None = None) -> list[
                 "Errata", None, None, None, None, None, posicao, fim_do_trecho(posicao + 1),
                 _compactar(texto[posicao : posicao + 200]),
                 destino=referido.destino, ato_referido=referido.rotulo,
-                ref_numero=referido.numero, ref_ano=referido.ano,
+                ref_numero=referido.numero, ref_ano=referido.ano, ref_orgao=referido.orgao,
                 pagina=pagina_de(posicao), avisos=tuple(avisos),
             )
         )
+    atos, erratas = _absorver_cabecalho_corrigido(atos, erratas)
 
     achados = atos + erratas + orfaos
     achados.sort(key=lambda a: a.posicao)
