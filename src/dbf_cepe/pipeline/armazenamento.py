@@ -119,7 +119,7 @@ def _conferir_se_identifica_como(pdf: Path, nome_final: str, descricao: str) -> 
     if (
         ident.status is not StatusIdentificacao.IDENTIFICADO
         or ident.especie is None
-        or chave_nome(ident.especie.nome_arquivo(ident.numero)) != chave_nome(nome_final)
+        or chave_nome(ident.nome_padrao) != chave_nome(nome_final)
     ):
         raise GravacaoDivergente(
             f"{descricao} não se identifica como {nome_final} ({ident.status.value}: {ident.detalhe})"

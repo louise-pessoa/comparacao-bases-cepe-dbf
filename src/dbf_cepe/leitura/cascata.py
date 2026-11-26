@@ -38,7 +38,7 @@ from dbf_cepe.leitura.separador import (
     separar_caderno,
     separar_texto,
 )
-from dbf_cepe.regras.especies import ESPECIES_ATIVAS, Especie
+from dbf_cepe.regras.especies import Especie
 
 AVISO_DE_REPROVACAO = "reprovado no critério de leitura ({motivos}) em todos os níveis; revisão manual"
 AVISO_DE_RECUPERACAO = "lido no nível {numero} ({descricao}): a leitura atual reprovou ({motivos}); confira o texto"
@@ -242,7 +242,7 @@ def aplicar_cascata(
 
 def separar_em_cascata(
     caminho: Path,
-    especies: tuple[Especie, ...] = ESPECIES_ATIVAS,
+    especies: tuple[Especie, ...] | None = None,
     niveis: tuple[Nivel, ...] | None = None,
 ) -> ResultadoSeparacao:
     """Como `separador.separar_caderno`, mas cada ato passa pelo critério e pelos níveis

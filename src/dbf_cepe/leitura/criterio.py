@@ -41,7 +41,8 @@ JANELA_DA_ABERTURA = 1800
 def da_dbf(ato: AtoSeparado) -> bool:
     """O ato é de programa da DBF: o cabeçalho cita um programa e, se o programa estiver
     só nos considerandos, a ementa tem tipo reconhecido (ver `fora_por_ementa_sem_tipo`)."""
-    return em_escopo(ato.especie, programas_do_ato(ato.texto, ato.especie)) and not fora_por_ementa_sem_tipo(ato)
+    programas = programas_do_ato(ato.texto, ato.especie)
+    return em_escopo(ato.especie, programas, ato.orgao) and not fora_por_ementa_sem_tipo(ato)
 
 
 def fora_por_ementa_sem_tipo(ato: AtoSeparado) -> bool:

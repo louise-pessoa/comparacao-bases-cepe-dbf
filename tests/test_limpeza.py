@@ -17,6 +17,8 @@ from dbf_cepe import captura
 from dbf_cepe.cli import main
 from dbf_cepe.config import Configuracao
 from dbf_cepe.pipeline import limpeza
+from dbf_cepe.regras import especies
+from conftest import criar_pdf_texto
 from dbf_cepe.pipeline.limpeza import ErroLimpeza, avaliar, limpar, registrar_processamento
 from dbf_cepe.pipeline.lote import executar
 from dbf_cepe.pipeline.publicacao import Publicacao, metadados
@@ -112,6 +114,19 @@ def test_registro_de_outra_pagina_ou_outro_caderno_nao_vale(cfg, pagina, caderno
     _caderno(cfg, decretos_dbf=[INEDITO])
     _registrar(cfg, "48700", pagina, caderno=caderno)
     assert motivos(cfg) == ["Decreto 48700 não está no registro de publicações (o lote ainda não o processou)"]
+
+
+def test_ato_de_outra_especie_no_manifesto_pede_a_entrada_da_mesma_especie_e_ano(cfg):
+    edital = {"numero": "063", "pagina": 3, "situacao": "INÉDITO", "especie": "Edital", "ano": "2026"}
+    _caderno(cfg, decretos_dbf=[edital])
+    # Um decreto com o mesmo número e a mesma página não serve de registro para o edital.
+    _registrar(cfg, "063", 3)
+    assert motivos(cfg) == ["Edital 063/2026 não está no registro de publicações (o lote ainda não o processou)"]
+    registro = Registro.carregar(cfg.registro)
+    publicacao = Publicacao(date(2020, 3, 10), CADERNO, 3)
+    registro.adicionar(Entrada("Edital", "063", "2026", publicacao, "h", "Edital 063-2026.pdf", DUPLICATA))
+    registro.salvar()
+    assert motivos(cfg) == []
 
 
 def test_conferir_duplicata_so_libera_depois_da_decisao(cfg):
@@ -287,6 +302,40 @@ def test_fluxo_completo_apaga_o_caderno_processado(cfg):
     assert limpar(cfg, cfg.pasta_cadernos, hoje=HOJE).apagados == ["20260626_PoderExecutivo.pdf"]
 
 
+EDITAL_063 = (
+    "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO\nA Diretoria de Benefícios Fiscais - DBF, considerando a Lei nº 15.706,"
+    " de 2015, que institui a Lei de Incentivo ao Esporte, resolve credenciar a entidade.\n"
+    "Recife, 21 de outubro de 2026.\n"
+)
+EDITAL_SEM_ORGAO = "EDITAL Nº 43/2026\nCREDENCIAMENTO\nNos termos da Lei de Incentivo ao Esporte, credencia.\n"
+
+
+def test_fluxo_completo_com_o_edital_ativo(cfg, monkeypatch, caplog):
+    # Ativar o edital é só mudar ESPECIES_ATIVAS: separar, gravar em pendentes, lote e limpeza.
+    monkeypatch.setattr(especies, "ESPECIES_ATIVAS", (especies.DECRETO, especies.EDITAL))
+    (cfg.pasta_dbf / "Decreto 1.pdf").write_bytes(b"base nao vazia")
+    nome = "20261022_PoderExecutivo.pdf"
+    criar_pdf_texto(cfg.pasta_cadernos / nome, EDITAL_063 + EDITAL_SEM_ORGAO)
+    arquivos = captura.ler_manifesto(cfg.pasta_cadernos)
+    arquivos[nome] = {"url": "https://exemplo/" + nome, "bytes": 1, "sha256": "x", "baixado_em": "2026-10-22"}
+    captura.gravar_manifesto(cfg.pasta_cadernos, arquivos)
+
+    relatorio_dos_cadernos(cfg, cfg.pasta_cadernos, gravar=True)
+
+    processamento = captura.ler_manifesto(cfg.pasta_cadernos)[nome]["processamento"]
+    assert processamento["decretos_dbf"] == [
+        {"numero": "063", "pagina": 1, "situacao": "INÉDITO", "especie": "Edital", "ano": "2026"}
+    ]
+    # O edital sem órgão no cabeçalho fica fora, com aviso para conferir.
+    assert any("Edital 43-2026.pdf" in r.message and "não traz o órgão" in r.message for r in caplog.records)
+
+    executar(cfg)
+    assert (cfg.pasta_dbf / "Edital 063-2026.pdf").is_file()
+    (entrada,) = Registro.carregar(cfg.registro).entradas
+    assert (entrada.especie, entrada.numero, entrada.ano) == ("Edital", "063", "2026")
+    assert limpar(cfg, cfg.pasta_cadernos, simular=True, hoje=HOJE).apagados == [nome]
+
+
 def test_fluxo_com_decreto_em_revisao_manual_guarda_o_caderno(cfg):
     (cfg.pasta_dbf / "Decreto 1.pdf").write_bytes(b"%PDF-1.4")
     _caderno_real(cfg, "Caderno 2026-06-26 (pagina 9).pdf", "20260626_PoderExecutivo.pdf")
@@ -386,7 +435,7 @@ def _manifesto_antigo(cfg: Configuracao, nome: str = CADERNO) -> None:
 
 def test_decreto_com_a_base_em_imagem_guarda_o_caderno(cfg):
     _caderno(cfg, decretos_dbf=[{"numero": "48562", "pagina": 3, "situacao": limpeza.BASE_EM_IMAGEM}])
-    assert motivos(cfg) == [limpeza.MOTIVO_BASE_EM_IMAGEM.format(numero="48562")]
+    assert motivos(cfg) == [limpeza.MOTIVO_BASE_EM_IMAGEM.format(ato="Decreto 48562")]
 
 
 def test_manifesto_antigo_confere_na_base_se_e_imagem(cfg):
