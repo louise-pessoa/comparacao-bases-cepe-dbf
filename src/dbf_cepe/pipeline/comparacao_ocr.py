@@ -34,6 +34,11 @@ depois de alinhar os dois textos:
 
 Na dúvida, a diferença fica como não explicada: o decreto vai para "conferir duplicata"
 (decisão humana), nunca para descarte. Só lê.
+
+Período de digitalização ruim (2018 a 2020, medição de 26/11/2026): o OCR troca algarismos e
+quase nenhum decreto fica sem diferença. Ali vale `decidir_em_periodo_ruim`: sem diferença,
+duplicata; com número diferente lido com confiança, conferir; só ruído, "não comparado" (como
+a base em imagem sem OCR).
 """
 
 from __future__ import annotations
@@ -53,6 +58,10 @@ PARECIDO_COM_POUCA_CONFIANCA = 0.5
 # "h" vale "ii": o "III" dos incisos lido como "HI".
 CONFUSOES = str.maketrans({"l": "i", "1": "i", "0": "o", "6": "o", "5": "s", "8": "b", "h": "ii"})
 # Ordinais num só; "[", "]", "|" e "!" são o "I" que o OCR lê como sinal ("IV" -> "[ V", "| V").
+NUMERO_COM_CONFIANCA = "número diferente (lido com confiança)"
+NUMERO_POUCO_CONFIAVEL = "número diferente"
+# Decisões no período de digitalização ruim (`decidir_em_periodo_ruim`).
+DUPLICATA, CONFERIR, NAO_COMPARADO = "duplicata", "conferir", "não comparado"
 _ORDINAIS = str.maketrans({"ª": "º", "°": "º", "[": "i", "]": "i", "|": "i", "!": "i"})
 
 
@@ -137,7 +146,7 @@ def _explicar_troca(caderno: list[_Token], base: list[_Token], confianca_critica
     if any(c.isdigit() for c in a):
         if pouca_confianca and _parecido(a, b) >= PARECIDO_COM_POUCA_CONFIANCA:
             return None
-        return "número diferente" + ("" if pouca_confianca else " (lido com confiança)")
+        return NUMERO_POUCO_CONFIAVEL if pouca_confianca else NUMERO_COM_CONFIANCA
     if min(_distancia(a, b), _distancia(a.translate(CONFUSOES), b.translate(CONFUSOES))) <= 1:
         return None  # uma letra trocada: "NBM" -> "NEM", "a" -> "2", "do" -> "de" (calibração de 23/11/2026)
     semelhanca = _parecido(a.translate(CONFUSOES), b.translate(CONFUSOES))
@@ -172,3 +181,14 @@ def comparar_com_ocr(
         else:
             nao_explicadas.append(Diferenca(trecho_caderno, trecho_base, motivo))
     return ResultadoOcr(tuple(nao_explicadas), explicadas)
+
+
+def decidir_em_periodo_ruim(resultado: ResultadoOcr) -> str:
+    """Regra (c) para as digitalizações ruins: DUPLICATA sem diferença não explicada; CONFERIR
+    se alguma é um número diferente lido com confiança (a republicação que muda um número);
+    senão NAO_COMPARADO (o OCR não decide; segue como base em imagem)."""
+    if resultado.sem_diferenca_de_verdade:
+        return DUPLICATA
+    if any(d.motivo == NUMERO_COM_CONFIANCA for d in resultado.nao_explicadas):
+        return CONFERIR
+    return NAO_COMPARADO

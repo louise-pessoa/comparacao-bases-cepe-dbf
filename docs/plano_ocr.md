@@ -135,7 +135,10 @@ Medição nas digitalizações reais de 2020 (`medir_ocr --parte base`, 49 pares
   ("49.681" x "49.684").
 - Em 2010 (texto mais limpo), 67 de 117 pares ficam sem diferença com o modelo padrão.
 
-Conclusão: as digitalizações de 2018 a 2020 não dão para o OCR decidir sozinho. Decisão pendente (pergunta 6).
+Conclusão: as digitalizações de 2018 a 2020 não dão para o OCR decidir sozinho. Decisão de 26/11/2026 (pergunta 6,
+saída c): nesses anos vale a regra do período ruim (`comparacao_ocr.decidir_em_periodo_ruim`): sem diferença,
+duplicata; número diferente lido com confiança, conferir; só ruído, "não comparado", como hoje. Antes de ligar no lote,
+`medir_ocr --parte base` mostra a linha "REGRA DO PERÍODO RUIM" na amostra de 2020.
 
 ## Objetivo e escopo
 

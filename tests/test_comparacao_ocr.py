@@ -4,7 +4,14 @@ Os exemplos de ruído vêm da calibração de 19/11/2026 (decretos de 2010 e 202
 
 from __future__ import annotations
 
-from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr, normalizar
+from dbf_cepe.pipeline.comparacao_ocr import (
+    CONFERIR,
+    DUPLICATA,
+    NAO_COMPARADO,
+    comparar_com_ocr,
+    decidir_em_periodo_ruim,
+    normalizar,
+)
 
 CADERNO = (
     "DECRETO Nº 48.565, DE 23 DE JANEIRO DE 2020.\n"
@@ -91,3 +98,15 @@ def test_numero_com_um_algarismo_trocado_continua_diferenca():
     resultado = comparar_com_ocr("Decreto nº 193", ocr("Decreto nº 199"))
     assert [d.motivo for d in resultado.nao_explicadas] == ["número diferente (lido com confiança)"]
     assert not comparar_com_ocr("ALFA LTDA", ocr("BETA LTDA")).sem_diferenca_de_verdade
+
+
+def test_regra_do_periodo_ruim():
+    """Digitalizações de 2018 a 2020: só o número lido com confiança manda para conferir; o
+    ruído que o OCR não explica deixa como "não comparado" (como a base em imagem sem OCR)."""
+    assert decidir_em_periodo_ruim(comparar_com_ocr(CADERNO, ocr(CADERNO))) == DUPLICATA
+    trocado = CADERNO.replace("12 anos", "15 anos")
+    assert decidir_em_periodo_ruim(comparar_com_ocr(CADERNO, ocr(trocado))) == CONFERIR
+    assert decidir_em_periodo_ruim(comparar_com_ocr(CADERNO, ocr(CADERNO.replace("12 anos", "80 anos"),
+                                                                 baixas={"80": 60.0}))) == NAO_COMPARADO
+    palavra = comparar_com_ocr(CADERNO, ocr(CADERNO.replace("GUAMA", "XYZWQ")))
+    assert decidir_em_periodo_ruim(palavra) == NAO_COMPARADO
