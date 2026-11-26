@@ -13,8 +13,9 @@ Colunas do CSV (nesta ordem):
 
   - `data_de_publicacao` vem do NOME do caderno (AAAAMMDD_...), não de manifesto;
   - `data_do_ato` vem do cabeçalho do ato ou, no edital, da linha "Recife, <data>";
-  - errata: `numero`/`ano` são os do ATO REFERIDO (a errata não tem número próprio)
-    e `tipo` é o destino (decreto, edital, portaria ou outro);
+  - errata: `numero`/`ano`/`orgao` são os do ATO REFERIDO (a errata não tem número próprio;
+    o órgão só quando a errata o traz: "Edital DPC nº 014/2020") e `tipo` é o destino
+    (decreto, edital, portaria ou outro);
   - `republicacao`: "sim" (logo após o fecho ou em título acima do edital), "provavel"
     ou "nao"; marcador sem ato associado vira uma linha "Republicação" (a confirmar);
   - `situacao`: "no_escopo", "fora_do_escopo" ou "a_confirmar", seguida de ": <motivo>".
@@ -208,7 +209,7 @@ def _linha(achado: Achado, texto: str, nome_do_caderno: str, publicacao: str) ->
         especie=achado.especie,
         numero=(achado.ref_numero if eh_errata else achado.numero) or "",
         ano=(achado.ref_ano if eh_errata else achado.ano) or "",
-        orgao=achado.orgao or achado.orgao_do_titulo or "",
+        orgao=(achado.ref_orgao if eh_errata else achado.orgao or achado.orgao_do_titulo) or "",
         tipo=(achado.destino if eh_errata else achado.tipo) or "",
         data_do_ato=achado.data_do_ato or "",
         data_de_publicacao=publicacao,
@@ -263,10 +264,18 @@ def nome_na_base(especie: str, numero: str, ano: str) -> str | None:
     return None
 
 
+# Órgãos do escopo por destino da errata (o decreto não se divide por órgão).
+_ORGAOS_DO_ESCOPO = {"edital": EDITAL.orgaos_do_escopo, "portaria": PORTARIA.orgaos_do_escopo}
+
+
 def resolver_erratas(linhas: list[LinhaDoCatalogo], indice: set[str] | None) -> list[LinhaDoCatalogo]:
     """Escopo da errata de decreto, edital ou portaria: segue o ato referido.
 
-    Entra no escopo se ao menos um sinal confirmar que o ato é da DBF:
+    Se a errata traz o órgão do ato referido e ele é de fora do escopo da espécie ("Edital DPC
+    nº 014/2020"), a errata fica fora: o mesmo número existe em outros órgãos (o Edital DBF
+    014/2020), então nem a base nem os cadernos lidos servem de sinal.
+
+    Senão, entra no escopo se ao menos um sinal confirmar que o ato é da DBF:
       - base: o arquivo do ato existe na base da DBF (`indice`; só com --com-base);
       - lote: o ato está no escopo nos cadernos lidos nesta execução (rodar os lotes em ordem
         cronológica, dos mais antigos aos mais novos, cobre o ato e a errata no mesmo lote);
@@ -281,6 +290,10 @@ def resolver_erratas(linhas: list[LinhaDoCatalogo], indice: set[str] | None) -> 
     for l in linhas:
         if l.especie != "Errata" or l.tipo not in ("decreto", "edital", "portaria") or l.ato_referido == "?":
             saida.append(l)
+            continue
+        orgaos_do_escopo = _ORGAOS_DO_ESCOPO.get(l.tipo)
+        if l.orgao and orgaos_do_escopo is not None and l.orgao.upper() not in orgaos_do_escopo:
+            saida.append(replace(l, situacao=f"{FORA_DO_ESCOPO}: errata de {l.ato_referido}: órgão {l.orgao}"))
             continue
         sinais = []
         nome = nome_na_base(l.tipo, l.numero, l.ano)
