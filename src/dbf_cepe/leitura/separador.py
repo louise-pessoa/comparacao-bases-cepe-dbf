@@ -56,7 +56,8 @@ from pathlib import Path
 
 import pymupdf
 
-from dbf_cepe.regras.especies import ESPECIES_ATIVAS, Especie
+from dbf_cepe.regras import especies as _regras_especies
+from dbf_cepe.regras.especies import Especie
 from dbf_cepe.regras.regras_atos import NOMES_DE_MARCADOR, limpar_ligaduras  # uma fonte só
 from dbf_cepe.regras.regras_atos import identificar as identificar_atos
 from dbf_cepe.leitura.reader import _ilegivel, _pagina_digitalizada
@@ -185,6 +186,25 @@ class AtoSeparado:
     # SAÍDO COM INCORREÇÃO NO ORIGINAL)" depois das assinaturas), pela mesma regra do
     # catálogo (regras_atos.identificar). A marca fica fora de `texto`.
     marcado_como_republicacao: bool = False
+    # Ano e órgão lidos do cabeçalho (`Especie.dados_do_cabecalho`). O ano só entra no nome e
+    # na chave do ato quando a espécie o usa (`chave_ano`); o órgão serve ao escopo.
+    ano: str | None = None
+    orgao: str | None = None
+
+    @property
+    def chave_ano(self) -> str | None:
+        """O ano que identifica o ato (None na espécie que não usa ano no nome)."""
+        return self.especie.ano_da_chave(self.ano)
+
+    @property
+    def nome_padrao(self) -> str | None:
+        """'Decreto 60929.pdf', 'Edital 064-2025.pdf'; None se falta o ano que o nome exige."""
+        return self.especie.nome_do_ato(self.numero, self.ano)
+
+    @property
+    def rotulo(self) -> str:
+        """Nome para o log, mesmo sem o ano exigido ('Edital 43 (sem ano)')."""
+        return self.especie.rotulo(self.numero, self.ano)
 
 
 @dataclass(frozen=True)
@@ -446,7 +466,8 @@ def _cabecalhos_no_inicio_da_linha(
     texto: str, especie: Especie
 ) -> tuple[list[re.Match[str]], list[re.Match[str]]]:
     no_inicio, no_meio = [], []
-    for achado in especie.cabecalho.finditer(texto):
+    em_linhas = especie.cabecalhos_em_linhas(texto) if especie.cabecalhos_em_linhas else []
+    for achado in sorted([*especie.cabecalho.finditer(texto), *em_linhas], key=lambda m: m.start()):
         # Início de linha, tolerando espaços antes (o Diário traz " DECRETO Nº ...").
         inicio_da_linha = texto.rfind("\n", 0, achado.start()) + 1
         if not texto[inicio_da_linha : achado.start()].strip():
@@ -459,9 +480,12 @@ def _cabecalhos_no_inicio_da_linha(
 def separar_texto(
     texto: str,
     inicios_de_pagina: list[int] | None = None,
-    especies: tuple[Especie, ...] = ESPECIES_ATIVAS,
+    especies: tuple[Especie, ...] | None = None,
 ) -> tuple[list[AtoSeparado], list[str]]:
-    """Separa os atos de um texto de caderno já limpo (ver `separar_caderno`)."""
+    """Separa os atos de um texto de caderno já limpo (ver `separar_caderno`). Sem
+    `especies`, as de `ESPECIES_ATIVAS`."""
+    # Lido na hora da chamada (não no import): ativar uma espécie é mudar só especies.py.
+    especies = especies if especies is not None else _regras_especies.ESPECIES_ATIVAS
     inicios = inicios_de_pagina or [0]
     marcadores = _regex_marcadores(especies)
     encontrados: list[tuple[int, AtoSeparado]] = []
@@ -499,13 +523,16 @@ def separar_texto(
                     "após o cabeçalho (citação?)"
                 )
 
+            numero, ano, orgao = especie.dados_do_cabecalho(achado)
             conteudo = texto[inicio:fim].strip("\n")
             conteudo = "\n".join(linha.rstrip() for linha in conteudo.split("\n"))
             encontrados.append((
                 inicio,
                 AtoSeparado(
                     especie=especie,
-                    numero=achado["numero"].replace(".", ""),
+                    numero=numero,
+                    ano=ano,
+                    orgao=orgao,
                     cabecalho=" ".join(achado.group(0).split()),
                     texto=unicodedata.normalize("NFC", conteudo),
                     pagina_inicial=_pagina_da_posicao(inicios, inicio),
@@ -516,14 +543,14 @@ def separar_texto(
 
     encontrados.sort(key=lambda par: par[0])
     atos = [ato for _, ato in encontrados]
-    vistos: dict[tuple[str, str], int] = {}
+    vistos: dict[tuple[str, str, str | None], int] = {}
     for ato in atos:
-        chave = (ato.especie.nome, ato.numero)
+        chave = (ato.especie.nome, ato.numero, ato.chave_ano)
         vistos[chave] = vistos.get(chave, 0) + 1
-    for (nome, numero), vezes in vistos.items():
+    for (nome, numero, ano), vezes in vistos.items():
         if vezes > 1:
             avisos_gerais.append(
-                f"{nome} {numero} aparece {vezes} vezes no caderno (republicação?)"
+                f"{nome} {numero}{f'/{ano}' if ano else ''} aparece {vezes} vezes no caderno (republicação?)"
             )
     return atos, avisos_gerais
 
@@ -549,7 +576,7 @@ def ler_caderno(caminho: Path, por_coluna: bool = False) -> tuple[str, list[int]
 
 
 def separar_caderno(
-    caminho: Path, especies: tuple[Especie, ...] = ESPECIES_ATIVAS
+    caminho: Path, especies: tuple[Especie, ...] | None = None
 ) -> ResultadoSeparacao:
     """Lê o caderno e devolve um `AtoSeparado` por ato das espécies pedidas."""
     texto, inicios, digitalizadas, paginas = ler_caderno(caminho)

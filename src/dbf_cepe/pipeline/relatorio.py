@@ -23,6 +23,7 @@ from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.leitura import criterio
 from dbf_cepe.pipeline import limpeza
+from dbf_cepe.regras.especies import DECRETO
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, programas_do_ato
 from dbf_cepe.leitura.separador import (
     AtoSeparado, ErroSeparacao, ResultadoSeparacao, data_do_caderno, separar_caderno,
@@ -78,7 +79,7 @@ class ContextoDaGravacao:
     nomes_na_base: set[str]
     # Textos (hash) de cada número nos cadernos desta execução: dois textos diferentes do
     # mesmo número são sinal de republicação (ver republicacao.planejar).
-    textos_no_lote: dict[tuple[str, str], set[str]] = field(default_factory=dict)
+    textos_no_lote: dict[tuple[str, str, str | None], set[str]] = field(default_factory=dict)
 
 
 def _relatar_caderno(
@@ -105,7 +106,8 @@ def _relatar_caderno(
     falhas_antes = resumo.falhas
     decretos_dbf: list[dict[str, object]] = []  # para a limpeza dos cadernos (manifesto)
     for ato in resultado.atos:
-        nome = ato.especie.nome_arquivo(ato.numero)
+        # Sem o ano que o nome exige (edital), o rótulo só serve ao log: o ato vai para revisão.
+        nome = ato.nome_padrao or ato.rotulo
         ident = identificar(ato.texto)
         tipo = ident.tipo.nome if ident.tipo else "tipo não reconhecido"
         programas = programas_do_ato(ato.texto, ato.especie)
@@ -121,7 +123,13 @@ def _relatar_caderno(
         )
         if not e_da_dbf:
             situacao = "fora do escopo da DBF"
-            if criterio.fora_por_ementa_sem_tipo(ato):
+            if ato.especie.orgaos_do_escopo is not None and ato.orgao is None and programas:
+                log.warning(
+                    "%s | AVISO: cita programa da DBF (%s), mas o cabeçalho não traz o órgão; "
+                    "tratado como fora do escopo, confira", nome, "+".join(p.sigla for p in programas),
+                )
+                resumo.avisos += 1
+            elif criterio.fora_por_ementa_sem_tipo(ato):
                 log.warning(
                     "%s | AVISO: cita um programa da DBF só nos considerandos e a ementa não tem tipo "
                     "reconhecido; tratado como fora do escopo, confira", nome,
@@ -133,6 +141,8 @@ def _relatar_caderno(
                     "confira se não é um ato da DBF", nome,
                 )
                 resumo.avisos += 1
+        elif ato.nome_padrao is None:
+            situacao = "REVISÃO MANUAL (o nome do arquivo exige o ano e o cabeçalho não o traz; não gravado)"
         elif gravar and ato.nivel_de_leitura is None:
             # Nenhum nível da leitura em cascata aprovou o texto (cortado ou misturado):
             # não vai para pendentes, para não chegar à base com texto errado.
@@ -153,7 +163,10 @@ def _relatar_caderno(
         if e_da_dbf:
             # A base em imagem sem comparação fica separada no manifesto: a limpeza guarda o caderno.
             no_manifesto = limpeza.BASE_EM_IMAGEM if situacao == JA_EXISTE_BASE_IMAGEM else situacao.split(" (")[0]
-            decretos_dbf.append({"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": no_manifesto})
+            anotacao: dict[str, object] = {"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": no_manifesto}
+            if ato.especie is not DECRETO:  # o manifesto sem "especie" é de decreto
+                anotacao.update(especie=ato.especie.nome, ano=ato.chave_ano)
+            decretos_dbf.append(anotacao)
         programa = "+".join(p.sigla for p in programas) or "-"
         log.info("%s | %s | %s | %s | %s", nome, paginas, tipo, programa, situacao)
         for aviso in ato.avisos:
@@ -234,11 +247,11 @@ def _separar(caderno: Path) -> ResultadoSeparacao:
     return aplicar_cascata(separar_caderno(caderno), caderno)
 
 
-def _textos_no_lote(resultados: list[ResultadoSeparacao]) -> dict[tuple[str, str], set[str]]:
-    textos: dict[tuple[str, str], set[str]] = {}
+def _textos_no_lote(resultados: list[ResultadoSeparacao]) -> dict[tuple[str, str, str | None], set[str]]:
+    textos: dict[tuple[str, str, str | None], set[str]] = {}
     for resultado in resultados:
         for ato in resultado.atos:
-            textos.setdefault((ato.especie.nome, ato.numero), set()).add(hash_do_texto(ato.texto))
+            textos.setdefault((ato.especie.nome, ato.numero, ato.chave_ano), set()).add(hash_do_texto(ato.texto))
     return textos
 
 
@@ -263,10 +276,10 @@ def _gravar_publicacao(
             lidos_por_ocr.add(nome_base)
         return comparado.identico if comparado.lido else None
 
-    outros_textos = contexto.textos_no_lote.get((ato.especie.nome, ato.numero), set())
+    outros_textos = contexto.textos_no_lote.get((ato.especie.nome, ato.numero, ato.chave_ano), set())
     plano = planejar(
         ato.especie, ato.numero, publicacao, hash_do_texto(ato.texto), contexto.registro,
-        contexto.nomes_na_base, identico, outra_publicacao_no_lote=len(outros_textos) > 1,
+        contexto.nomes_na_base, identico, ano=ato.chave_ano, outra_publicacao_no_lote=len(outros_textos) > 1,
     )
     for aviso in plano.avisos:
         log.warning("%s | AVISO: %s", nome, aviso)

@@ -52,6 +52,7 @@ class Item:
     pdf: Path
     especie: Especie | None = None
     numero: str | None = None
+    ano: str | None = None  # só na espécie que usa ano no nome (`Especie.ano_da_chave`)
     texto: str = ""
     nome_base: str | None = None  # arquivo deste número na base (None: a base não tem)
     comparacao: Comparacao | None = None  # None: sem arquivo na base
@@ -59,12 +60,12 @@ class Item:
     erro: str = ""
 
 
-def _arquivo_da_base(especie: Especie, numero: str, nomes: set[str]) -> str | None:
-    padrao = especie.nome_arquivo(numero)
+def _arquivo_da_base(especie: Especie, numero: str, nomes: set[str], ano: str | None = None) -> str | None:
+    padrao = especie.nome_arquivo(numero, ano)
     por_chave = {chave_nome(n): n for n in nomes}
     if chave_nome(padrao) in por_chave:
         return por_chave[chave_nome(padrao)]
-    familia = sorted(n for n in nomes if especie.e_da_familia(n, numero))
+    familia = sorted(n for n in nomes if especie.e_da_familia(n, numero, ano))
     return familia[0] if familia else None
 
 
@@ -82,8 +83,8 @@ def preparar(
     if ident.status is not StatusIdentificacao.IDENTIFICADO or ident.especie is None or ident.numero is None:
         item.erro = f"o PDF não se identifica como um ato ({ident.detalhe})"
         return item
-    item.especie, item.numero, item.texto = ident.especie, ident.numero, leitura.texto
-    item.nome_base = _arquivo_da_base(ident.especie, ident.numero, nomes_na_base)
+    item.especie, item.numero, item.ano, item.texto = ident.especie, ident.numero, ident.chave_ano, leitura.texto
+    item.nome_base = _arquivo_da_base(ident.especie, ident.numero, nomes_na_base, item.ano)
     if item.nome_base is not None:
         base = ler_pdf(pasta_dbf / item.nome_base)
         if base.status is StatusLeitura.OK:
@@ -149,7 +150,7 @@ def _decidir(cfg: Configuracao, registro: Registro, item: Item, escolha: str) ->
     if escolha == "d":
         assert item.nome_base is not None and item.especie is not None and item.numero is not None
         copia = armazenamento.substituir_na_base(
-            item.pdf, item.nome_base, cfg.pasta_dbf, cfg.substituidos, item.especie.nome_arquivo(item.numero)
+            item.pdf, item.nome_base, cfg.pasta_dbf, cfg.substituidos, item.especie.nome_arquivo(item.numero, item.ano)
         )
         decisao = f"substituída pelo Diário (cópia do arquivo antigo: {copia.name})"
         if item.entrada is not None:

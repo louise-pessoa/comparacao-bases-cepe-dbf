@@ -441,8 +441,7 @@ acaba de ser validado contra a base e a mudança fica para depois das etapas da 
   e o número não é de processo (`PROCESSO SEI Nº ...`). A sigla colada no "Nº" depois do tipo é o órgão (`EDITAL DE
   ADITAMENTO DBM Nº 001/2010`). Sigla é 2 a 5 letras sem acento, fora preposições e tributos (`ICMS`, `IPVA`, `ICD`):
   `FUNASE` não é lida, e a errata de portaria da FUNASE continua `a_confirmar`.
-- Esse cabeçalho em várias linhas só vale no catálogo: o separador do pipeline usa `CABECALHO_EDITAL`, de uma linha.
-  Antes de ativar o edital, ele precisa da mesma regra.
+- O pipeline usa a mesma regra (`Especie.cabecalhos_em_linhas` do `EDITAL`), no separador e no identificador.
 - Uma citação em maiúsculas que quebra de linha (`... designada, por meio da` + `PORTARIA Nº 2224/2026, de ...`) é
   sinalizada, não descartada.
 - O tipo da portaria é o primeiro verbo operativo; os verbos não vistos nos cadernos saem sem tipo.
@@ -458,9 +457,29 @@ etapas não precisam ser reescritas.
 - Os campos opcionais podem ficar vazios: sem fecho, o separador não o procura; sem lista de programas, todo ato da
   espécie entra no escopo.
 - As RegEx de cabeçalho e tipos ficam em `regras/regras_atos.py`, não em `especies.py`.
-- `EDITAL` e `PORTARIA` já estão definidos (cabeçalho, órgão, tipo, `orgaos_do_escopo`), mas só entram em
-  `ESPECIES_ATIVAS` por decisão da DBF. Hoje nenhum edital ou portaria é separado, gravado ou comparado.
-- `tests/test_especie_generica.py` usa uma espécie fictícia para garantir que nenhuma etapa dependa de regra de decreto.
+- **Ano no nome.** Se `padrao_arquivo` tem `{ano}` (`Edital {numero}-{ano}.pdf`), o ano lido do cabeçalho faz parte da
+  identidade do ato: entra no nome do arquivo, na chave do registro de publicações, na comparação com a base e na
+  limpeza dos cadernos. O ato cujo cabeçalho não traz o ano vai para revisão manual (`SEM_ANO` no lote; `REVISÃO
+  MANUAL` no `--separar`). Na espécie sem `{ano}` (o decreto), o ano não entra em nada: o registro continua com
+  `"ano": null` e nada muda para os decretos já gravados.
+- **Órgão e escopo.** `orgao_do_cabecalho` lê o órgão do cabeçalho (edital: `DBF`; portaria: `SF`). Com
+  `orgaos_do_escopo`, só entra no escopo o ato do órgão certo **e** que cite um programa da espécie, o mesmo critério
+  do catálogo. Sem órgão no cabeçalho (`EDITAL Nº 43/2026`), o ato fica fora e o `--separar` avisa para conferir: o
+  título da seção, que o catálogo usa, não vale como prova para gravar na base.
+- **Cabeçalho em linhas.** `cabecalhos_em_linhas` acrescenta os cabeçalhos quebrados que `cabecalho` não pega (o edital
+  de 2010: `EDITAL DE CREDENCIAMENTO ...` / `DBM Nº 054/2010`).
+- **Arquivo na base.** `arquivada_na_base=False` diz que a base não guarda a espécie (a portaria): a errata dela não
+  procura o original na base.
+- `ESPECIES_ATIVAS` é lida na hora de cada chamada (separador, identificador, cascata), não no import: ativar uma
+  espécie é mudar só essa tupla.
+- `EDITAL` e `PORTARIA` já estão definidos (cabeçalho, ano, órgão, tipo, `orgaos_do_escopo`, programas), mas só entram em
+  `ESPECIES_ATIVAS` por decisão da DBF. Hoje nenhum edital ou portaria é separado, gravado ou comparado. Os testes
+  ativam o edital para conferir o fluxo completo (separar, gravar em pendentes, lote, registro e limpeza).
+- Antes de ativar o edital ainda falta (fase 3): o tipo do edital vem do título (`EDITAL DE CREDENCIAMENTO ...`), mas o
+  identificador classifica o texto depois do cabeçalho, então o edital de 2010 sai sem tipo e vai para revisão; o
+  fecho e o assinante do edital; o modelo de layout. Na portaria, o nome do arquivo ainda não tem órgão nem ano.
+- `tests/test_especie_generica.py` usa espécies fictícias (uma delas com ano no nome e escopo por órgão) para garantir
+  que nenhuma etapa dependa de regra de decreto.
 
 ## Amostras de teste
 

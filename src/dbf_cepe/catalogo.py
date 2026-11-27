@@ -256,12 +256,13 @@ def listar_cadernos(caminho: Path) -> list[Path]:
 
 def nome_na_base(especie: str, numero: str, ano: str) -> str | None:
     """Nome do arquivo do ato na base da DBF: 'Decreto 58509.pdf', 'Edital 064-2025.pdf'.
-    Portaria não tem arquivo na base (informado pela responsável pelo projeto): None."""
-    if especie == "decreto" and numero:
-        return DECRETO.nome_arquivo(numero)
-    if especie == "edital" and numero and ano:
-        return EDITAL.nome_arquivo(numero, ano)
-    return None
+    Portaria não tem arquivo na base (informado pela responsável pelo projeto): None.
+    A regra é da espécie (`Especie.nome_na_base`); aqui só se acha a espécie pelo destino."""
+    alvo = _ESPECIE_DO_DESTINO.get(especie)
+    return alvo.nome_na_base(numero, ano or None) if alvo else None
+
+
+_ESPECIE_DO_DESTINO = {"decreto": DECRETO, "edital": EDITAL, "portaria": PORTARIA}
 
 
 # Órgãos do escopo por destino da errata (o decreto não se divide por órgão).

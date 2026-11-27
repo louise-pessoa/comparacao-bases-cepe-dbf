@@ -640,6 +640,38 @@ def _cabecalho_edital_em_linhas(texto: str, posicao: int) -> re.Match[str] | Non
     return m
 
 
+def cabecalhos_de_edital_em_linhas(texto: str) -> list[re.Match[str]]:
+    """Os cabeçalhos de edital quebrados em linhas (`CABECALHO_EDITAL_EM_LINHAS`) que passam
+    nas mesmas regras do catálogo e que `CABECALHO_EDITAL` não reconhece no mesmo ponto. Serve
+    ao separador e ao identificador (`Especie.cabecalhos_em_linhas`)."""
+    achados = []
+    for inicio in INICIO_EDITAL.finditer(texto):
+        if CABECALHO_EDITAL.match(texto, inicio.start()):
+            continue
+        m = _cabecalho_edital_em_linhas(texto, inicio.start())
+        if m:
+            achados.append(m)
+    return achados
+
+
+def numero_e_ano_do_cabecalho(cabecalho: re.Match[str]) -> tuple[str, str | None]:
+    """Número (sem separador de milhar; código composto fica como está) e ano (do grupo "ano"
+    ou do código composto "4050.2025.0021.SES") de um cabeçalho de qualquer espécie."""
+    bruto = cabecalho["numero"]
+    grupos = cabecalho.groupdict()
+    return _numero_sem_milhar(bruto), grupos.get("ano") or _ano_do_composto(bruto)
+
+
+def orgao_do_cabecalho(cabecalho: re.Match[str], especie: str) -> str | None:
+    """Sigla ou nome do órgão no cabeçalho de edital ou portaria (grupo "qualificador"):
+    "EDITAL DBF Nº 017/2026" -> "DBF"; "EDITAL DE INTIMAÇÃO Nº 5/2026" -> None."""
+    qualificador = cabecalho.groupdict().get("qualificador")
+    if not qualificador:
+        return None
+    orgao, _ = _qualificador(qualificador, especie)
+    return orgao.upper() if orgao else None
+
+
 def _so_ate_o_numero(resto_da_linha: str) -> str:
     """Do que vem depois de PORTARIA/EDITAL numa linha sem número, só as palavras
     do órgão ou do tipo: para na primeira palavra com dígito ou na data
