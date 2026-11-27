@@ -85,7 +85,8 @@ def _extrair_ementa(texto: str, fim_cabecalho: int, especie: Especie) -> str:
     resto = texto[fim_cabecalho:]
     marcador = especie.abertura_do_corpo.search(resto) if especie.abertura_do_corpo else None
     ementa = resto[: marcador.start()] if marcador else resto[:_TAMANHO_EMENTA_PADRAO]
-    return ementa.lstrip(" .")
+    # "EDITAL DE ADITAMENTO DBM Nº 001/2010 - CREDENCIAMENTO ...": o travessão só separa.
+    return ementa.lstrip(" .-–—")
 
 
 def _classificar(especie: Especie, ementa: str) -> Tipo | None:
@@ -136,6 +137,7 @@ def identificar(
 
         numero, ano, orgao = especie.dados_do_cabecalho(casamento)
         ementa = normalizar_espacos(_extrair_ementa(texto, casamento.end(), especie))
+        titulo = especie.titulo_do_cabecalho(casamento) if especie.titulo_do_cabecalho else None
         if especie.usa_ano and not ano:
             return Identificacao(
                 StatusIdentificacao.SEM_ANO,
@@ -148,7 +150,7 @@ def identificar(
             StatusIdentificacao.IDENTIFICADO,
             especie=especie,
             numero=numero,
-            tipo=_classificar(especie, ementa),
+            tipo=(_classificar(especie, titulo) if titulo else None) or _classificar(especie, ementa),
             detalhe=f"ementa: {ementa[:80]!r}",
             ementa=ementa,
             ano=ano,

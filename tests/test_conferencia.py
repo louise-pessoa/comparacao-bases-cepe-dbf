@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import criar_pdf_imagem, texto_decreto
+from conftest import criar_pdf_imagem, criar_pdf_texto, texto_decreto
 from dbf_cepe import cli as modulo_cli
 from dbf_cepe.config import Configuracao
 from dbf_cepe.leitura.reader import ler_pdf
@@ -248,3 +248,14 @@ def test_cada_decisao_vai_para_a_publicacao_certa(cfg):
     por_numero = {e.numero: e for e in Registro.carregar(cfg.registro).entradas}
     assert (por_numero["48606"].situacao, por_numero["48606"].decisao) == (CONFERIR, conferencia.MANTIDA_A_BASE)
     assert por_numero["48607"].situacao == GRAVADO and por_numero["48607"].decisao.startswith("substituída")
+
+
+def test_base_do_sdoe_e_comparada_sem_a_moldura(cfg, tmp_path):
+    # O PDF que o SDOE emite traz o cabeçalho do Diário e a página de protocolo: não são do ato.
+    topo = "Poder Executivo\nAno CII • Nº 135\nRecife, 29 de julho de 2025\nCERTIFICADO DIGITALMENTE\n"
+    protocolo = "PROTOCOLO DE ASSINATURAS\nCódigo de verificação:\n6N8AIQ5VK0-LV8YIE4DDS\n" + topo
+    criar_pdf_texto(cfg.pasta_dbf / "Decreto 48606.pdf", topo + DIARIO, protocolo)
+    pdf = criar_pdf_texto(tmp_path / "diario.pdf", DIARIO)
+    item = conferencia.preparar(pdf, cfg.pasta_dbf, {"Decreto 48606.pdf"}, Registro.carregar(cfg.registro))
+    assert item.nome_base == "Decreto 48606.pdf"
+    assert item.comparacao is not None and item.comparacao.identico

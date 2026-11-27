@@ -475,9 +475,22 @@ etapas não precisam ser reescritas.
 - `EDITAL` e `PORTARIA` já estão definidos (cabeçalho, ano, órgão, tipo, `orgaos_do_escopo`, programas), mas só entram em
   `ESPECIES_ATIVAS` por decisão da DBF. Hoje nenhum edital ou portaria é separado, gravado ou comparado. Os testes
   ativam o edital para conferir o fluxo completo (separar, gravar em pendentes, lote, registro e limpeza).
-- Antes de ativar o edital ainda falta (fase 3): o tipo do edital vem do título (`EDITAL DE CREDENCIAMENTO ...`), mas o
-  identificador classifica o texto depois do cabeçalho, então o edital de 2010 sai sem tipo e vai para revisão; o
-  fecho e o assinante do edital; o modelo de layout. Na portaria, o nome do arquivo ainda não tem órgão nem ano.
+- **Edital (fase 3, 27/11/2026).** Decisões da DBF: o edital entra no pipeline; a portaria não entra. O que já está
+  pronto, medido nos 48 editais da DBF/DBM dos cadernos de 2010, 2019, 2020, 2025 e 2026 (todos terminam no cargo,
+  passam no critério e têm tipo, menos o 016/2020, que é uma errata com o cabeçalho do edital):
+  - fecho `Recife, <data>.` e assinante (nome em caixa mista logo acima de `Diretor`/`DIRETOR`/`Diretor em
+    exercício`); o cargo encerra o edital (`assinaturas_depois_do_cargo=False`), porque o que vem depois é o título da
+    seção seguinte;
+  - tipo pelo título do cabeçalho (`titulo_do_cabecalho`: `EDITAL DE CREDENCIAMENTO ...` / `DBM Nº 01/2010`) e os
+    tipos `RENOVACAO` e `PRORROGACAO` (o Diário às vezes traz `RENOVAÇÂO`);
+  - nome com o número em 3 dígitos, como na base: `DBM Nº 01/2010` -> `Edital 001-2010.pdf`. Arquivo da base com
+    sufixo (`Edital 001-2010 Peap.pdf`) conta como da família do número;
+  - comparação com a base sem a moldura (`comparacao.sem_moldura_da_base`): o PDF do SDOE (editais de 2025 em diante)
+    traz o cabeçalho do Diário e a página `PROTOCOLO DE ASSINATURAS`; o Word de 2010 abre com `SECRETARIA DA FAZENDA`.
+    Com os exemplos da base, os editais 035/2026 (SDOE), 001/2010 (Word) e 080/2019 (imagem, pelo OCR) dão idênticos.
+- Ainda falta para ativar o edital: o layout do PDF normalizado (o normalizador é o do decreto: título, ementa,
+  corpo, fecho) e as tabelas do edital de 2025 em diante (a lista de contribuintes vira uma célula por linha no
+  texto do caderno).
 - `tests/test_especie_generica.py` usa espécies fictícias (uma delas com ano no nome e escopo por órgão) para garantir
   que nenhuma etapa dependa de regra de decreto.
 

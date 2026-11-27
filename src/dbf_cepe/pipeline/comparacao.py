@@ -31,6 +31,13 @@ confiança média abaixo de `CONFIANCA_MINIMA_DA_BASE`; e o OCR com menos de
 `MIN_PALAVRAS_DO_OCR` palavras (página em branco, imagem que não é texto) conta como não lido,
 como antes do OCR. O PDF com mais de `MAX_PAGINAS_OCR_DA_BASE` páginas não é lido por OCR.
 
+Moldura da base (27/11/2026): o PDF que o SDOE da CEPE emite para cada ato (os editais da base
+de 2025 em diante) traz o cabeçalho do Diário ("Poder Executivo / Ano CX • Nº 120 / Recife, 04
+de julho de 2026 / CERTIFICADO DIGITALMENTE") e uma página de "PROTOCOLO DE ASSINATURAS"; o
+Word de 2010 abre com o título da seção ("SECRETARIA DA FAZENDA"). Nada disso é texto do ato:
+sai da base antes de comparar (`sem_moldura_da_base`). Medido no Edital 035/2026 (88,7% ->
+idêntico) e no 001/2010 (99,0% -> idêntico).
+
 Só LÊ o PDF da base.
 """
 
@@ -112,6 +119,22 @@ def _trecho(a: list[str], b: list[str], i1: int, i2: int, j1: int, j2: int) -> s
     return f"...{antes} [caderno: {no_ato} | base: {na_base}] {depois}..."
 
 
+_TOPO_DO_SDOE = re.compile(
+    r"\A\s*Poder Executivo\s*\n\s*Ano [^\n]*N[º°] *\d+[^\n]*\n\s*Recife,[^\n]*\n\s*CERTIFICADO DIGITALMENTE\s*\n"
+)
+_PROTOCOLO_DO_SDOE = re.compile(r"(?m)^\s*PROTOCOLO DE ASSINATURAS\s*$.*\Z", re.DOTALL)
+# Título de seção que o Word da base repete acima do ato (Edital 001/2010).
+_TITULO_DE_SECAO_NO_TOPO = re.compile(r"\A\s*SECRETARIA DA FAZENDA\s*\n")
+
+
+def sem_moldura_da_base(texto_base: str) -> str:
+    """O texto do PDF da base sem o que não é do ato: o cabeçalho do Diário e a página de
+    protocolo que o SDOE acrescenta, e o título de seção no topo do Word."""
+    texto = _PROTOCOLO_DO_SDOE.sub("", texto_base)
+    texto = _TOPO_DO_SDOE.sub("", texto)
+    return _TITULO_DE_SECAO_NO_TOPO.sub("", texto)
+
+
 def comparar_textos(texto_ato: str, texto_base: str, limite: int | None = LIMITE_DE_TRECHOS) -> Comparacao:
     """Compare textos sem limiar: igualdade normalizada é o único caso idêntico."""
     a, b = palavras(texto_ato), palavras(texto_base)
@@ -189,7 +212,7 @@ def comparar_com_base(texto_ato: str, pdf_base: Path, cfg: Configuracao | None =
     imagem ou com texto ilegível é lido por OCR (`comparar_por_ocr`)."""
     leitura = ler_pdf(pdf_base)
     if leitura.status is StatusLeitura.OK:
-        return comparar_textos(texto_ato, leitura.texto)
+        return comparar_textos(texto_ato, sem_moldura_da_base(leitura.texto))
     if leitura.status is StatusLeitura.IMAGEM and cfg is not None:
         leitor = leitor_ocr(cfg)
         if leitor is not None:

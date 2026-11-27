@@ -313,3 +313,47 @@ def test_pontos_isolados_continuam_contando(caderno, base):
     assert not comparar_textos(caderno, base).identico
 
 """Proteja a normalização fechada e o critério de igualdade da comparação."""
+
+
+# ---------------------------------------------------------------------------
+# Moldura da base: SDOE (editais de 2025 em diante) e título de seção do Word (2010)
+# ---------------------------------------------------------------------------
+
+EDITAL_DO_CADERNO = (
+    "EDITAL DBF Nº 035/2026\nCREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA\n"
+    "A Diretoria de Benefícios Fiscais - DBF resolve credenciar os contribuintes.\n"
+    "Recife, 03 de julho de 2026.\nFelipe de Moraes Chaves\nDiretor\n"
+)
+TOPO_DO_SDOE = "Poder Executivo\nAno CX • Nº 120\nRecife, 04 de julho de 2026\nCERTIFICADO DIGITALMENTE\n"
+PROTOCOLO_DO_SDOE = (
+    "PROTOCOLO DE ASSINATURAS\nCódigo de verificação:\n9DZLRLESHU-7PJSIBJUEO-P2TH9ZW2VI\n"
+    "O documento acima foi proposto para assinatura digital na plataforma SDOE.\n" + TOPO_DO_SDOE
+)
+
+
+def test_sem_moldura_tira_o_topo_e_o_protocolo_do_sdoe():
+    base = TOPO_DO_SDOE + EDITAL_DO_CADERNO + PROTOCOLO_DO_SDOE
+    assert comparacao.sem_moldura_da_base(base).strip() == EDITAL_DO_CADERNO.strip()
+    assert not comparar_textos(EDITAL_DO_CADERNO, base).identico  # sem tirar a moldura, difere
+
+
+def test_sem_moldura_tira_o_titulo_da_secao_no_topo_do_word():
+    base = "SECRETARIA DA FAZENDA \n" + EDITAL_DO_CADERNO
+    assert comparar_textos(EDITAL_DO_CADERNO, comparacao.sem_moldura_da_base(base)).identico
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        # Só no topo: a mesma frase no meio do texto é do ato e continua contando.
+        EDITAL_DO_CADERNO + "SECRETARIA DA FAZENDA\n",
+        "Texto antes\n" + TOPO_DO_SDOE + EDITAL_DO_CADERNO,
+    ],
+)
+def test_moldura_so_sai_no_lugar_dela(base):
+    assert comparacao.sem_moldura_da_base(base) == base
+
+
+def test_comparar_com_base_do_sdoe_e_identico(tmp_path):
+    pdf = criar_pdf_texto(tmp_path / "Edital 035-2026.pdf", TOPO_DO_SDOE + EDITAL_DO_CADERNO, PROTOCOLO_DO_SDOE)
+    assert comparar_com_base(EDITAL_DO_CADERNO, pdf).identico

@@ -327,7 +327,7 @@ def test_fluxo_completo_com_o_edital_ativo(cfg, monkeypatch, caplog):
         {"numero": "063", "pagina": 1, "situacao": "INÉDITO", "especie": "Edital", "ano": "2026"}
     ]
     # O edital sem órgão no cabeçalho fica fora, com aviso para conferir.
-    assert any("Edital 43-2026.pdf" in r.message and "não traz o órgão" in r.message for r in caplog.records)
+    assert any("Edital 043-2026.pdf" in r.message and "não traz o órgão" in r.message for r in caplog.records)
 
     executar(cfg)
     assert (cfg.pasta_dbf / "Edital 063-2026.pdf").is_file()

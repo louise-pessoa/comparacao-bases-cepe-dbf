@@ -33,9 +33,12 @@ from dbf_cepe.regras.regras_atos import (
     NOMES_OUTRAS_ESPECIES,  # noqa: F401 (reexportado: separador e identificador)
     ORGAOS_EDITAL_SEFAZ,
     ORGAOS_PORTARIA_SEFAZ,
+    CARGO_ASSINANTE_EDITAL,
+    FECHO_EDITAL,
     cabecalhos_de_edital_em_linhas,
     numero_e_ano_do_cabecalho,
     orgao_do_cabecalho,
+    titulo_do_cabecalho,
 )
 from dbf_cepe.regras.regras_atos import TIPOS_DECRETO as _REGRAS_TIPOS_DECRETO
 from dbf_cepe.regras.regras_atos import TIPOS_EDITAL as _REGRAS_TIPOS_EDITAL
@@ -116,8 +119,14 @@ class Especie:
     # CREDENCIAMENTO ..." / "DBM Nº 054/2010"). Recebe o texto e devolve os casamentos, no
     # início de linha, com os mesmos grupos de `cabecalho`.
     cabecalhos_em_linhas: Callable[[str], list[re.Match[str]]] | None = None
+    # Título que o cabeçalho traz antes do número (edital de 2010: "EDITAL DE CREDENCIAMENTO
+    # ..." / "DBM Nº 054/2010"). O tipo é procurado nele antes do texto depois do cabeçalho.
+    titulo_do_cabecalho: Callable[[re.Match[str]], str | None] | None = None
     # A base da DBF guarda os atos desta espécie (a portaria não tem arquivo na base).
     arquivada_na_base: bool = True
+    # Depois do cargo de quem assina vêm outras assinaturas (no decreto, as dos secretários).
+    # False: o cargo encerra o ato (no edital, o que vem depois é o título da seção seguinte).
+    assinaturas_depois_do_cargo: bool = True
 
     @property
     def usa_ano(self) -> bool:
@@ -272,6 +281,10 @@ def _orgao_do_edital(cabecalho: re.Match[str]) -> str | None:
     return orgao_do_cabecalho(cabecalho, "Edital")
 
 
+def _titulo_do_edital(cabecalho: re.Match[str]) -> str | None:
+    return titulo_do_cabecalho(cabecalho, "Edital")
+
+
 def _orgao_da_portaria(cabecalho: re.Match[str]) -> str | None:
     return orgao_do_cabecalho(cabecalho, "Portaria")
 
@@ -290,12 +303,19 @@ def _orgao_da_portaria(cabecalho: re.Match[str]) -> str | None:
 EDITAL = Especie(
     nome="Edital",
     cabecalho=CABECALHO_EDITAL,
-    padrao_arquivo="{especie} {numero}-{ano}.pdf",
+    # Número com 3 dígitos, como na base: "DBM Nº 01/2010" -> "Edital 001-2010.pdf" (os exemplos
+    # da base: 001-2010, 080-2019, 064-2025, 035-2026).
+    padrao_arquivo="{especie} {numero:0>3}-{ano}.pdf",
     tipos=tuple(Tipo(nome, padrao, None, evidencia) for nome, padrao, evidencia in _REGRAS_TIPOS_EDITAL),
     programas=PROGRAMAS_DE_CREDENCIAMENTO,
     orgaos_do_escopo=ORGAOS_EDITAL_SEFAZ,
     orgao_do_cabecalho=_orgao_do_edital,
     cabecalhos_em_linhas=cabecalhos_de_edital_em_linhas,
+    titulo_do_cabecalho=_titulo_do_edital,
+    # "Recife, 03 de julho de 2026." / nome / "Diretor" encerram o edital.
+    fecho=FECHO_EDITAL,
+    cargo_assinante=CARGO_ASSINANTE_EDITAL,
+    assinaturas_depois_do_cargo=False,
 )
 
 # ----------------------------------------------------------------------------

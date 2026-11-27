@@ -36,6 +36,10 @@ def test_dpc_nao_esta_no_escopo():
 
 def test_nome_do_arquivo_depende_so_de_especie_e_numero():
     assert EDITAL.nome_arquivo("064", "2025") == "Edital 064-2025.pdf"  # como na base da DBF
+    # "DBM Nº 01/2010" -> 3 dígitos, como na base ("Edital 001-2010 Peap.pdf").
+    assert EDITAL.nome_arquivo("01", "2010") == "Edital 001-2010.pdf"
+    assert EDITAL.e_da_familia("Edital 001-2010 Peap.pdf", "01", "2010")
+    assert not EDITAL.e_da_familia("Edital 001-2011.pdf", "01", "2010")
     with pytest.raises(ValueError, match="ano"):
         EDITAL.nome_arquivo("064")
     assert PORTARIA.nome_arquivo("76") == "Portaria 76.pdf"
@@ -55,6 +59,10 @@ def test_tipo_de_edital_pelo_inicio_do_titulo():
     assert tipo("CREDENCIAMENTO PRODEAUTO") == "CREDENCIAMENTO"
     assert tipo("INTIMAÇÃO") == "INTIMACAO"
     assert tipo("A DPC, no uso da competência") is None
+    # 2019 e 2020: renovação e prorrogação do credenciamento (o Diário às vezes traz "RENOVAÇÂO").
+    assert tipo("RENOVAÇÃO DO CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA") == "RENOVACAO"
+    assert tipo("RENOVAÇÂO DO CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA") == "RENOVACAO"
+    assert tipo("PRORROGAÇÃO DO CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA") == "PRORROGACAO"
 
 
 def test_separador_aceita_edital_e_portaria_sem_ativar_nada():
@@ -79,6 +87,65 @@ DBM_2010 = (
     "que regulamenta o Programa de Estímulo à Atividade Portuária, resolve credenciar a empresa.\n"
     "Recife, 9 de setembro de 2010.\n"
 )
+
+
+# Editais reais (sem os nomes de empresas): o de 2026 é seguido, na mesma página, de um acórdão
+# do TATE; o de 2010, do título da seção seguinte.
+EDITAL_2026 = (
+    "EDITAL DBF Nº 035/2026\nCREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA\n"
+    "A Diretoria de Benefícios Fiscais - DBF, nos termos do art. 3º do anexo 27 do Decreto n° 44.650, resolve credenciar\n"
+    "os contribuintes a seguir identificados, para fruição dos benefícios fiscais da Lei nº 13.942, de 4.12.2009.\n"
+    "Os efeitos deste edital ficam condicionados ao cumprimento dos requisitos previstos no Convênio ICMS nº 190.\n"
+    "Recife, 03 de julho de 2026.\nFelipe de Moraes Chaves\nDiretor\n"
+    "geradores ocorridos antes de 2024. 4. Entendimento referendado pelo Pleno do TATE nos Acórdãos nºs 95/2025.\n"
+)
+EDITAL_2010 = (
+    "EDITAL DE CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE\nPORTUÁRIA\nDBM Nº 01/2010\n"
+    "A Diretoria de Benefícios Fiscais e Relações com os Municípios –\nDBM, nos termos da Lei nº\n"
+    "13.942, de 04/12/2009, resolve credenciar o contribuinte.\n"
+    "Recife, 18 de março de 2010\nROBERTO DE ABREU E LIMA ALMEIDA\nDIRETOR\n"
+    "DIRETORIA GERAL DA RECEITA – I REGIÃO FISCAL NORTE\nDRR I RF NORTE\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("texto", "ultimas"),
+    [
+        (EDITAL_2026, ["Recife, 03 de julho de 2026.", "Felipe de Moraes Chaves", "Diretor"]),
+        (EDITAL_2010, ["Recife, 18 de março de 2010", "ROBERTO DE ABREU E LIMA ALMEIDA", "DIRETOR"]),
+        # O título da seção seguinte em maiúsculas, sem palavra de título ("DIRETORIA",
+        # "SECRETARIA"...), pareceria uma assinatura: o cargo do edital encerra o ato.
+        (
+            EDITAL_2026.replace("Diretor\ngeradores", "Diretor\nPLANEJAMENTO E GESTÃO\ngeradores"),
+            ["Recife, 03 de julho de 2026.", "Felipe de Moraes Chaves", "Diretor"],
+        ),
+    ],
+)
+def test_edital_termina_no_cargo_de_quem_assina(texto, ultimas):
+    (ato,), avisos = separar_texto(texto, especies=(EDITAL,))
+    assert ato.texto.split("\n")[-3:] == ultimas
+    assert not avisos and not ato.avisos
+    assert criterio.motivos_de_reprovacao(ato) == []
+
+
+def test_nome_em_caixa_mista_so_conta_logo_acima_do_cargo():
+    # Sem o cargo embaixo, a frase em caixa mista depois do fecho não é assinatura.
+    texto = "EDITAL DBF Nº 035/2026\nCREDENCIAMENTO\nTexto.\nRecife, 03 de julho de 2026.\nOutro Texto Qualquer\nE mais\n"
+    (ato,), _ = separar_texto(texto, especies=(EDITAL,))
+    assert ato.texto.endswith("Recife, 03 de julho de 2026.")
+
+
+def test_tipo_do_edital_pelo_titulo_do_cabecalho():
+    # 2010: o tipo está no título, antes do número; o texto depois do cabeçalho começa por "A Diretoria".
+    ident = identificar(EDITAL_2010, (EDITAL,))
+    assert (ident.numero, ident.orgao, ident.tipo.nome) == ("01", "DBM", "CREDENCIAMENTO")
+    # 2026: o título vem na linha de baixo do cabeçalho.
+    assert identificar(EDITAL_2026, (EDITAL,)).tipo.nome == "CREDENCIAMENTO"
+
+
+def test_travessao_depois_do_cabecalho_nao_esconde_o_tipo():
+    ident = identificar("EDITAL DE ADITAMENTO DBM Nº 001/2010 - CREDENCIAMENTO DE ESTÍMULO\nA Diretoria\n", (EDITAL,))
+    assert ident.tipo.nome == "CREDENCIAMENTO"
 
 
 def test_separador_leva_ano_e_orgao_de_edital_e_portaria():

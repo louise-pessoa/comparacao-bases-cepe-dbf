@@ -32,7 +32,7 @@ from dbf_cepe.config import Configuracao, ErroConfiguracao
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.pipeline import armazenamento
-from dbf_cepe.pipeline.comparacao import Comparacao, comparar_por_ocr, comparar_textos, leitor_ocr
+from dbf_cepe.pipeline.comparacao import Comparacao, comparar_por_ocr, comparar_textos, leitor_ocr, sem_moldura_da_base
 from dbf_cepe.pipeline.duplicidade import chave_nome, listar_nomes
 from dbf_cepe.pipeline.registro import CONFERIR, GRAVADO, Entrada, ErroRegistro, Registro
 from dbf_cepe.regras.especies import Especie
@@ -88,7 +88,7 @@ def preparar(
     if item.nome_base is not None:
         base = ler_pdf(pasta_dbf / item.nome_base)
         if base.status is StatusLeitura.OK:
-            item.comparacao = comparar_textos(leitura.texto, base.texto, limite=None)
+            item.comparacao = comparar_textos(leitura.texto, sem_moldura_da_base(base.texto), limite=None)
         elif base.status is StatusLeitura.IMAGEM and cfg is not None and (leitor := leitor_ocr(cfg)) is not None:
             item.comparacao = comparar_por_ocr(leitura.texto, pasta_dbf / item.nome_base, leitor)
         else:

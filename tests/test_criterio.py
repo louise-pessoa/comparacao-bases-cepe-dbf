@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from dbf_cepe.leitura import criterio
@@ -102,8 +104,17 @@ def test_motivo_dbf_calculado_quando_nao_informado():
 
 
 def test_especie_sem_fecho_nem_abertura_nao_e_cobrada_por_eles():
-    edital = AtoSeparado(EDITAL, "063", "EDITAL DBF Nº 063/2026", "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO\nTexto.", 1, 1)
+    sem_fecho = replace(EDITAL, fecho=None, cargo_assinante=None)
+    edital = AtoSeparado(sem_fecho, "063", "EDITAL DBF Nº 063/2026", "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO\nTexto.", 1, 1)
     assert criterio.motivos_de_reprovacao(edital, e_da_dbf=False) == []
+
+
+def test_edital_e_cobrado_pelo_fecho_recife():
+    texto = "EDITAL DBF Nº 063/2026\nCREDENCIAMENTO\nTexto."
+    sem = AtoSeparado(EDITAL, "063", "EDITAL DBF Nº 063/2026", texto, 1, 1)
+    com = replace(sem, texto=texto + "\nRecife, 21 de outubro de 2026.\nFulano de Tal\nDiretor")
+    assert criterio.motivos_de_reprovacao(sem, e_da_dbf=False) == [criterio.SEM_FECHO]
+    assert criterio.motivos_de_reprovacao(com, e_da_dbf=False) == []
 
 
 @pytest.mark.parametrize(

@@ -140,6 +140,10 @@ _PALAVRA_DE_TITULO = re.compile(
     r"ANEXO|DECRETO|LEI|EDITAL|AVISO|EXTRATO|DESPACHO|ERRATA|RESOLU[ÇC][ÃA]O)\b"
 )
 _MAX_PALAVRAS_ASSINATURA = 8
+# Nome de pessoa em caixa mista: palavras com inicial maiúscula, ligadas por "de", "da", "e"...
+_NOME_EM_CAIXA_MISTA = re.compile(
+    r"^[A-ZÀ-Ö][a-zà-ÿ'’.]+(?:\s+(?:d[aeo]s?|e|[A-ZÀ-Ö][a-zà-ÿ'’.]*))+$"
+)
 _ANEXO = re.compile(r"^ANEXO\b")
 _JANELA_ABERTURA = 1500  # caracteres após o cabeçalho para achar a abertura do corpo
 
@@ -448,18 +452,34 @@ def _fim_sem_anexo(bloco: str, especie: Especie) -> int | None:
     if not fecho:
         return None
     fim = fecho.end()
-    for linha in bloco[fecho.end() :].splitlines(keepends=True):
+    linhas = bloco[fecho.end() :].splitlines(keepends=True)
+    for indice, linha in enumerate(linhas):
         limpa = linha.strip()
         if not limpa:
             fim += len(linha)
             continue
         if _ANEXO.match(limpa):  # antes da assinatura: "ANEXO ÚNICO" também é maiúsculo
             return None
-        if _e_assinatura(limpa, especie):
+        if _e_assinatura(limpa, especie) or _nome_antes_do_cargo(limpa, linhas[indice + 1 :], especie):
             fim += len(linha)
+            if (
+                not especie.assinaturas_depois_do_cargo
+                and especie.cargo_assinante
+                and especie.cargo_assinante.match(limpa)
+            ):
+                break  # o cargo encerra o ato: o que vem depois é de outra seção
             continue
         break
     return fim
+
+
+def _nome_antes_do_cargo(linha: str, seguintes: list[str], especie: Especie) -> bool:
+    """Nome em caixa mista ("Felipe de Moraes Chaves") logo acima do cargo da espécie
+    ("Diretor"): no edital, o nome de quem assina não vem em maiúsculas como no decreto."""
+    if not especie.cargo_assinante or not _NOME_EM_CAIXA_MISTA.match(linha):
+        return False
+    proxima = next((s.strip() for s in seguintes if s.strip()), "")
+    return bool(especie.cargo_assinante.match(proxima))
 
 
 def _cabecalhos_no_inicio_da_linha(

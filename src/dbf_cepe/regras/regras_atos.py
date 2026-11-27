@@ -330,6 +330,10 @@ TIPOS_EDITAL: tuple[tuple[str, re.Pattern[str], str], ...] = (
     # "resolve descredenciar" apareceu em edital da DPC; falta um da DBF: presumido.
     ("DESCREDENCIAMENTO", _inicio(r"(?:Descredenciamento|Descredenciar)\b"), EVIDENCIA_PRESUMIDO),
     ("CREDENCIAMENTO", _inicio(r"Credenciamento\b"), EVIDENCIA_AMOSTRA),
+    # "RENOVAÇÃO DO CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA" (Edital DBF 016/2020) e
+    # "PRORROGAÇÃO DO CREDENCIAMENTO ..." (017/2020). O Diário às vezes traz "RENOVAÇÂO".
+    ("RENOVACAO", _inicio(r"Renova[çc][ãâa]o\b"), EVIDENCIA_AMOSTRA),
+    ("PRORROGACAO", _inicio(r"Prorroga[çc][ãâa]o\b"), EVIDENCIA_AMOSTRA),
     ("INTIMACAO", _inicio(r"Intima[çc][ãa]o\b"), EVIDENCIA_AMOSTRA),
     ("CONVOCACAO", _inicio(r"Convoca[çc][ãa]o\b"), EVIDENCIA_AMOSTRA),
     ("CHAMAMENTO_PUBLICO", _inicio(r"Chamamento\s*P[úu]blico\b"), EVIDENCIA_AMOSTRA),
@@ -338,6 +342,14 @@ TIPOS_EDITAL: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("DIVULGACAO", _inicio(r"Divulga[çc][ãa]o\b"), EVIDENCIA_AMOSTRA),
     ("NOTIFICACAO", _inicio(r"Notifica[çc][ãa]o\b"), EVIDENCIA_AMOSTRA),
 )
+
+# Fecho do edital: a linha "Recife, 03 de julho de 2026." (todos os 48 editais da DBF/DBM dos
+# cadernos de 2010, 2019, 2020, 2025 e 2026 terminam assim, seguidos do nome e do cargo).
+FECHO_EDITAL = re.compile(
+    r"(?m)^[ \t]*Recife,?\s+\d{1,2}\s*[º°]?\s+de\s+[A-Za-zçÇ]{3,9}\s+de\s+\d{4}\.?[ \t]*$"
+)
+# Cargo de quem assina o edital, em linha própria: "Diretor", "DIRETOR", "Diretor em exercício".
+CARGO_ASSINANTE_EDITAL = re.compile(r"^(?:Diretora?|DIRETORA?)(?:\s+(?:em\s+exerc[íi]cio|EM\s+EXERC[ÍI]CIO))?$")
 
 # Órgãos que contam como SEFAZ/DBF no escopo deste projeto. DBM foi informado pelo
 # responsável do projeto como outro nome válido da DBF ("Diretoria de Benefícios Fiscais e
@@ -660,6 +672,17 @@ def numero_e_ano_do_cabecalho(cabecalho: re.Match[str]) -> tuple[str, str | None
     bruto = cabecalho["numero"]
     grupos = cabecalho.groupdict()
     return _numero_sem_milhar(bruto), grupos.get("ano") or _ano_do_composto(bruto)
+
+
+def titulo_do_cabecalho(cabecalho: re.Match[str], especie: str) -> str | None:
+    """O título que o cabeçalho do edital traz antes do número ("EDITAL DE CREDENCIAMENTO DE
+    ESTÍMULO À ATIVIDADE PORTUÁRIA / DBM Nº 054/2010" -> "CREDENCIAMENTO DE ESTÍMULO À
+    ATIVIDADE PORTUÁRIA"), de onde sai o tipo quando o texto depois do cabeçalho não o traz."""
+    qualificador = cabecalho.groupdict().get("qualificador")
+    if not qualificador:
+        return None
+    _, titulo = _qualificador(qualificador, especie)
+    return titulo
 
 
 def orgao_do_cabecalho(cabecalho: re.Match[str], especie: str) -> str | None:
