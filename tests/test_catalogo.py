@@ -140,7 +140,7 @@ def test_edital_sem_numero_nao_some_e_vai_para_a_lista(tmp_path: Path):
 
 def test_resumo_traz_contagem_por_especie_e_por_tipo(caderno: Path):
     texto = catalogo.resumo_em_texto(catalogo.catalogar(caderno))
-    assert "Por espécie: Decreto 2, Edital 1, Portaria 2, Errata 1" in texto
+    assert "---- POR ESPÉCIE ----\n    2  Decreto\n    1  Edital\n    2  Portaria\n    1  Errata" in texto
     assert "Decreto: CONCESSAO 1, (sem tipo: a confirmar) 1" in texto
     assert "Errata (destino): decreto 1" in texto
     assert "Republicações ligadas a um ato: sim 1" in texto
@@ -201,7 +201,7 @@ def test_catalogar_so_le_os_cadernos_e_grava_so_o_csv(caderno: Path, tmp_path: P
     assert sorted(p.name for p in tmp_path.iterdir()) == ["cadernos", "fora"]  # nada além do CSV
     assert [p.name for p in saida.parent.iterdir()] == ["catalogo_atos.csv"]
     saida_do_programa = capsys.readouterr().out
-    assert "Por espécie:" in saida_do_programa and str(saida) in saida_do_programa
+    assert "---- POR ESPÉCIE ----" in saida_do_programa and str(saida) in saida_do_programa
 
 
 def test_catalogar_grava_em_dados_por_padrao(caderno: Path, tmp_path: Path, monkeypatch, capsys):

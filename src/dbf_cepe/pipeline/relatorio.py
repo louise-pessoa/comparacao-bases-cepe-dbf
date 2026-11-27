@@ -23,6 +23,7 @@ from dbf_cepe.leitura.cascata import aplicar_cascata
 from dbf_cepe.leitura.identificador import identificar
 from dbf_cepe.leitura import criterio
 from dbf_cepe.pipeline import limpeza
+from dbf_cepe import saida
 from dbf_cepe.regras.especies import DECRETO
 from dbf_cepe.regras.programas import cita_programa_so_no_corpo, programas_do_ato
 from dbf_cepe.leitura.separador import (
@@ -96,9 +97,8 @@ def _relatar_caderno(
     # sai com um aviso (revisão manual).
     if resultado is None:
         resultado = _separar(caderno)
-    log.info(
-        "%s: %d página(s), %d ato(s) encontrado(s).",
-        caderno.name, resultado.paginas, len(resultado.atos),
+    saida.bloco(
+        log, f"{caderno.name} ({resultado.paginas} p., {len(resultado.atos)} ato(s))", chave=caderno.name
     )
     resumo.cadernos += 1
     resumo.atos += len(resultado.atos)
@@ -106,74 +106,10 @@ def _relatar_caderno(
     falhas_antes = resumo.falhas
     decretos_dbf: list[dict[str, object]] = []  # para a limpeza dos cadernos (manifesto)
     for ato in resultado.atos:
-        # Sem o ano que o nome exige (edital), o rótulo só serve ao log: o ato vai para revisão.
-        nome = ato.nome_padrao or ato.rotulo
-        ident = identificar(ato.texto)
-        tipo = ident.tipo.nome if ident.tipo else "tipo não reconhecido"
-        programas = programas_do_ato(ato.texto, ato.especie)
-        e_da_dbf = criterio.da_dbf(ato)
-        if ato.nivel_de_leitura is None and e_da_dbf:
-            resumo.reprovados_dbf.append(
-                f"{nome} ({caderno.name}, p. {ato.pagina_inicial}): {', '.join(ato.reprovacao)}"
-            )
-        paginas = (
-            f"p. {ato.pagina_inicial}"
-            if ato.pagina_inicial == ato.pagina_final
-            else f"p. {ato.pagina_inicial}-{ato.pagina_final}"
-        )
-        if not e_da_dbf:
-            situacao = "fora do escopo da DBF"
-            if ato.especie.orgaos_do_escopo is not None and ato.orgao is None and programas:
-                log.warning(
-                    "%s | AVISO: cita programa da DBF (%s), mas o cabeçalho não traz o órgão; "
-                    "tratado como fora do escopo, confira", nome, "+".join(p.sigla for p in programas),
-                )
-                resumo.avisos += 1
-            elif criterio.fora_por_ementa_sem_tipo(ato):
-                log.warning(
-                    "%s | AVISO: cita um programa da DBF só nos considerandos e a ementa não tem tipo "
-                    "reconhecido; tratado como fora do escopo, confira", nome,
-                )
-                resumo.avisos += 1
-            elif cita_programa_so_no_corpo(ato.texto, ato.especie):
-                log.warning(
-                    "%s | AVISO: cita um programa da DBF só no corpo do texto; "
-                    "confira se não é um ato da DBF", nome,
-                )
-                resumo.avisos += 1
-        elif ato.nome_padrao is None:
-            situacao = "REVISÃO MANUAL (o nome do arquivo exige o ano e o cabeçalho não o traz; não gravado)"
-        elif gravar and ato.nivel_de_leitura is None:
-            # Nenhum nível da leitura em cascata aprovou o texto (cortado ou misturado):
-            # não vai para pendentes, para não chegar à base com texto errado.
-            situacao = f"REVISÃO MANUAL (reprovado no critério de leitura: {', '.join(ato.reprovacao)}; não gravado)"
-        elif gravar and indice is not None and ato.data_publicacao is not None and ato.caderno:
-            situacao = _gravar_publicacao(cfg, ato, nome, contexto, resumo)
-        elif indice is not None and ja_existe(indice, nome):
-            situacao = "já existe na DBF"
-            if comparar and cfg.pasta_dbf is not None:
-                situacao += _comparar_com_a_base(cfg.pasta_dbf / nome, nome, ato, resumo, cfg)
-        elif indice is None:
-            situacao = "base da DBF não consultada"
-        elif gravar:
-            situacao = _gravar_inedito(cfg, ato, nome, gravados, resumo)
-        else:
-            situacao = "INÉDITO"
-        resumo.situacoes[situacao.split(" (")[0]] += 1
-        if e_da_dbf:
-            # A base em imagem sem comparação fica separada no manifesto: a limpeza guarda o caderno.
-            no_manifesto = limpeza.BASE_EM_IMAGEM if situacao == JA_EXISTE_BASE_IMAGEM else situacao.split(" (")[0]
-            anotacao: dict[str, object] = {"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": no_manifesto}
-            if ato.especie is not DECRETO:  # o manifesto sem "especie" é de decreto
-                anotacao.update(especie=ato.especie.nome, ano=ato.chave_ano)
-            decretos_dbf.append(anotacao)
-        programa = "+".join(p.sigla for p in programas) or "-"
-        log.info("%s | %s | %s | %s | %s", nome, paginas, tipo, programa, situacao)
-        for aviso in ato.avisos:
-            log.warning("%s | AVISO: %s", nome, aviso)
-        resumo.avisos += bool(ato.avisos)
+        with saida.item(ato.nome_padrao or ato.rotulo):
+            _relatar_ato(cfg, caderno, ato, indice, gravar, resumo, comparar, contexto, gravados, decretos_dbf)
     for aviso in resultado.avisos:
-        log.warning("AVISO: %s", aviso)
+        log.warning("%s", aviso)
     resumo.avisos += len(resultado.avisos)
     if contexto is not None and data_do_caderno(caderno.name) is not None:
         # Só com --gravar (há contexto). O caderno foi processado até o fim: a limpeza (pipeline/limpeza.py) confere isto
@@ -182,6 +118,85 @@ def _relatar_caderno(
             caderno, len(resultado.atos), decretos_dbf, resumo.falhas - falhas_antes,
             resultado.paginas_digitalizadas,
         )
+
+
+def _relatar_ato(
+    cfg: Configuracao,
+    caderno: Path,
+    ato: AtoSeparado,
+    indice: set[str] | None,
+    gravar: bool,
+    resumo: ResumoRelatorio,
+    comparar: bool,
+    contexto: ContextoDaGravacao | None,
+    gravados: set[str],
+    decretos_dbf: list[dict[str, object]],
+) -> None:
+    # Sem o ano que o nome exige (edital), o rótulo só serve ao log: o ato vai para revisão.
+    nome = ato.nome_padrao or ato.rotulo
+    ident = identificar(ato.texto)
+    tipo = ident.tipo.nome if ident.tipo else "tipo não reconhecido"
+    programas = programas_do_ato(ato.texto, ato.especie)
+    e_da_dbf = criterio.da_dbf(ato)
+    if ato.nivel_de_leitura is None and e_da_dbf:
+        resumo.reprovados_dbf.append(
+            f"{nome} ({caderno.name}, p. {ato.pagina_inicial}): {', '.join(ato.reprovacao)}"
+        )
+    paginas = (
+        f"p. {ato.pagina_inicial}"
+        if ato.pagina_inicial == ato.pagina_final
+        else f"p. {ato.pagina_inicial}-{ato.pagina_final}"
+    )
+    if not e_da_dbf:
+        situacao = "fora do escopo da DBF"
+        if ato.especie.orgaos_do_escopo is not None and ato.orgao is None and programas:
+            saida.aviso(
+                log, "cita programa da DBF (%s), mas o cabeçalho não traz o órgão; "
+                "tratado como fora do escopo, confira", "+".join(p.sigla for p in programas),
+            )
+            resumo.avisos += 1
+        elif criterio.fora_por_ementa_sem_tipo(ato):
+            saida.aviso(
+                log, "cita um programa da DBF só nos considerandos e a ementa não tem tipo "
+                "reconhecido; tratado como fora do escopo, confira",
+            )
+            resumo.avisos += 1
+        elif cita_programa_so_no_corpo(ato.texto, ato.especie):
+            saida.aviso(
+                log, "cita um programa da DBF só no corpo do texto; confira se não é um ato da DBF"
+            )
+            resumo.avisos += 1
+    elif ato.nome_padrao is None:
+        situacao = "REVISÃO MANUAL (o nome do arquivo exige o ano e o cabeçalho não o traz; não gravado)"
+    elif gravar and ato.nivel_de_leitura is None:
+        # Nenhum nível da leitura em cascata aprovou o texto (cortado ou misturado):
+        # não vai para pendentes, para não chegar à base com texto errado.
+        situacao = f"REVISÃO MANUAL (reprovado no critério de leitura: {', '.join(ato.reprovacao)}; não gravado)"
+    elif gravar and indice is not None and ato.data_publicacao is not None and ato.caderno:
+        situacao = _gravar_publicacao(cfg, ato, nome, contexto, resumo)
+    elif indice is not None and ja_existe(indice, nome):
+        situacao = "já existe na DBF"
+        if comparar and cfg.pasta_dbf is not None:
+            situacao += _comparar_com_a_base(cfg.pasta_dbf / nome, nome, ato, resumo, cfg)
+    elif indice is None:
+        situacao = "base da DBF não consultada"
+    elif gravar:
+        situacao = _gravar_inedito(cfg, ato, nome, gravados, resumo)
+    else:
+        situacao = "INÉDITO"
+    resumo.situacoes[situacao.split(" (")[0]] += 1
+    if e_da_dbf:
+        # A base em imagem sem comparação fica separada no manifesto: a limpeza guarda o caderno.
+        no_manifesto = limpeza.BASE_EM_IMAGEM if situacao == JA_EXISTE_BASE_IMAGEM else situacao.split(" (")[0]
+        anotacao: dict[str, object] = {"numero": ato.numero, "pagina": ato.pagina_inicial, "situacao": no_manifesto}
+        if ato.especie is not DECRETO:  # o manifesto sem "especie" é de decreto
+            anotacao.update(especie=ato.especie.nome, ano=ato.chave_ano)
+        decretos_dbf.append(anotacao)
+    programa = "+".join(p.sigla for p in programas) or "-"
+    for aviso in ato.avisos:
+        saida.aviso(log, "%s", aviso)
+    resumo.avisos += bool(ato.avisos)
+    saida.linha_do_item(log, "%s | %s | %s | %s | %s", nome, paginas, tipo, programa, situacao)
 
 
 def _descrever(comparado: comparacao.Comparacao) -> str:
@@ -205,11 +220,9 @@ def _comparar_com_a_base(
     comparado = comparacao.comparar_com_base(ato.texto, pdf_base, cfg)
     resumo.comparacoes.append((nome, comparado))
     for trecho in comparado.trechos:
-        log.info("%s | diferença: %s", nome, trecho)
+        saida.detalhe(log, "diferença: %s", trecho)
     if comparado.total_trechos > len(comparado.trechos):
-        log.info(
-            "%s | ... e mais %d diferença(s)", nome, comparado.total_trechos - len(comparado.trechos)
-        )
+        saida.detalhe(log, "... e mais %d diferença(s)", comparado.total_trechos - len(comparado.trechos))
     return _descrever(comparado)
 
 
@@ -218,21 +231,23 @@ def _resumir_comparacoes(resumo: ResumoRelatorio) -> None:
         return
     lidas = [(n, c) for n, c in resumo.comparacoes if c.lido and not c.por_ocr]
     por_ocr = [(n, c) for n, c in resumo.comparacoes if c.lido and c.por_ocr]
-    log.info("Comparação com a base (%d decreto(s) que já existem):", len(resumo.comparacoes))
-    log.info("  %3d  texto idêntico", sum(c.identico for _, c in lidas))
+    saida.bloco(log, f"COMPARAÇÃO COM A BASE ({len(resumo.comparacoes)} decreto(s) que já existem)")
+    log.info("%5d  texto idêntico", sum(c.identico for _, c in lidas))
     faixas = ((0.99, "similaridade de 99% a menos de 100%"), (0.95, "similaridade de 95% a menos de 99%"), (0.0, "similaridade abaixo de 95%"))
     restantes = [(n, c) for n, c in lidas if not c.identico]
     for piso, titulo in faixas:
         da_faixa = [(n, c) for n, c in restantes if c.similaridade >= piso]
-        log.info("  %3d  %s", len(da_faixa), titulo)
+        log.info("%5d  %s", len(da_faixa), titulo)
         restantes = [(n, c) for n, c in restantes if c.similaridade < piso]
     if por_ocr:
-        log.info("  %3d  base lida por OCR, sem diferença que o OCR não explique", sum(c.identico for _, c in por_ocr))
-        log.info("  %3d  base lida por OCR, com diferença (vai para conferir)", sum(not c.identico for _, c in por_ocr))
-    log.info("  %3d  PDF da base não lido", len(resumo.comparacoes) - len(lidas) - len(por_ocr))
+        log.info("%5d  base lida por OCR, sem diferença que o OCR não explique", sum(c.identico for _, c in por_ocr))
+        log.info("%5d  base lida por OCR, com diferença (vai para conferir)", sum(not c.identico for _, c in por_ocr))
+    log.info("%5d  PDF da base não lido", len(resumo.comparacoes) - len(lidas) - len(por_ocr))
     diferentes = sorted((par for par in lidas if not par[1].identico), key=lambda par: par[1].similaridade)
+    if diferentes:
+        log.info("Menos parecidos:")
     for nome, comparado in diferentes[:20]:
-        log.info("  menos parecidos: %s (%.2f%%)", nome, comparado.similaridade * 100)
+        log.info("  %6.2f%%  %s", comparado.similaridade * 100, nome)
 
 
 def nome_em_pendentes(nome: str, ato: AtoSeparado) -> str:
@@ -282,7 +297,7 @@ def _gravar_publicacao(
         contexto.nomes_na_base, identico, ano=ato.chave_ano, outra_publicacao_no_lote=len(outros_textos) > 1,
     )
     for aviso in plano.avisos:
-        log.warning("%s | AVISO: %s", nome, aviso)
+        saida.aviso(log, "%s", aviso)
     if plano.acao is Acao.JA_REGISTRADA:
         return "já registrado (mesma publicação)"
     if plano.acao is Acao.DUPLICATA:
@@ -303,7 +318,7 @@ def _gravar_publicacao(
     try:
         gravar_pdf_do_ato(ato, destino)
     except ErroExportacao as erro:
-        log.error("%s | falha ao gravar em pendentes: %s", nome, erro)
+        saida.erro(log, "falha ao gravar em pendentes: %s", erro)
         resumo.falhas += 1
         return f"{rotulo} (FALHA ao gravar)"
     return f"{rotulo} (gravado em pendentes: {plano.motivo})"
@@ -314,9 +329,9 @@ def _gravar_inedito(
 ) -> str:
     destino = cfg.pasta_temp / nome
     if chave_nome(nome) in gravados:
-        log.warning(
-            "%s | AVISO: repetido neste caderno, que não tem data no nome (AAAAMMDD_...); "
-            "só a primeira ocorrência foi gravada", nome,
+        saida.aviso(
+            log, "repetido neste caderno, que não tem data no nome (AAAAMMDD_...); "
+            "só a primeira ocorrência foi gravada",
         )
         resumo.avisos += 1
         return "INÉDITO (repetido no caderno, não gravado)"
@@ -325,7 +340,7 @@ def _gravar_inedito(
     try:
         gravar_pdf_do_ato(ato, destino)
     except ErroExportacao as erro:
-        log.error("%s | falha ao gravar em pendentes: %s", nome, erro)
+        saida.erro(log, "falha ao gravar em pendentes: %s", erro)
         resumo.falhas += 1
         return "INÉDITO (FALHA ao gravar)"
     gravados.add(chave_nome(nome))
@@ -352,6 +367,23 @@ def relatorio_dos_cadernos(
             raise ErroSeparacao(f"nenhum PDF na pasta {caminho}")
     else:
         cadernos = [caminho]
+    opcoes = " + ".join(o for o, ligada in (("GRAVAR", gravar), ("COMPARAR", comparar)) if ligada)
+    with saida.rodada(log, "SEPARAR CADERNOS" + (f" ({opcoes})" if opcoes else "")):
+        return _relatorio(cfg, caminho, cadernos, gravar, permitir_pasta_vazia, comparar)
+
+
+def _relatorio(
+    cfg: Configuracao,
+    caminho: Path,
+    cadernos: list[Path],
+    gravar: bool,
+    permitir_pasta_vazia: bool,
+    comparar: bool,
+) -> ResumoRelatorio:
+    log.info(
+        "%d caderno(s) em %s; %s.", len(cadernos), caminho,
+        "grava os inéditos em pendentes" if gravar else "só leitura",
+    )
     indice = _carregar_indice_do_relatorio(cfg, gravar, permitir_pasta_vazia)
     contexto = None
     if gravar and cfg.pasta_dbf is not None:
@@ -369,10 +401,11 @@ def relatorio_dos_cadernos(
         contexto.textos_no_lote = _textos_no_lote(resultados)
     for caderno, resultado in zip(cadernos, resultados):
         _relatar_caderno(cfg, caderno, indice, gravar, resumo, comparar, contexto, resultado)
+    _resumir_comparacoes(resumo)
+    saida.fechar(log)
     log.info("Total: %d caderno(s), %d ato(s).", resumo.cadernos, resumo.atos)
     for situacao, quantidade in resumo.situacoes.most_common():
-        log.info("  %3d  %s", quantidade, situacao)
-    _resumir_comparacoes(resumo)
+        log.info("%5d  %s", quantidade, situacao)
     if resumo.falhas:
         log.error("%d ato(s) não puderam ser gravados em pendentes.", resumo.falhas)
     return resumo

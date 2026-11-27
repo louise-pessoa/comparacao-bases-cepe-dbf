@@ -13,6 +13,46 @@ repositório (`python main.py ...`, ou `dbf-cepe ...` com o pacote instalado).
 - **Pacote instalado:** use sempre `pip install -e .` na pasta do repositório. O `.env` e a pasta `dados/` são
   procurados na raiz do repositório.
 
+## Como ler a saída
+
+O terminal e o `logs/pipeline.log` mostram os mesmos blocos. A única diferença é que, no `.log`, cada linha de conteúdo
+começa com a data e a hora (`2026-11-27 10:15:02 | ...`), e cada rodada vem depois de duas linhas em branco, para
+separar uma execução da outra.
+
+```
+---------- SEPARAR CADERNOS (GRAVAR) — 27/11/2026 10:15:02 ----------
+2 caderno(s) em dados/cadernos; grava os inéditos em pendentes.
+
+---- 20260626_PoderExecutivo.pdf (1 p., 3 ato(s)) ----
+Decreto 60903.pdf | p. 1 | AUTORIZACAO_PROIND | PROIND | INÉDITO (gravado em pendentes: ...)
+Decreto 60905.pdf | p. 1 | CONCESSAO | PRODEPE | REVISÃO MANUAL (reprovado no critério de leitura: sem fecho; não gravado)
+    [AVISO] reprovado no critério de leitura (sem fecho) em todos os níveis; revisão manual
+
+-------------------------- AVISOS E ERROS (1) --------------------------
+[AVISO] 20260626_PoderExecutivo.pdf | Decreto 60905.pdf | reprovado no critério de leitura (sem fecho) ...
+
+------------------------------- RESUMO ---------------------------------
+Total: 2 caderno(s), 13 ato(s).
+    8  fora do escopo da DBF
+    3  INÉDITO
+Duração: 0.5 s
+```
+
+- **Rodada:** o título traz o modo e a data e hora de início. Logo abaixo vêm os parâmetros (pastas, simulação, OCR).
+- **Blocos:** cada bloco abre com `---- título ----` (um caderno, os PDFs do lote, os cadernos que ficam na limpeza) e
+  termina com uma linha em branco.
+- **`[AVISO]` e `[ERRO]`:** no terminal, saem também em amarelo e vermelho (sem cor quando a saída vai para um arquivo
+  ou com a variável `NO_COLOR` definida). O aviso de um ato ou PDF sai recuado, logo abaixo da linha dele, assim como as
+  diferenças de texto e as renomeações na base.
+- **`AVISOS E ERROS (n)`:** repete, no fim da rodada, todos os avisos e erros, com o caderno e o ato na frente. Basta ler
+  esse bloco para saber o que conferir. Não aparece quando não há nenhum.
+- **No lote,** os PDFs que vão para `erros` ou para `conferir duplicata` saem como `[AVISO]`, porque pedem uma ação, e a
+  falha ao gravar na base sai como `[ERRO]`.
+- Erros que encerram o programa (configuração inválida, caderno inexistente...) saem como `[ERRO]` no stderr e também
+  vão para o `.log`.
+- `--catalogar`, `--verificar-ocr` e as ferramentas de `ferramentas/` usam os mesmos títulos e marcadores, mas só no
+  terminal (não gravam no `.log`).
+
 ## Etapa 1: baixar os cadernos (`--baixar`)
 
 ```bash
@@ -125,7 +165,7 @@ O que conferir em cada passo:
 | Passo | O que olhar |
 |---|---|
 | `--baixar` | o resumo: "baixado" e "sem edição nesse dia" (feriados, domingos, segundas e dias sem Extra). Nenhum baixado no mês inteiro é problema de rede ou de proxy (ver "Problemas de rede") |
-| `--separar --comparar` | o bloco "Comparação com a base": idênticos, de 99% a menos de 100% (vão para conferência), abaixo de 95% (investigar antes de gravar) e "PDF da base não lido" (base em imagem) |
+| `--separar --comparar` | o bloco "COMPARAÇÃO COM A BASE": idênticos, de 99% a menos de 100% (vão para conferência), abaixo de 95% (investigar antes de gravar) e "PDF da base não lido" (base em imagem) |
 | `Select-String "reprovado no crit"` | nenhuma linha. Se aparecer um decreto reprovado que não esteja "fora do escopo da DBF", apague o PDF dele em `dados\pendentes` depois do `--gravar`. A busca é sem acento por causa da codificação do console |
 | `--gravar` | nenhum "não puderam ser gravados em pendentes" |
 | `--simular` | o que vai para a base ("normalizado e armazenado na DBF") e o que vai para conferência |
@@ -215,7 +255,7 @@ mesmo número repetido no mesmo caderno ou em cadernos diferentes sai em PDFs se
 O lote decide o nome final de novo, com a base daquele momento. **Caderno sem data no nome:** regra antiga (só o que a
 base não tem; número repetido no caderno grava só a primeira ocorrência).
 
-Os pontos de atenção aparecem como `AVISO` no log: cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
+Os pontos de atenção aparecem como `[AVISO]` recuado sob a linha do ato (e de novo no bloco `AVISOS E ERROS` do fim): cabeçalho no meio da linha, decreto sem o preâmbulo `A GOVERNADORA`,
 fecho não encontrado (caderno cortado), mesmo número repetido no caderno (republicação), página digitalizada ou com texto ilegível, programa
 citado só no corpo do decreto, programa citado só nos considerandos de um decreto sem tipo (fica fora do escopo),
 decreto recuperado por um nível da leitura em cascata (`lido no nível 3 (leitura por
@@ -269,7 +309,7 @@ substituído na próxima gravação do mesmo decreto, mas pode ser apagado à m�
 - **Rode os lotes em ordem cronológica**, dos cadernos mais antigos aos mais novos. Dentro do lote, os PDFs são
   processados em ordem de publicação (data; no mesmo dia, a edição normal antes da Extra; no mesmo caderno, a página).
 - Republicação gravada: `normalizado e armazenado na DBF | Decreto N (republicação).pdf`. Se a publicação que chega for
-  mais antiga que a gravada, o log mostra `renomeado na DBF: Decreto N.pdf -> Decreto N (republicação).pdf` antes.
+  mais antiga que a gravada, o log mostra, recuado abaixo da linha do PDF, `renomeado na DBF: Decreto N.pdf -> Decreto N (republicação).pdf`.
 - Texto idêntico ao de uma publicação já gravada: descartado como duplicata e anotado no registro.
 - Arquivo da base sem registro (gravado antes deste controle existir) e com texto diferente: o PDF normalizado vai para
   `dados/conferir duplicata/Decreto N (conferir duplicata).pdf`. **Nada é gravado nem renomeado na base nesse caso.**
@@ -329,8 +369,8 @@ Um caderno só é apagado se:
 6. todo decreto da DBF dele que foi para pendentes está no registro de publicações, e o que foi para "conferir
    duplicata" já foi decidido no `--conferir`.
 
-Senão, o caderno fica, e a saída diz o motivo (`20200310_PoderExecutivo.pdf | limpeza: fica (Decreto 48700 em conferir
-duplicata, sem decisão (rode --conferir))`).
+Senão, o caderno fica, e a saída diz o motivo no bloco `FICAM` (`20200310_PoderExecutivo.pdf | Decreto 48700 em
+conferir duplicata, sem decisão (rode --conferir)`).
 
 - **Simulação obrigatória:** o `--simular` grava a lista em `limpeza_simulada.json`, na pasta. Sem ela, ou se a lista
   (ou o `--mes`) mudou desde a simulação, nada é apagado e o comando termina com código 2.

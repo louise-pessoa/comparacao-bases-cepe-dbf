@@ -38,6 +38,7 @@ import os
 import shutil
 from pathlib import Path
 
+from dbf_cepe import saida
 from dbf_cepe.pipeline.duplicidade import chave_nome
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
@@ -97,7 +98,7 @@ def descartar_se_existir(caminho: Path) -> bool:
         except OSError:
             if tentativa == 1:
                 gc.collect()
-    log.warning("Não foi possível apagar %s; apague à mão.", caminho)
+    saida.aviso(log, "Não foi possível apagar %s; apague à mão.", caminho)
     return False
 
 

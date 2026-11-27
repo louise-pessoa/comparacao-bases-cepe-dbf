@@ -33,6 +33,7 @@ from pathlib import Path
 from dbf_cepe.leitura import criterio
 from dbf_cepe.leitura.cascata import NIVEIS, avaliar
 from dbf_cepe.leitura.separador import ErroSeparacao, data_do_caderno, separar_caderno
+from dbf_cepe.saida import imprimir_bloco_de_avisos, imprimir_erro, subtitulo, titulo
 
 PASTA_PADRAO = Path("dados/cadernos")
 
@@ -135,20 +136,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     faltando = [p for p in args.pastas if not p.exists()]
     if faltando:
-        print(f"Não encontrado: {', '.join(map(str, faltando))}", file=sys.stderr)
+        imprimir_erro(f"Não encontrado: {', '.join(map(str, faltando))}")
         return 2
     anos, falhas = medir(args.pastas, max(args.exemplos, 0))
     if not anos and not falhas:
-        print("Nenhum PDF encontrado.", file=sys.stderr)
+        imprimir_erro("Nenhum PDF encontrado.")
         return 2
+    print(titulo("CRITÉRIO DE LEITURA POR ANO"))
     print(tabela(anos))
     for nome in sorted(anos, reverse=True):
         if anos[nome].exemplos[: args.exemplos]:
-            print(f"\n{nome}:")
+            print("\n" + subtitulo(f"{nome}: exemplos reprovados"))
             for exemplo in anos[nome].exemplos[: args.exemplos]:
                 print(f"  {exemplo}")
-    for falha in falhas:
-        print(f"AVISO: caderno não lido: {falha}", file=sys.stderr)
+    imprimir_bloco_de_avisos([f"caderno não lido: {falha}" for falha in falhas])
     if args.json:
         args.json.write_text(
             json.dumps({nome: a.para_dict() for nome, a in anos.items()}, ensure_ascii=False, indent=1),

@@ -33,6 +33,7 @@ ajustes. Um arquivo existente no mesmo caminho é substituído.
 from __future__ import annotations
 
 import csv
+import logging
 import re
 from collections import Counter
 from dataclasses import dataclass, field, replace
@@ -40,6 +41,7 @@ from datetime import date
 from pathlib import Path
 
 from dbf_cepe.pipeline.duplicidade import ja_existe
+from dbf_cepe.saida import marcar, subtitulo, titulo
 from dbf_cepe.regras.especies import DECRETO, EDITAL, PORTARIA
 from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, cita_programa_so_no_corpo, programas_do_ato
 from dbf_cepe.regras.regras_atos import Achado, identificar
@@ -347,40 +349,45 @@ def gravar_csv(linhas: list[LinhaDoCatalogo], destino: Path) -> None:
         escritor.writerows(linha.como_linha() for linha in linhas)
 
 
-def resumo_em_texto(resultado: ResultadoDoCatalogo, destino: Path | None = None) -> str:
-    """Resuma no terminal as quantidades reconhecidas e os avisos do catálogo."""
+def resumo_em_texto(resultado: ResultadoDoCatalogo, destino: Path | None = None, cores: bool = False) -> str:
+    """Resuma no terminal as quantidades reconhecidas e os avisos do catálogo, em blocos."""
     linhas = resultado.linhas
-    saida = [
-        f"Catálogo: {resultado.cadernos} caderno(s), {len(linhas)} linha(s)"
-        + (f", gravado em {destino}" if destino else "")
+    saida = [titulo("CATÁLOGO DOS ATOS")]
+    saida.append(
+        f"{resultado.cadernos} caderno(s), {len(linhas)} linha(s)"
+        + (f"; CSV gravado em {destino}" if destino else "")
         + "."
-    ]
+    )
     por_especie = Counter(linha.especie for linha in linhas)
     ordem = ("Decreto", "Edital", "Portaria", "Errata", "Republicação")
-    saida.append(
-        "Por espécie: " + ", ".join(f"{e} {por_especie[e]}" for e in ordem if por_especie[e])
-        if por_especie
-        else "Por espécie: nenhum ato reconhecido"
-    )
-    saida.append("Por tipo:")
+    saida += ["", subtitulo("POR ESPÉCIE")]
+    if por_especie:
+        saida += [f"{por_especie[e]:5d}  {e}" for e in ordem if por_especie[e]]
+    else:
+        saida.append("nenhum ato reconhecido")
+    saida += ["", subtitulo("POR TIPO")]
     for especie in ordem[:3]:
         tipos = Counter(linha.tipo or "(sem tipo: a confirmar)" for linha in linhas if linha.especie == especie)
         if tipos:
-            saida.append(f"  {especie}: " + ", ".join(f"{t} {n}" for t, n in tipos.most_common()))
+            saida.append(f"{especie}: " + ", ".join(f"{t} {n}" for t, n in tipos.most_common()))
     destinos = Counter(linha.tipo for linha in linhas if linha.especie == "Errata")
     if destinos:
-        saida.append("  Errata (destino): " + ", ".join(f"{t} {n}" for t, n in destinos.most_common()))
+        saida.append("Errata (destino): " + ", ".join(f"{t} {n}" for t, n in destinos.most_common()))
     situacoes = Counter(linha.situacao.split(":")[0] for linha in linhas)
-    saida.append("Situação: " + ", ".join(f"{s} {n}" for s, n in situacoes.most_common()))
+    saida += ["", subtitulo("SITUAÇÃO")]
+    saida += [f"{n:5d}  {s}" for s, n in situacoes.most_common()]
     republicacoes = Counter(linha.republicacao for linha in linhas if linha.republicacao in ("sim", "provavel"))
     if republicacoes:
         saida.append("Republicações ligadas a um ato: " + ", ".join(f"{r} {n}" for r, n in republicacoes.most_common()))
     nao = resultado.nao_reconhecidos
-    saida.append("")
-    saida.append(f"Não reconhecido ou a conferir ({len(nao)}):" if nao else "Não reconhecido ou a conferir: nenhum.")
+    saida += ["", subtitulo(f"NÃO RECONHECIDO OU A CONFERIR ({len(nao)})")]
+    if not nao:
+        saida.append("nenhum")
     for linha in nao:
-        saida.append(f"  {linha.caderno}, página {linha.pagina} [{linha.especie}] {linha.motivo}")
-        saida.append(f"      {linha.trecho[:140]}")
+        saida.append(marcar(f"{linha.caderno}, página {linha.pagina} [{linha.especie}] {linha.motivo}",
+                            logging.WARNING, cores))
+        saida.append(f"    {linha.trecho[:140]}")
     if resultado.avisos:
-        saida += ["", "Avisos:", *[f"  - {aviso}" for aviso in resultado.avisos]]
+        saida += ["", titulo(f"AVISOS E ERROS ({len(resultado.avisos)})")]
+        saida += [marcar(aviso, logging.WARNING, cores) for aviso in resultado.avisos]
     return "\n".join(saida)

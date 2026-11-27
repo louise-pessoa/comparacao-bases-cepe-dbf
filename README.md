@@ -65,7 +65,8 @@ python main.py --verificar-ocr                               # o Tesseract (OCR)
 
 Rode sempre `--simular` antes do lote: o descarte de PDFs é definitivo. Rode os lotes em **ordem cronológica** (dos
 cadernos mais antigos para os mais novos). O registro de cada decisão fica em
-`logs/pipeline.log`. Opções, mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
+`logs/pipeline.log`, com os mesmos blocos do terminal ([como ler a saída](docs/uso.md#como-ler-a-saída)). Opções,
+mensagens e casos de erro de cada modo: [`docs/uso.md`](docs/uso.md).
 
 ### Lote histórico (meses anteriores a 2026)
 

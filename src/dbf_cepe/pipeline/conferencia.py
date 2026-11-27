@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from dbf_cepe import saida
 from dbf_cepe.config import Configuracao, ErroConfiguracao
 from dbf_cepe.leitura.identificador import StatusIdentificacao, identificar
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
@@ -157,13 +158,13 @@ def _decidir(cfg: Configuracao, registro: Registro, item: Item, escolha: str) ->
             registro.decidir(item.entrada, GRAVADO, item.nome_base, decisao)
             registro.salvar()
         armazenamento.descartar_se_existir(item.pdf)
-        log.info("%s | %s | %s", item.pdf.name, DIARIO, decisao)
+        log.info("Decisão: %s, %s", DIARIO, decisao)
         return DIARIO
     if item.entrada is not None:
         registro.decidir(item.entrada, CONFERIR, item.entrada.arquivo, MANTIDA_A_BASE)
         registro.salvar()
     armazenamento.descartar_se_existir(item.pdf)
-    log.info("%s | %s", item.pdf.name, BASE)
+    log.info("Decisão: %s", BASE)
     return BASE
 
 
@@ -171,9 +172,24 @@ def conferir(
     cfg: Configuracao,
     simular: bool = False,
     perguntar: Callable[[str], str] = input,
-    escrever: Callable[[str], None] = print,
+    escrever: Callable[[str], None] | None = None,
 ) -> Counter[str]:
-    """Percorre a pasta de conferência; devolve quantos ficaram com cada decisão."""
+    """Percorre a pasta de conferência; devolve quantos ficaram com cada decisão. O que se
+    mostra de cada PDF vai para `escrever` (por padrão, o log: terminal e pipeline.log)."""
+    with saida.rodada(log, "CONFERIR DUPLICATA (SIMULAÇÃO)" if simular else "CONFERIR DUPLICATA"):
+        return _conferir(cfg, simular, perguntar, escrever or _no_log)
+
+
+def _no_log(texto: str) -> None:
+    if texto:
+        log.info("%s", texto)
+    else:
+        saida.linha_em_branco(log)
+
+
+def _conferir(
+    cfg: Configuracao, simular: bool, perguntar: Callable[[str], str], escrever: Callable[[str], None],
+) -> Counter[str]:
     if cfg.pasta_dbf is None:
         raise ErroConfiguracao("PASTA_DBF não está definida: sem a base não há o que conferir.")
     registro = Registro.carregar(cfg.registro)  # ilegível: ErroRegistro, nada é tocado
@@ -186,28 +202,32 @@ def conferir(
     resumo: Counter[str] = Counter()
     if not pdfs:
         escrever(f"Nada para conferir em {cfg.conferir_duplicata}.")
+        saida.fechar(log)
+        log.info("Nada para conferir.")
         return resumo
     leitor_ocr(cfg)  # configuração do OCR inválida: erro antes de começar
     nomes = listar_nomes(cfg.pasta_dbf)
-    modo = " [SIMULAÇÃO: só mostra as diferenças]" if simular else ""
-    escrever(f"{len(pdfs)} PDF(s) para conferir{modo}.")
+    escrever(f"{len(pdfs)} PDF(s) para conferir em {cfg.conferir_duplicata}.")
+    if simular:
+        escrever("[SIMULAÇÃO: só mostra as diferenças]")
     for posicao, pdf in enumerate(pdfs, start=1):
         item = preparar(pdf, cfg.pasta_dbf, nomes, registro, cfg)
-        escrever("")
-        escrever(f"[{posicao}/{len(pdfs)}] " + (f"{pdf.name}: {item.erro}" if item.erro else descrever(item)[0]))
+        saida.bloco(log, f"{posicao} de {len(pdfs)}", chave=pdf.name)
         if item.erro:
+            log.error("%s: %s", pdf.name, item.erro)
             resumo[ILEGIVEL] += 1
             continue
-        for linha in descrever(item)[1:]:
+        for linha in descrever(item):
             escrever(linha)
         if item.entrada is None:
-            escrever("      aviso: esta publicação não está no registro; a decisão não será anotada")
+            log.warning("esta publicação não está no registro; a decisão não será anotada")
         if simular:
             resumo[PULADO] += 1
             continue
         resumo[_perguntar(cfg, registro, item, perguntar, escrever)] += 1
-    escrever("")
-    escrever("Resumo: " + ", ".join(f"{n} {decisao}" for decisao, n in resumo.most_common()))
+    saida.fechar(log)
+    for decisao, n in resumo.most_common():
+        log.info("%5d  %s", n, decisao)
     return resumo
 
 
@@ -233,7 +253,6 @@ def _perguntar(
             try:
                 return _decidir(cfg, registro, item, escolha)
             except armazenamento.ErroArmazenamento as erro:
-                escrever(f"  ERRO: {erro}. O PDF continua na conferência.")
-                log.error("%s | falha na substituição: %s", item.pdf.name, erro)
+                log.error("falha na substituição: %s. O PDF continua na conferência.", erro)
                 return PULADO
         escrever(f"  responda {', '.join(opcoes)}")

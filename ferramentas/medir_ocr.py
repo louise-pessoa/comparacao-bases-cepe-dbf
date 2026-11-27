@@ -50,6 +50,7 @@ from dbf_cepe.leitura.reader import StatusLeitura, _ilegivel, _pagina_digitaliza
 from dbf_cepe.leitura.separador import ErroSeparacao, data_do_caderno, limpar_ligaduras
 from dbf_cepe.pipeline.comparacao import comparar_textos, palavras
 from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr
+from dbf_cepe.saida import imprimir_bloco_de_avisos, imprimir_erro, titulo
 
 # Faixas de confiança do Tesseract (limite inferior de cada uma).
 FAIXAS_DE_CONFIANCA = (0, 50, 70, 80, 85, 90, 95)
@@ -489,17 +490,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     faltando = [p for p in args.pastas if not p.exists()]
     if faltando:
-        print(f"Não encontrado: {', '.join(map(str, faltando))}", file=sys.stderr)
+        imprimir_erro(f"Não encontrado: {', '.join(map(str, faltando))}")
         return 2
     try:
         leitor, base = _leitor_e_base(args.base, args.parte in ("base", "tudo"))
     except Exception as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        imprimir_erro(str(erro))
         return 2
     falhas: list[str] = []
     dados: dict[str, object] = {"tesseract": leitor.versao, "modelos": leitor.modelos}
     if args.parte in ("paginas", "tudo"):
         resultado = medir_paginas(args.pastas, leitor, args.paginas_por_ano, args.dpi or [leitor.cfg.dpi], falhas)
+        print(titulo("PARTE A: OCR DE PÁGINAS COM TEXTO"))
         print(tabela_paginas(resultado))
         dados["paginas"] = {
             ano: {str(dpi): {**{k: v for k, v in g.__dict__.items() if k not in ("palavras_por_faixa", "erros_por_faixa")},
@@ -510,7 +512,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.parte in ("base", "tudo"):
         pares = pares_da_base(args.pastas, base, leitor, args.max_pares, falhas)
         diferentes = controles(pares, _critica(leitor))
-        print("\n" + tabela_base(pares, diferentes))
+        print("\n" + titulo("PARTE B: PARES CADERNO x BASE"))
+        print(tabela_base(pares, diferentes))
         dados["base"] = {
             "pares": [{"rotulo": p.rotulo, "arquivo": p.arquivo_base, "similaridade": p.similaridade,
                        "cobertura": p.cobertura, "confianca": p.confianca_base, "trechos": list(p.trechos),
@@ -519,8 +522,7 @@ def main(argv: list[str] | None = None) -> int:
             "diferentes": diferentes,
             "limiar_sugerido": {medida: sugerir_limiar(diferentes[medida]) for medida in MEDIDAS},
         }
-    for falha in falhas:
-        print(f"AVISO: {falha}", file=sys.stderr)
+    imprimir_bloco_de_avisos(falhas)
     if args.json:
         args.json.write_text(json.dumps(dados, ensure_ascii=False, indent=1), encoding="utf-8")
     return 1 if falhas else 0

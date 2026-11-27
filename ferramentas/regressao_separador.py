@@ -23,11 +23,14 @@ from __future__ import annotations
 import difflib
 import io
 import json
+import logging
 import subprocess
 import sys
 import tarfile
 import tempfile
 from pathlib import Path
+
+from dbf_cepe.saida import marcar, titulo, usa_cores
 
 PASTAS_PADRAO = ("dados/cadernos", "tests/amostras_cadernos")
 
@@ -130,17 +133,21 @@ def main(argv: list[str] | None = None) -> int:
     depois = _separar(Path.cwd(), pdfs)
     tudo, total = True, 0
     contagem: dict[str, int] = {}
+    cores = usa_cores(sys.stdout)
+    print(titulo(f"REGRESSÃO DO SEPARADOR (commit {base})"))
     for pdf in pdfs:
         igual = antes[pdf] == depois[pdf]
         tudo &= igual
         total += len(depois[pdf]) - 1
-        print(f"{Path(pdf).name[:44]:<44} decretos={len(depois[pdf]) - 1:>3}  {'IDÊNTICO' if igual else 'DIFERENTE'}")
+        linha = f"{Path(pdf).name[:44]:<44} decretos={len(depois[pdf]) - 1:>3}  {'IDÊNTICO' if igual else 'DIFERENTE'}"
+        print(linha if igual else marcar(linha, logging.WARNING, cores))
         if detalhes and not igual:
             linhas, tipos = detalhar(antes[pdf], depois[pdf])
-            print("\n".join(linhas))
+            print("\n".join(f"    {x}" for x in linhas))
             for tipo in tipos:
                 contagem[tipo] = contagem.get(tipo, 0) + 1
-    print(f"\n{total} decretos separados; tudo idêntico ao commit {base}: {tudo}")
+    print("\n" + titulo("RESUMO"))
+    print(f"{total} decretos separados; tudo idêntico ao commit {base}: {'sim' if tudo else 'NÃO'}")
     if detalhes and contagem:
         print("Mudanças: " + ", ".join(f"{tipo} {n}" for tipo, n in sorted(contagem.items())))
     return 0 if tudo else 1

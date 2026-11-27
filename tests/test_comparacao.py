@@ -162,7 +162,7 @@ def test_relatorio_com_comparar_diz_que_o_texto_e_identico(cfg, caplog):
     with caplog.at_level(logging.INFO, logger="pipeline"):
         resumo = relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
     assert "já existe na DBF (texto idêntico ao da base)" in caplog.text
-    assert "Comparação com a base (1 decreto(s) que já existem):" in caplog.messages
+    assert "---- COMPARAÇÃO COM A BASE (1 decreto(s) que já existem) ----" in caplog.messages
     assert "    1  texto idêntico" in caplog.messages
     assert resumo.situacoes["já existe na DBF"] == 1
 
@@ -176,7 +176,7 @@ def test_relatorio_sem_comparar_nao_le_a_base(cfg, caplog, monkeypatch):
     monkeypatch.setattr(comparacao, "comparar_com_base", nao_deve_ler)
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, CADERNO)
-    assert "texto idêntico" not in caplog.text and "Comparação com a base" not in caplog.text
+    assert "texto idêntico" not in caplog.text and "COMPARAÇÃO COM A BASE" not in caplog.text
 
 
 def test_relatorio_mostra_diferenca_e_resumo_por_faixa(cfg, caplog, monkeypatch):
@@ -190,7 +190,7 @@ def test_relatorio_mostra_diferenca_e_resumo_por_faixa(cfg, caplog, monkeypatch)
         relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
     assert "texto difere da base: similaridade 97.00%, 3 elemento(s) só no caderno, 4 só na base" in caplog.text
     assert "similaridade de 95% a menos de 99%" in caplog.text
-    assert "menos parecidos: Decreto 60929.pdf (97.00%)" in caplog.text
+    assert "Menos parecidos:" in caplog.messages and "   97.00%  Decreto 60929.pdf" in caplog.messages
 
 
 def test_relatorio_conta_base_nao_lida(cfg, caplog):
@@ -198,7 +198,7 @@ def test_relatorio_conta_base_nao_lida(cfg, caplog):
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
     assert "já existe na DBF (PDF da base não lido" in caplog.text
-    assert "PDF da base não lido" in caplog.text.split("Comparação com a base")[1]
+    assert "PDF da base não lido" in caplog.text.split("COMPARAÇÃO COM A BASE")[1]
 
 
 def test_relatorio_com_comparar_nao_grava_nada(cfg, tmp_path):
@@ -275,8 +275,11 @@ def test_relatorio_mostra_as_diferencas_e_quantas_faltam(cfg, caplog, monkeypatc
     )
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, CADERNO, comparar=True)
-    assert "Decreto 60929.pdf | diferença: ...a [caderno: x | base: y] b..." in caplog.messages
-    assert "Decreto 60929.pdf | ... e mais 2 diferença(s)" in caplog.messages
+    # As diferenças vêm logo abaixo da linha do decreto, recuadas.
+    mensagens = caplog.messages
+    linha = next(i for i, m in enumerate(mensagens) if m.startswith("Decreto 60929.pdf | "))
+    assert mensagens[linha + 1 : linha + 3] == ["diferença: ...a [caderno: x | base: y] b...", "... e mais 2 diferença(s)"]
+    assert all(getattr(r, "recuo", False) for r in caplog.records[linha + 1 : linha + 3])
 
 
 def test_relatorio_sem_diferenca_nao_mostra_trechos(cfg, caplog):

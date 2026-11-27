@@ -46,6 +46,7 @@ from dbf_cepe.regras.regras_atos import ERRATA_LINHA as _ERRATA
 from dbf_cepe.regras.regras_atos import REPUBLICACAO_MARCADOR as _REPUBLICACAO
 from dbf_cepe.regras.regras_atos import RETIFICACAO_LINHA as _RETIFICACAO
 from dbf_cepe.regras.regras_atos import ato_referido_da_errata
+from dbf_cepe.saida import imprimir_erro, subtitulo, titulo
 
 PASTA_CADERNOS_PADRAO = Path("dados/cadernos")
 PASTA_EXEMPLOS_PADRAO = Path("dados/exemplos")
@@ -253,16 +254,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.pasta.is_dir():
-        print(f"Erro: pasta não encontrada: {args.pasta}", file=sys.stderr)
+        imprimir_erro(f"pasta não encontrada: {args.pasta}")
         return 2
     especies = tuple(e.strip().upper() for e in args.cabecalhos.split(",") if e.strip())
     achados, avisos = procurar(args.pasta, especies)
     relatorio = montar_relatorio(achados, avisos)
+    print(titulo("EXEMPLOS NOS CADERNOS"))
     print(relatorio)
     args.saida.mkdir(parents=True, exist_ok=True)
     (args.saida / "relatorio.txt").write_text(relatorio, encoding="utf-8")
     if not args.sem_paginas:
         copiadas = copiar_paginas(selecionar_para_copia(achados, args.por_formato), args.saida)
+        print("\n" + subtitulo("PÁGINAS COPIADAS"))
         print(f"{len(copiadas)} página(s) copiada(s) para {args.saida}")
     return 0
 

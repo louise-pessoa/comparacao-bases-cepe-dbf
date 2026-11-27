@@ -168,7 +168,7 @@ def test_sem_arquivo_na_base_nao_oferece_substituir(cfg):
     assert resumo == {conferencia.PULADO: 1} and pdf.exists()
 
 
-def test_falha_na_troca_devolve_o_arquivo_antigo(cfg, monkeypatch):
+def test_falha_na_troca_devolve_o_arquivo_antigo(caplog, cfg, monkeypatch):
     pdf = para_conferir(cfg)
     antes = (cfg.pasta_dbf / "Decreto 48606.pdf").read_bytes()
     verdadeira = armazenamento._conferir_se_identifica_como
@@ -182,7 +182,7 @@ def test_falha_na_troca_devolve_o_arquivo_antigo(cfg, monkeypatch):
 
     monkeypatch.setattr(armazenamento, "_conferir_se_identifica_como", falha_depois_da_troca)
     resumo, saida = rodar(cfg, "d")
-    assert resumo == {conferencia.PULADO: 1} and "ERRO: releitura não confere" in saida
+    assert resumo == {conferencia.PULADO: 1} and "falha na substituição: releitura não confere" in caplog.text
     assert (cfg.pasta_dbf / "Decreto 48606.pdf").read_bytes() == antes
     assert pdf.exists() and not entrada(cfg).decisao
     assert not (cfg.pasta_dbf / "Decreto 48606.pdf.part").exists()
@@ -209,11 +209,11 @@ def test_registro_ilegivel_ou_com_operacao_pendente_para_tudo(cfg):
     assert pdf.exists()
 
 
-def test_sem_publicacao_no_registro_avisa(cfg):
+def test_sem_publicacao_no_registro_avisa(cfg, caplog):
     pdf = para_conferir(cfg)
     cfg.registro.unlink()
     resumo, saida = rodar(cfg, "b")
-    assert "não está no registro" in saida and resumo == {conferencia.BASE: 1} and not pdf.exists()
+    assert "não está no registro" in caplog.text and resumo == {conferencia.BASE: 1} and not pdf.exists()
 
 
 def test_pasta_vazia(cfg):
