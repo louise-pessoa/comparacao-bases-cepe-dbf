@@ -101,6 +101,60 @@ menos de 20 palavras conta como não lido (`base é imagem`, como antes). O regi
 OCR)`. Lote, `--separar --gravar`/`--comparar` e `--conferir` usam a mesma comparação; o leitor de OCR é criado uma vez
 por execução, e uma configuração inválida do OCR dá erro no início.
 
+## Melhoria do OCR para as digitalizações de 2018 a 2020, 24/11/2026
+
+No lote de jan./fev. de 2020 com o OCR, só 1 de 26 decretos com a base em imagem virou duplicata; 25 foram para
+conferir. As digitalizações de 2020 (confiança de 82 a 92) trocam algarismos com confiança alta ("2019" -> "2018",
+"11.675" -> "11.575", "28.800" -> "28.600"). A 400 dpi não melhorou (5 de 49 pares de 2020 sem diferença). Enquanto
+isso, o lote roda com `OCR_ATIVO=nao`.
+
+Tratamento da imagem antes do OCR (`OCR_PRE_PROCESSAMENTO`, em `leitura/ocr.py`): `binarizar` (contraste esticado e
+limiar de Otsu) e `limpar` (filtro de mediana 3x3, depois o mesmo). Teste com 6 decretos de amostra degradados para
+imitar uma digitalização ruim (150 dpi, desfoque, fundo acinzentado, pontinhos): diferenças não explicadas, somadas,
+83 sem tratamento, 63 com `binarizar` e **12 com `limpar`**; confiança média de 69-81 para 83-94. Outra alavanca, sem
+código: o modelo `por.traineddata` do repositório `tesseract-ocr/tessdata_best` (mais preciso e mais lento), apontado
+por `OCR_TESSDATA`.
+
+Medição nas digitalizações reais de 2020 (`medir_ocr --parte base`, 49 pares do mesmo número e 49 de controle),
+25-26/11/2026:
+
+| Combinação | Sem diferença | Até 1 diferença | Controle: mínimo de diferenças |
+|---|---|---|---|
+| 300 dpi, sem tratamento (referência) | 1 | 3 | 3 |
+| 400 dpi | 5 | 16 | 7 |
+| 300 dpi, `binarizar` | 0 | 0 | 4 |
+| **300 dpi, `tessdata_best`** | **8** | **23** | 5 |
+| 400 dpi, `tessdata_best` | 5 | 18 | 7 |
+| 300 dpi, `limpar` | não medido (a rodada usou o código antigo) | | |
+
+- O tratamento da imagem ajuda nas degradações artificiais, mas não nas digitalizações reais, que já são quase preto e
+  branco: `binarizar` piora; `limpar` binariza no fim e não deve ser melhor.
+- O melhor é o `tessdata_best` a 300 dpi; somar os 400 dpi não ajuda.
+- Mesmo assim, só 8 de 49 (16%) viram duplicata; os outros iriam para conferir. O controle continua seguro: nenhum par
+  de números diferentes ficou com menos de 3 diferenças, e o mais parecido mostra o número lido com confiança
+  ("49.681" x "49.684").
+- Em 2010 (texto mais limpo), 67 de 117 pares ficam sem diferença com o modelo padrão.
+
+Conclusão: as digitalizações de 2018 a 2020 não dão para o OCR decidir sozinho. Decisão de 26/11/2026 (pergunta 6,
+saída c): nesses anos vale a regra do período ruim (`comparacao_ocr.decidir_em_periodo_ruim`): sem diferença,
+duplicata; número diferente lido com confiança, conferir; só ruído, "não comparado", como hoje.
+
+Medição da regra na mesma amostra de 2020 (`tessdata_best`, 300 dpi), 27/11/2026:
+
+| Pares | Duplicata | Conferir | Não comparado |
+|---|---|---|---|
+| mesmo número (49) | 8 | 25 | 16 |
+| números diferentes (49, controle) | 0 | 48 | 1 |
+
+- Comparada com o OCR sem a regra (8 duplicatas e 41 para conferir), a regra deixa 16 decretos sem comparar, como
+  hoje sem OCR, e manda 25 para conferir.
+- O controle mostra o que ela pega: 48 de 49 decretos diferentes vão para conferir; só 1 passaria sem comparação,
+  como passaria hoje.
+- Ligada em 27/11/2026: `OCR_PERIODO_RUIM` (padrão 2018-2020, pelo ano da publicação), em
+  `comparacao.comparar_por_ocr`. Vale no lote e no `--separar --gravar`/`--comparar`; o `--conferir` mostra sempre as
+  diferenças. A confiança média abaixo de 80 nunca dá duplicata (fica "não comparado", salvo número lido com confiança).
+- 2018 e 2019 não foram medidos; entram pelo levantamento (digitalizações do mesmo período).
+
 ## Objetivo e escopo
 
 Hoje o projeto só **detecta** texto que falta e não o lê:
@@ -352,3 +406,8 @@ para a `main` num PR só, depois de testada.
 4. ~~Páginas ilegíveis no separador~~: feito em 17/11/2026 (ver o levantamento).
 5. **Ordem das fases:** com o levantamento, a fase 5 (base em imagem) traz o ganho real e a fase 3 (cadernos) quase
    nenhum nos cadernos baixados. Proposta: fazer a 5 antes da 3.
+6. ~~**OCR da base nas digitalizações ruins (2018 a 2020).**~~ Decidido em 26/11/2026: saída (c), ligada em 27/11/2026. Com o melhor ajuste (`tessdata_best`, 300 dpi), só 16% dos
+   decretos de 2020 com a base em imagem viram duplicata. Saídas: (a) OCR só nos períodos em que funciona (2010 e
+   anteriores), e nos outros a base em imagem continua como "já existe; não comparado"; (b) OCR em tudo, com cerca de
+   25 decretos por mês em `--conferir` nesses anos; (c) nesses anos, o OCR só manda para conferir quando acha um
+   número diferente lido com confiança, e o resto continua como "já existe; não comparado".

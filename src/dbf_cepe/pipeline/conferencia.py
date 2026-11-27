@@ -90,6 +90,7 @@ def preparar(
         if base.status is StatusLeitura.OK:
             item.comparacao = comparar_textos(leitura.texto, base.texto, limite=None)
         elif base.status is StatusLeitura.IMAGEM and cfg is not None and (leitor := leitor_ocr(cfg)) is not None:
+            # Sem o ano: na conferência a regra do período ruim não vale, a pessoa vê as diferenças.
             item.comparacao = comparar_por_ocr(leitura.texto, pasta_dbf / item.nome_base, leitor)
         else:
             item.comparacao = Comparacao(lido=False, detalhe=f"{base.status.value}: {base.detalhe}")

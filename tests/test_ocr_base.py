@@ -30,10 +30,11 @@ PRAZO = "\nArt. 2º O estímulo é concedido pelo prazo de 12 anos."
 class LeitorFalso:
     """OCR simulado: devolve o mesmo texto para qualquer página, com a confiança dada."""
 
-    cfg = ConfiguracaoOcr()
     versao = "5.3.4"
 
-    def __init__(self, texto: str, confianca: float = 95.0):
+    def __init__(self, texto: str, confianca: float = 95.0, periodo_ruim: tuple = ()):
+        # Sem período ruim por padrão: os testes do lote usam 2020.
+        self.cfg = ConfiguracaoOcr(periodo_ruim=periodo_ruim)
         self.texto, self.confianca = texto, confianca
         self.lidos: list[str] = []
 
@@ -59,8 +60,8 @@ def cfg(tmp_path):
 
 @pytest.fixture
 def ocr_simulado(monkeypatch):
-    def instalar(texto: str, confianca: float = 95.0) -> LeitorFalso:
-        leitor = LeitorFalso(texto, confianca)
+    def instalar(texto: str, confianca: float = 95.0, periodo_ruim: tuple = ()) -> LeitorFalso:
+        leitor = LeitorFalso(texto, confianca, periodo_ruim)
         monkeypatch.setattr(comparacao, "leitor_ocr", lambda _cfg: leitor)
         monkeypatch.setattr(conferencia, "leitor_ocr", lambda _cfg: leitor)
         return leitor
@@ -112,6 +113,55 @@ def test_ocr_sem_texto_continua_base_imagem(cfg, ocr_simulado):
     _pendente(cfg, ato("48562", pub("2020-01-15")))
     assert executar(cfg)[Destino.DESCARTADO_DUPLICADO] == 1
     assert [e.situacao for e in Registro.carregar(cfg.registro).entradas] == [BASE_IMAGEM]
+
+
+# ----------------------------------------------------------------------------
+# Período de digitalização ruim (OCR_PERIODO_RUIM; decisão de 26/11/2026)
+# ----------------------------------------------------------------------------
+
+RUIM = ((2018, 2020),)
+
+
+def test_periodo_ruim_so_ruido_fica_nao_comparado(cfg, ocr_simulado):
+    a = ato("48562", pub("2020-01-15"), PRAZO)
+    ocr_simulado(a.texto.replace("estímulo", "XYZWQK"), periodo_ruim=RUIM)
+    _pendente(cfg, a)
+    assert executar(cfg)[Destino.DESCARTADO_DUPLICADO] == 1
+    assert [e.situacao for e in Registro.carregar(cfg.registro).entradas] == [BASE_IMAGEM]
+    assert nomes(cfg.conferir_duplicata) == []
+
+
+def test_periodo_ruim_numero_lido_com_confianca_vai_para_conferir(cfg, ocr_simulado):
+    a = ato("48562", pub("2020-01-15"), PRAZO)
+    ocr_simulado(a.texto.replace("12 anos", "15 anos"), periodo_ruim=RUIM)
+    _pendente(cfg, a)
+    assert executar(cfg)[Destino.ENVIADO_CONFERIR] == 1
+
+
+def test_periodo_ruim_sem_diferenca_e_duplicata_mas_nao_com_confianca_baixa(cfg, ocr_simulado):
+    a = ato("48562", pub("2020-01-15"), PRAZO)
+    ocr_simulado(a.texto, periodo_ruim=RUIM)
+    _pendente(cfg, a)
+    executar(cfg)
+    assert [e.situacao for e in Registro.carregar(cfg.registro).entradas] == [DUPLICATA_OCR]
+    pdf = cfg.pasta_dbf / "Decreto 48562.pdf"
+    baixa = comparacao.comparar_por_ocr(a.texto, pdf, LeitorFalso(a.texto, 70, RUIM), 2020)
+    assert not baixa.lido and "período de digitalização ruim (2020)" in baixa.detalhe
+
+
+def test_fora_do_periodo_ruim_o_ruido_vai_para_conferir(cfg, ocr_simulado):
+    a = ato("48562", pub("2021-01-15"), PRAZO)
+    ocr_simulado(a.texto.replace("estímulo", "XYZWQK"), periodo_ruim=RUIM)
+    _pendente(cfg, a)
+    assert executar(cfg)[Destino.ENVIADO_CONFERIR] == 1
+
+
+def test_conferencia_ignora_o_periodo_ruim(cfg, ocr_simulado, tmp_path):
+    a = ato("48562", pub("2020-01-15"), PRAZO)
+    ocr_simulado(a.texto.replace("estímulo", "XYZWQK"), periodo_ruim=RUIM)
+    pdf = criar_pdf_texto(tmp_path / "Decreto 48562 (conferir duplicata).pdf", a.texto)
+    item = conferencia.preparar(pdf, cfg.pasta_dbf, {"Decreto 48562.pdf"}, Registro(cfg.registro), cfg)
+    assert item.comparacao is not None and item.comparacao.lido and item.comparacao.total_trechos >= 1
 
 
 # ----------------------------------------------------------------------------

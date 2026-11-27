@@ -49,7 +49,13 @@ from dbf_cepe.leitura.criterio import da_dbf
 from dbf_cepe.leitura.reader import StatusLeitura, _ilegivel, _pagina_digitalizada, ler_pdf
 from dbf_cepe.leitura.separador import ErroSeparacao, data_do_caderno, limpar_ligaduras
 from dbf_cepe.pipeline.comparacao import comparar_textos, palavras
-from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr
+from dbf_cepe.pipeline.comparacao_ocr import (
+    CONFERIR,
+    DUPLICATA,
+    NAO_COMPARADO,
+    comparar_com_ocr,
+    decidir_em_periodo_ruim,
+)
 
 # Faixas de confiança do Tesseract (limite inferior de cada uma).
 FAIXAS_DE_CONFIANCA = (0, 50, 70, 80, 85, 90, 95)
@@ -280,6 +286,7 @@ class Par:
     trechos: tuple[str, ...] = ()  # primeiras diferenças com texto do caderno que falta na base
     palavras_base: tuple[tuple[str, float], ...] = ()  # (palavra, confiança) do OCR da base
     nao_explicadas: tuple[str, ...] = ()  # diferenças que o OCR não explica
+    periodo_ruim: str = ""  # decisão pela regra do período ruim (comparacao_ocr.decidir_em_periodo_ruim)
 
 
 def medir_par(texto_ato: str, texto_base: str) -> tuple[float, float, tuple[str, ...]]:
@@ -337,7 +344,7 @@ def pares_da_base(pastas: list[Path], base: Path, leitor, max_pares: int | None,
                 pares.append(Par(
                     f"{caderno.name} p. {ato.pagina_inicial} | {ato.especie.nome} {ato.numero}", nome,
                     ato.texto, texto, confianca, similaridade, cobertura, trechos, palavras_base,
-                    tuple(str(d) for d in resultado.nao_explicadas),
+                    tuple(str(d) for d in resultado.nao_explicadas), decidir_em_periodo_ruim(resultado),
                 ))
                 if max_pares is not None and len(pares) >= max_pares:
                     return pares
@@ -348,14 +355,16 @@ def controles(pares: list[Par], confianca_critica: float = 90.0) -> dict[str, li
     """Cada decreto contra o OCR da base do par SEGUINTE (outro número), nas três medidas
     ("nao_explicadas": quantas diferenças o OCR não explica; "exemplos_controle": o par de
     controle com menos diferenças não explicadas e quais são)."""
-    resultado: dict[str, list] = {medida: [] for medida in (*MEDIDAS, "nao_explicadas")}
+    resultado: dict[str, list] = {medida: [] for medida in (*MEDIDAS, "nao_explicadas", "periodo_ruim")}
     if len(pares) < 2:
         return resultado
     menor: tuple[int, str, list[str]] | None = None
     for i, par in enumerate(pares):
         outro = pares[(i + 1) % len(pares)]
         similaridade, cobertura, _ = medir_par(par.texto_ato, outro.texto_base)
-        diferencas = comparar_com_ocr(par.texto_ato, outro.palavras_base, confianca_critica).nao_explicadas
+        comparado = comparar_com_ocr(par.texto_ato, outro.palavras_base, confianca_critica)
+        diferencas = comparado.nao_explicadas
+        resultado["periodo_ruim"].append(decidir_em_periodo_ruim(comparado))
         resultado["similaridade"].append(similaridade)
         resultado["cobertura"].append(cobertura)
         resultado["nao_explicadas"].append(len(diferencas))
@@ -373,6 +382,26 @@ def _distribuicao_de_diferencas(valores: list[int]) -> str:
     contagem = Counter(_faixa_de_diferencas(v) for v in valores)
     rotulos = {(0, 0): "0", (1, 1): "1", (2, 2): "2", (3, 5): "3 a 5", (6, None): "6 ou mais"}
     return "; ".join(f"{rotulos[f]}: {contagem[f]}" for f in FAIXAS_DE_DIFERENCAS)
+
+
+def _contar_decisoes(decisoes: list[str]) -> str:
+    contagem = Counter(decisoes)
+    return "; ".join(f"{d}: {contagem[d]}" for d in (DUPLICATA, CONFERIR, NAO_COMPARADO))
+
+
+def _linhas_periodo_ruim(pares: list[Par], controle: list[str]) -> list[str]:
+    """A regra (c) do período de digitalização ruim, no mesmo número e no controle."""
+    linhas = ["  REGRA DO PERÍODO RUIM (duplicata sem diferença; conferir se há número diferente lido com "
+              "confiança; senão não comparado)",
+              f"  mesmo número ({len(pares)} pares): {_contar_decisoes([p.periodo_ruim for p in pares])}"]
+    if controle:
+        linhas.append(f"  números diferentes ({len(controle)} pares, controle): {_contar_decisoes(controle)}")
+        if controle.count(DUPLICATA):
+            linhas.append("  ATENÇÃO: par de números diferentes como duplicata: a regra NÃO separa")
+        else:
+            linhas.append(f"  no controle, {controle.count(CONFERIR)} de {len(controle)} pegos (conferir); o resto "
+                          "passaria como hoje, sem comparar")
+    return linhas
 
 
 def tabela_diferencas(pares: list[Par], diferentes: dict[str, list]) -> str:
@@ -398,6 +427,7 @@ def tabela_diferencas(pares: list[Par], diferentes: dict[str, list]) -> str:
         if tolerancias:
             linhas.append("  se aceitasse até k diferenças não explicadas: " + "; ".join(
                 f"k = {k}: {sum(1 for q in mesmos if q <= k)} de {len(pares)} como duplicata" for k in tolerancias))
+    linhas += _linhas_periodo_ruim(pares, diferentes.get("periodo_ruim", []))
     restantes = sorted((p for p in pares if p.nao_explicadas), key=lambda p: len(p.nao_explicadas))
     if restantes:
         linhas.append("  mesmo número com diferença não explicada (vão para conferir; olhe se é OCR ou texto diferente):")
@@ -514,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         dados["base"] = {
             "pares": [{"rotulo": p.rotulo, "arquivo": p.arquivo_base, "similaridade": p.similaridade,
                        "cobertura": p.cobertura, "confianca": p.confianca_base, "trechos": list(p.trechos),
-                       "nao_explicadas": list(p.nao_explicadas)}
+                       "nao_explicadas": list(p.nao_explicadas), "periodo_ruim": p.periodo_ruim}
                       for p in pares],
             "diferentes": diferentes,
             "limiar_sugerido": {medida: sugerir_limiar(diferentes[medida]) for medida in MEDIDAS},

@@ -23,6 +23,12 @@ Decisões e limites:
   - `OCR_TESSDATA`: pasta de idiomas fora da instalação do Tesseract (sem administrador).
     Vai para o Tesseract pela variável TESSDATA_PREFIX, só durante a chamada; o SHA-256 dos
     .traineddata usados entra na chave do cache (outro modelo, outra leitura);
+  - tratamento da imagem antes do OCR (`AjustesOcr.pre_processamento`, OCR_PRE_PROCESSAMENTO):
+    "nenhum"; "binarizar" (estica o contraste e deixa a página em preto e branco pelo limiar de
+    Otsu, que separa o texto do fundo amarelado ou manchado das digitalizações); "limpar" (o
+    mesmo, depois de um filtro de mediana que tira os pontinhos soltos). Para as digitalizações
+    ruins da base de 2018 a 2020, em que o OCR troca algarismos com confiança alta (calibração de
+    23/11/2026). Entra na chave do cache;
   - o modo de segmentação padrão é o 3 (automático, sem detecção de orientação): o 1
     precisaria também do osd.traineddata, e as páginas do Diário não vêm giradas.
 """
@@ -40,7 +46,7 @@ from pathlib import Path
 
 import pymupdf
 
-from dbf_cepe.config import DPI_MAXIMO, DPI_MINIMO, OCR_NAO, OCR_SIM, ConfiguracaoOcr
+from dbf_cepe.config import DPI_MAXIMO, DPI_MINIMO, OCR_NAO, OCR_SIM, PRE_PROCESSAMENTOS, ConfiguracaoOcr
 
 # Versão do formato do cache: mudar invalida o cache antigo (outra chave).
 VERSAO_DO_CACHE = 1
@@ -59,12 +65,15 @@ class AjustesOcr:
     dpi: int = 300
     psm: int = 3
     timeout: int = 120
+    pre_processamento: str = "nenhum"
 
     def __post_init__(self) -> None:
         if not DPI_MINIMO <= self.dpi <= DPI_MAXIMO:
             raise ValueError(f"dpi fora do limite ({DPI_MINIMO} a {DPI_MAXIMO}): {self.dpi}")
         if self.psm not in range(0, 14):
             raise ValueError(f"psm inválido: {self.psm}")
+        if self.pre_processamento not in PRE_PROCESSAMENTOS:
+            raise ValueError(f"pré-processamento inválido: {self.pre_processamento}")
 
     @property
     def opcoes(self) -> str:
@@ -184,11 +193,48 @@ def idiomas_do_tesseract(executavel: Path) -> list[str]:
         raise ErroOcr(f"não foi possível listar os idiomas do Tesseract: {erro}") from erro
 
 
-def _imagem(pagina: pymupdf.Page, dpi: int):
+def limiar_de_otsu(histograma: list[int]) -> int:
+    """O tom de cinza (0 a 255) que melhor separa os dois grupos do histograma (texto e fundo):
+    o que maximiza a variância entre eles."""
+    total = sum(histograma)
+    soma_total = sum(i * n for i, n in enumerate(histograma))
+    melhor, limiar = -1.0, 127
+    peso_fundo, soma_fundo = 0, 0
+    for tom, quantidade in enumerate(histograma):
+        peso_fundo += quantidade
+        if peso_fundo == 0:
+            continue
+        peso_frente = total - peso_fundo
+        if peso_frente == 0:
+            break
+        soma_fundo += tom * quantidade
+        media_fundo = soma_fundo / peso_fundo
+        media_frente = (soma_total - soma_fundo) / peso_frente
+        variancia = peso_fundo * peso_frente * (media_fundo - media_frente) ** 2
+        if variancia > melhor:
+            melhor, limiar = variancia, tom
+    return limiar
+
+
+def tratar_imagem(imagem, pre_processamento: str):
+    """A imagem em tons de cinza tratada para o OCR (ver o início do módulo)."""
+    from PIL import ImageFilter, ImageOps
+
+    if pre_processamento == "nenhum":
+        return imagem
+    if pre_processamento == "limpar":
+        imagem = imagem.filter(ImageFilter.MedianFilter(3))
+    imagem = ImageOps.autocontrast(imagem, cutoff=1)
+    limiar = limiar_de_otsu(imagem.histogram())
+    return imagem.point(lambda tom: 255 if tom > limiar else 0)
+
+
+def _imagem(pagina: pymupdf.Page, dpi: int, pre_processamento: str = "nenhum"):
     from PIL import Image
 
     pixmap = pagina.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY, alpha=False)
-    return Image.frombytes("L", (pixmap.width, pixmap.height), pixmap.samples)
+    imagem = Image.frombytes("L", (pixmap.width, pixmap.height), pixmap.samples)
+    return tratar_imagem(imagem, pre_processamento)
 
 
 def montar_texto(dados: dict[str, list]) -> tuple[str, tuple[Palavra, ...]]:
@@ -230,7 +276,7 @@ def ler_pagina(pagina: pymupdf.Page, ajustes: AjustesOcr, executavel: Path, vers
     tempo."""
     pytesseract = _pytesseract(executavel)
     try:
-        imagem = _imagem(pagina, ajustes.dpi)
+        imagem = _imagem(pagina, ajustes.dpi, ajustes.pre_processamento)
         dados = pytesseract.image_to_data(
             imagem, lang=ajustes.idioma, config=ajustes.opcoes, timeout=ajustes.timeout,
             output_type=pytesseract.Output.DICT,
@@ -309,8 +355,11 @@ class LeitorOcr:
             for idioma in cfg.idioma.split("+")
         }
 
-    def ajustes(self, psm: int = 3, dpi: int | None = None) -> AjustesOcr:
-        return AjustesOcr(idioma=self.cfg.idioma, dpi=dpi or self.cfg.dpi, psm=psm, timeout=self.cfg.timeout)
+    def ajustes(self, psm: int = 3, dpi: int | None = None, pre_processamento: str | None = None) -> AjustesOcr:
+        return AjustesOcr(
+            idioma=self.cfg.idioma, dpi=dpi or self.cfg.dpi, psm=psm, timeout=self.cfg.timeout,
+            pre_processamento=pre_processamento or self.cfg.pre_processamento,
+        )
 
     def _hash(self, caminho: Path) -> str:
         info = caminho.stat()

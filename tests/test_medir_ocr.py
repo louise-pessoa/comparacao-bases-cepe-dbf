@@ -123,6 +123,10 @@ def test_pares_da_base_so_com_arquivo_em_imagem_e_controle(tmp_path):
     tabela = mo.tabela_base(pares, diferentes)
     assert "mesmo número (2 pares)" in tabela and "COBERTURA" in tabela and "limiar sugerido" in tabela
     assert "DIFERENÇAS NÃO EXPLICADAS" in tabela and "1 de 2 pares de mesmo número ficam como duplicata" in tabela
+    assert [p.periodo_ruim for p in pares] == ["duplicata", "não comparado"]  # "doze" -> "dez": palavra, não número
+    assert "REGRA DO PERÍODO RUIM" in tabela and "mesmo número (2 pares): duplicata: 1; conferir: 0" in tabela
+    assert diferentes["periodo_ruim"] == ["conferir", "conferir"]  # outro número lido com confiança
+    assert "no controle, 2 de 2 pegos" in tabela
     assert mo.pares_da_base([cadernos], base, leitor, 1, []) == pares[:1]
 
 

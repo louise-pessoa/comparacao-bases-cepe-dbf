@@ -290,3 +290,41 @@ def test_tessdata_com_so_o_portugues(tmp_path):
     assert set(leitor.modelos) == {"por"} and len(leitor.modelos["por"]) == 64
     pdf = criar_pdf_imagem_de(AMOSTRAS / "Decreto 60929.pdf", tmp_path / "img.pdf")
     assert "60.929" in leitor.ler(pdf, 1).texto
+
+
+# ----------------------------------------------------------------------------
+# Tratamento da imagem antes do OCR (OCR_PRE_PROCESSAMENTO)
+# ----------------------------------------------------------------------------
+
+
+def test_limiar_de_otsu_separa_texto_e_fundo():
+    histograma = [0] * 256
+    histograma[40] = 300  # texto
+    histograma[200] = 3000  # fundo
+    limiar = ocr.limiar_de_otsu(histograma)
+    assert 40 <= limiar < 200
+
+
+def test_tratar_imagem_deixa_so_preto_e_branco():
+    from PIL import Image
+
+    imagem = Image.new("L", (40, 20), 190)  # fundo cinza-claro
+    for x in range(5, 35):
+        imagem.putpixel((x, 10), 60)  # um traço escuro
+    imagem.putpixel((2, 2), 120)  # um pontinho solto
+    assert ocr.tratar_imagem(imagem, "nenhum") is imagem
+    binaria = ocr.tratar_imagem(imagem, "binarizar")
+    assert {tom for tom, n in enumerate(binaria.histogram()) if n} == {0, 255} and binaria.getpixel((20, 10)) == 0 and binaria.getpixel((30, 3)) == 255
+    limpa = ocr.tratar_imagem(imagem, "limpar")
+    assert limpa.getpixel((2, 2)) == 255  # a mediana tirou o pontinho
+
+
+def test_pre_processamento_entra_nos_ajustes_e_no_cache(falso, tmp_path):
+    pdf = criar_pdf_texto(tmp_path / "a.pdf", "qualquer")
+    leitor = ocr.criar_leitor(ConfiguracaoOcr(tesseract_cmd=falso.executavel, pre_processamento="limpar"), tmp_path / "c")
+    assert leitor.ajustes().pre_processamento == "limpar"
+    leitor.ler(pdf, 1)
+    leitor.ler(pdf, 1, leitor.ajustes(pre_processamento="nenhum"))
+    assert falso.chamadas == 2  # outro tratamento, outra leitura
+    with pytest.raises(ValueError):
+        ocr.AjustesOcr(pre_processamento="inventado")

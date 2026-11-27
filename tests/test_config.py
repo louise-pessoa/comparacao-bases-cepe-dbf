@@ -352,3 +352,29 @@ def test_pasta_de_mes_fora_da_pasta_do_ano_e_recusada(tmp_path):
         carregar_configuracao(env)
     env.write_text("PASTA_CADERNOS=dados/historico/2010/2010-09\n", encoding="utf-8")
     assert carregar_configuracao(env).pasta_cadernos == RAIZ / "dados/historico/2010/2010-09"
+
+
+def test_ocr_pre_processamento(tmp_path, sem_ocr_no_ambiente, monkeypatch):
+    monkeypatch.delenv("OCR_PRE_PROCESSAMENTO", raising=False)
+    env = tmp_path / ".env"
+    assert carregar_configuracao(tmp_path / "nao.env").ocr.pre_processamento == "nenhum"
+    env.write_text("OCR_PRE_PROCESSAMENTO=Limpar\n", encoding="utf-8")
+    assert carregar_configuracao(env).ocr.pre_processamento == "limpar"
+    env.write_text("OCR_PRE_PROCESSAMENTO=magica\n", encoding="utf-8")
+    with pytest.raises(ErroConfiguracao):
+        carregar_configuracao(env)
+
+
+def test_periodo_ruim_do_ocr():
+    from dbf_cepe.config import _ler_periodo_ruim
+
+    assert _ler_periodo_ruim(None) == ((2018, 2020),) == _ler_periodo_ruim(" ")
+    assert _ler_periodo_ruim("nenhum") == ()
+    assert _ler_periodo_ruim("2005, 2018-2020") == ((2005, 2005), (2018, 2020))
+    for ruim in ("2018-", "18-20", "2020-2018", "2018 a 2020"):
+        with pytest.raises(ErroConfiguracao, match="OCR_PERIODO_RUIM"):
+            _ler_periodo_ruim(ruim)
+    from dbf_cepe.config import ConfiguracaoOcr
+
+    cfg = ConfiguracaoOcr()
+    assert cfg.em_periodo_ruim(2019) and not cfg.em_periodo_ruim(2021) and not cfg.em_periodo_ruim(None)
