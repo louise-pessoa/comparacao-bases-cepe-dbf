@@ -76,8 +76,9 @@ class Especie:
     tipos: tuple[Tipo, ...] = ()
     # Fecho que encerra o texto do ato, antes das assinaturas (separador).
     fecho: re.Pattern[str] | None = None
-    # Fechos usados em anos anteriores (no decreto, o de até 2010). Hoje só servem para o
-    # critério da leitura em cascata dizer por que um ato reprovou (leitura/criterio.py).
+    # Fechos usados em anos anteriores (no decreto, o de até 2010/2011). Servem para o
+    # critério da leitura em cascata dizer por que um ato reprovou (leitura/criterio.py) e
+    # para o normalizador separar as assinaturas quando o fecho de hoje não aparece.
     fechos_anteriores: tuple[re.Pattern[str], ...] = ()
     # Cargo de quem assina o ato, em linha própria (separador).
     cargo_assinante: re.Pattern[str] | None = None
@@ -257,7 +258,7 @@ DECRETO = Especie(
     # (trecho citado em decreto de alteração).
     inicios_com_recuo=re.compile(
         r"[“\"]?\s*(?:Art\.\s*\d|§\s*\d|Par[áa]grafo\s+[úu]nico\b"
-        r"|[IVXLCDM]+\s*[-–—]\s|[a-z]\)\s|\d+(?:\.\d+)*\.\s|Pal[áa]cio\b)"
+        r"|[IVXLCDM]+\s*[-–—]\s|[a-z]\)\s|\d+(?:\.\d+)*\.\s|Pal[áa]cio\b|PAL[ÁA]CIO\b)"
     ),
     inicios_sem_recuo=re.compile(
         r"(?:CONSIDERANDO\b|DECRETA\s*:|A GOVERNADORA\b|O GOVERNADOR\b)"

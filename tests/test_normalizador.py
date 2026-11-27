@@ -404,6 +404,37 @@ def test_assinaturas_e_linha_em_branco_depois_do_cargo():
     ]
 
 
+def test_fecho_antigo_separa_assinaturas_uma_por_linha_com_cargo_abaixo():
+    # Decreto de jan/2011: fecho "PALÁCIO DO CAMPO DAS PRINCESAS, em ..." sem
+    # "Independência do Brasil."; as assinaturas saíam coladas ao último artigo.
+    texto = (
+        "DECRETO Nº 36.123, DE 20 DE JANEIRO DE 2011.\nAltera o Decreto nº 30.403, de 2007.\n"
+        "O GOVERNADOR DO ESTADO, no uso das atribuições,\nDECRETA:\n"
+        "Art. 3º Este Decreto entra em vigor na data de sua publicação.\n"
+        "Art. 4º Revogam-se as disposições em contrário.\n"
+        "PALÁCIO DO CAMPO DAS PRINCESAS, em 20 de janeiro de 2011.\n"
+        "EDUARDO HENRIQUE ACCIOLY CAMPOS\nGovernador do Estado\n"
+        "GERALDO JÚLIO DE MELLO FILHO\nFRANCISCO TADEU BARBOSA DE ALENCAR\n"
+        "PAULO HENRIQUE SARAIVA CÂMARA\nALEXANDRE REBÊLO TÁVORA\nTHIAGO ARRAES DE ALENCAR NORÕES"
+    )
+    doc = estruturar(texto, DECRETO)
+    assert not any("fecho" in a for a in doc.avisos)
+    assert _textos(doc, Estilo.DISPOSITIVO)[-2:] == [
+        "Art. 4º Revogam-se as disposições em contrário.",
+        "PALÁCIO DO CAMPO DAS PRINCESAS, em 20 de janeiro de 2011.",
+    ]
+    assinaturas = [b for b in doc.blocos if b.estilo is Estilo.ASSINATURA]
+    assert [(b.texto, b.colado) for b in assinaturas] == [
+        ("EDUARDO HENRIQUE ACCIOLY CAMPOS", False),
+        ("Governador do Estado", True),
+        ("GERALDO JÚLIO DE MELLO FILHO", False),
+        ("FRANCISCO TADEU BARBOSA DE ALENCAR", True),
+        ("PAULO HENRIQUE SARAIVA CÂMARA", True),
+        ("ALEXANDRE REBÊLO TÁVORA", True),
+        ("THIAGO ARRAES DE ALENCAR NORÕES", True),
+    ]
+
+
 def test_anexo_fica_linha_a_linha_e_avisa():
     texto = _decreto("Art. 1º Fica concedido.") + "\nANEXO ÚNICO\nMEMORIAL DESCRITIVO\nÁrea: 1.424,72 m²\nPerímetro: 200 m"
     doc = estruturar(texto, DECRETO)

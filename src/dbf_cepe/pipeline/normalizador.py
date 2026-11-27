@@ -29,7 +29,8 @@ norma, PROIND, revogação) usam o mesmo layout.
 Casos de borda (viram aviso no log, nunca falha silenciosa):
   - ementa não encontrada (sem a abertura do corpo): o texto é gerado sem o
     bloco da ementa;
-  - fecho não encontrado: nada é centralizado como assinatura;
+  - fecho não encontrado (nem o de hoje nem os de outras épocas da espécie):
+    nada é centralizado como assinatura;
   - trecho citado sem aspas de fechamento: segue como citação até o fecho;
   - anexo: título centralizado e linhas mantidas como estão (tabelas não são
     reorganizadas); conferir o resultado.
@@ -247,7 +248,14 @@ def estruturar(texto_bruto: str, especie: Especie) -> Documento:
         avisos.append("abertura do corpo não encontrada; o ato saiu sem o bloco da ementa")
 
     # Fecho: o que vem depois são assinaturas (e anexos).
-    fecho = especie.fecho.search(resto) if especie.fecho else None
+    # Sem o fecho de hoje, tenta os de outras épocas (no decreto, o "PALÁCIO DO CAMPO DAS
+    # PRINCESAS, em 20 de janeiro de 2011." sem "Independência do Brasil."), senão as
+    # assinaturas saem coladas ao último artigo.
+    fecho = None
+    for padrao in (especie.fecho, *especie.fechos_anteriores):
+        fecho = padrao.search(resto) if padrao else None
+        if fecho:
+            break
     if fecho:
         corpo, final = resto[: fecho.end()], resto[fecho.end() :]
     else:
