@@ -150,11 +150,18 @@ def leitor_ocr(cfg: Configuracao) -> LeitorOcr | None:
         raise ErroConfiguracao(f"OCR: {erro} (rode python main.py --verificar-ocr)") from erro
 
 
-def comparar_por_ocr(texto_ato: str, pdf_base: Path, leitor: LeitorOcr) -> Comparacao:
+def comparar_por_ocr(texto_ato: str, pdf_base: Path, leitor: LeitorOcr, ano: int | None = None) -> Comparacao:
     """Compara o texto do ato com o OCR do PDF da base (ver o início do módulo). Nunca
-    levanta exceção: OCR que falha ou não acha texto dá `lido=False`."""
+    levanta exceção: OCR que falha ou não acha texto dá `lido=False`. `ano`: da publicação;
+    no período de digitalização ruim (OCR_PERIODO_RUIM), só ruído dá `lido=False` (não
+    comparado, como a base em imagem sem OCR; ver `comparacao_ocr.decidir_em_periodo_ruim`)."""
     from dbf_cepe.leitura.ocr import ErroOcr
-    from dbf_cepe.pipeline.comparacao_ocr import comparar_com_ocr
+    from dbf_cepe.pipeline.comparacao_ocr import (
+        CONFERIR,
+        DUPLICATA,
+        comparar_com_ocr,
+        decidir_em_periodo_ruim,
+    )
 
     try:
         with pymupdf.open(pdf_base) as doc:
@@ -170,7 +177,17 @@ def comparar_por_ocr(texto_ato: str, pdf_base: Path, leitor: LeitorOcr) -> Compa
     if len(palavras_ocr) < MIN_PALAVRAS_DO_OCR:
         return Comparacao(lido=False, detalhe=f"imagem; o OCR não achou texto ({len(palavras_ocr)} palavras)")
     confianca = sum(c for _, c in palavras_ocr) / len(palavras_ocr)
-    diferencas = [str(d) for d in comparar_com_ocr(texto_ato, palavras_ocr, leitor.cfg.confianca_critica).nao_explicadas]
+    resultado = comparar_com_ocr(texto_ato, palavras_ocr, leitor.cfg.confianca_critica)
+    if leitor.cfg.em_periodo_ruim(ano):
+        decisao = decidir_em_periodo_ruim(resultado)
+        # Confiança média baixa não decide duplicata; o número lido com confiança ainda pega.
+        if decisao != CONFERIR and (decisao != DUPLICATA or confianca < CONFIANCA_MINIMA_DA_BASE):
+            return Comparacao(
+                lido=False,
+                detalhe=f"imagem; período de digitalização ruim ({ano}): o OCR (confiança média {confianca:.0f}) "
+                        f"só achou ruído, {len(resultado.nao_explicadas)} diferença(s) sem número lido com confiança",
+            )
+    diferencas = [str(d) for d in resultado.nao_explicadas]
     if confianca < CONFIANCA_MINIMA_DA_BASE:
         diferencas.insert(0, f"OCR da base com confiança média {confianca:.0f} (abaixo de "
                              f"{CONFIANCA_MINIMA_DA_BASE:.0f}): não decide duplicata")
@@ -183,15 +200,18 @@ def comparar_por_ocr(texto_ato: str, pdf_base: Path, leitor: LeitorOcr) -> Compa
     )
 
 
-def comparar_com_base(texto_ato: str, pdf_base: Path, cfg: Configuracao | None = None) -> Comparacao:
+def comparar_com_base(
+    texto_ato: str, pdf_base: Path, cfg: Configuracao | None = None, ano: int | None = None
+) -> Comparacao:
     """Compara o texto do ato com o do PDF da base; nunca levanta exceção (a não ser a
     configuração do OCR inválida, ver `leitor_ocr`). Com `cfg` e o OCR ativo, o PDF da base em
-    imagem ou com texto ilegível é lido por OCR (`comparar_por_ocr`)."""
+    imagem ou com texto ilegível é lido por OCR (`comparar_por_ocr`; `ano` da publicação, para o
+    período de digitalização ruim)."""
     leitura = ler_pdf(pdf_base)
     if leitura.status is StatusLeitura.OK:
         return comparar_textos(texto_ato, leitura.texto)
     if leitura.status is StatusLeitura.IMAGEM and cfg is not None:
         leitor = leitor_ocr(cfg)
         if leitor is not None:
-            return comparar_por_ocr(texto_ato, pdf_base, leitor)
+            return comparar_por_ocr(texto_ato, pdf_base, leitor, ano)
     return Comparacao(lido=False, detalhe=f"{leitura.status.value}: {leitura.detalhe}")

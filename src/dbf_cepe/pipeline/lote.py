@@ -174,7 +174,7 @@ def _com_publicacao(
     lidos_por_ocr: set[str] = set()
 
     def identico(nome: str) -> bool | None:
-        comparado = comparacao.comparar_com_base(texto, pasta_dbf / nome, cfg)
+        comparado = comparacao.comparar_com_base(texto, pasta_dbf / nome, cfg, publicacao.data.year)
         if comparado.por_ocr:
             lidos_por_ocr.add(nome)
             for trecho in comparado.trechos:

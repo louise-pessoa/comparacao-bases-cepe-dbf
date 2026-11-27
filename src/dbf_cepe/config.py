@@ -53,6 +53,12 @@ class ConfiguracaoOcr:
     confianca_critica: float = 90.0
     similaridade_duplicata: float = 0.95
     gravar_na_base: bool = False  # piloto: só vira True depois de conferido à mão
+    # Anos (da publicação) com digitalização ruim na base: ali vale a regra do período ruim
+    # (comparacao_ocr.decidir_em_periodo_ruim). Decisão de 26/11/2026, medida em 2020.
+    periodo_ruim: tuple[tuple[int, int], ...] = ((2018, 2020),)
+
+    def em_periodo_ruim(self, ano: int | None) -> bool:
+        return ano is not None and any(inicio <= ano <= fim for inicio, fim in self.periodo_ruim)
 
 
 @dataclass(frozen=True)
@@ -271,7 +277,35 @@ def _ler_ocr(valores: dict[str, str | None]) -> ConfiguracaoOcr:
         ),
         gravar_na_base=_ler_booleano("OCR_GRAVAR_NA_BASE", valor("OCR_GRAVAR_NA_BASE"), False),
         pre_processamento=_ler_pre_processamento(valor("OCR_PRE_PROCESSAMENTO")),
+        periodo_ruim=_ler_periodo_ruim(valores.get("OCR_PERIODO_RUIM")),
     )
+
+
+_FAIXA_DE_ANOS = re.compile(r"(\d{4})(?:\s*-\s*(\d{4}))?")
+
+
+def _ler_periodo_ruim(bruto: str | None) -> tuple[tuple[int, int], ...]:
+    """OCR_PERIODO_RUIM: anos ou faixas separados por vírgula ("2018-2020", "2005,2018-2020");
+    "nenhum" desliga; sem a variável (ou vazia), 2018-2020."""
+    texto = (bruto or "").strip()
+    if not texto:
+        return ConfiguracaoOcr.periodo_ruim
+    if texto.casefold() == "nenhum":
+        return ()
+    faixas = []
+    for parte in texto.split(","):
+        casamento = _FAIXA_DE_ANOS.fullmatch(parte.strip())
+        if not casamento:
+            raise ErroConfiguracao(
+                f"OCR_PERIODO_RUIM={texto!r} é inválido. Use anos ou faixas separados por vírgula "
+                "(ex.: 2018-2020 ou 2005,2018-2020) ou nenhum."
+            )
+        inicio = int(casamento[1])
+        fim = int(casamento[2] or inicio)
+        if fim < inicio:
+            raise ErroConfiguracao(f"OCR_PERIODO_RUIM: a faixa {parte.strip()!r} termina antes de começar.")
+        faixas.append((inicio, fim))
+    return tuple(faixas)
 
 
 def _ler_proxy_do_arquivo(arquivo_env: Path | None) -> str:

@@ -184,6 +184,11 @@ def _relatar_caderno(
         )
 
 
+def _ano(ato: AtoSeparado) -> int | None:
+    """Ano da publicação (período de digitalização ruim do OCR)."""
+    return ato.data_publicacao.year if ato.data_publicacao else None
+
+
 def _descrever(comparado: comparacao.Comparacao) -> str:
     if not comparado.lido:
         return f" (PDF da base não lido: {comparado.detalhe})"
@@ -202,7 +207,7 @@ def _descrever(comparado: comparacao.Comparacao) -> str:
 def _comparar_com_a_base(
     pdf_base: Path, nome: str, ato: AtoSeparado, resumo: ResumoRelatorio, cfg: Configuracao | None = None
 ) -> str:
-    comparado = comparacao.comparar_com_base(ato.texto, pdf_base, cfg)
+    comparado = comparacao.comparar_com_base(ato.texto, pdf_base, cfg, _ano(ato))
     resumo.comparacoes.append((nome, comparado))
     for trecho in comparado.trechos:
         log.info("%s | diferença: %s", nome, trecho)
@@ -271,7 +276,7 @@ def _gravar_publicacao(
     lidos_por_ocr: set[str] = set()
 
     def identico(nome_base: str) -> bool | None:
-        comparado = comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base, cfg)
+        comparado = comparacao.comparar_com_base(ato.texto, pasta_dbf / nome_base, cfg, _ano(ato))
         if comparado.por_ocr:
             lidos_por_ocr.add(nome_base)
         return comparado.identico if comparado.lido else None

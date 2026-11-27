@@ -412,9 +412,17 @@ Get-Item dados\tessdata\por.traineddata | Select-Object Name, Length   # alguns 
 No `.env`: `OCR_TESSDATA=dados/tessdata`. Só o `por` é necessário (o OCR não usa o `osd`). O `--verificar-ocr` mostra o
 SHA-256 do arquivo usado; ele também vai para a chave do cache do OCR, então trocar o arquivo refaz as leituras.
 
-**Tratamento da imagem (em teste):** `OCR_PRE_PROCESSAMENTO=limpar` tira os pontinhos soltos e deixa a página em preto e
-branco antes do OCR; `binarizar` só faz o preto e branco. Serve às digitalizações ruins da base (2018 a 2020). O
-resultado de cada tratamento fica no cache separado, então dá para comparar sem perder as leituras anteriores.
+**Modelo mais preciso:** o `por.traineddata` do repositório `tesseract-ocr/tessdata_best` (mesmo comando acima, trocando
+`tessdata` por `tessdata_best` no endereço e na pasta) foi o que mais ajudou nas digitalizações ruins: `OCR_TESSDATA=dados/tessdata_best`.
+
+**Tratamento da imagem:** `OCR_PRE_PROCESSAMENTO=binarizar` (preto e branco) ou `limpar` (tira pontinhos soltos e
+binariza). Ajudou em imagens degradadas de teste, mas não nas digitalizações reais de 2020 (`binarizar` piorou); o
+padrão é `nenhum`.
+
+**Período de digitalização ruim:** `OCR_PERIODO_RUIM=2018-2020` (padrão; faixas separadas por vírgula, ou `nenhum`).
+Nesses anos da publicação o OCR erra algarismos com confiança alta e não decide sozinho: sem diferença, duplicata; com
+número diferente lido com confiança, `conferir duplicata`; só ruído, "já existe; não comparado" (como sem OCR). O
+`--conferir` sempre mostra as diferenças, em qualquer ano.
 
 O OCR roda só na máquina: nenhum texto vai para serviço externo, e não há rede envolvida depois da instalação.
 
