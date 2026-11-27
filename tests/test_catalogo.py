@@ -438,6 +438,49 @@ def test_errata_de_portaria_nao_procura_na_base(tmp_path: Path):
     assert errata.situacao.startswith("a_confirmar") and "base não consultada" not in errata.situacao
 
 
+EDITAL_DBF_014 = (
+    "EDITAL DBF Nº 014/2020\nCREDENCIAMENTO\nA Diretoria de Benefícios Fiscais - DBF, considerando o Decreto nº 34.560,"
+    " que regulamenta o Programa de Estímulo à Atividade Portuária, resolve credenciar a empresa.\n"
+    "Recife, 31 de janeiro de 2020.\n"
+)
+ERRATA_DPC_014 = (
+    "ERRATA - EDITAL DE CREDENCIAMENTO NA SISTEMÁTICA DO ATACADO\nEDITAL DPC Nº 014/2020\n"
+    "Referente ao Edital DPC nº 014/2020, publicado em 29/01/2020.\nonde se lê: X\nleia-se: Y\n"
+)
+
+
+def test_errata_de_edital_de_outro_orgao_nao_pega_o_mesmo_numero_da_dbf(tmp_path: Path):
+    # Fevereiro de 2020: o Edital DBF 014/2020 está no lote e a errata é do Edital DPC 014/2020.
+    pasta = tmp_path / "cadernos"
+    pasta.mkdir()
+    criar_pdf_texto(pasta / "20200201_a.pdf", EDITAL_DBF_014)
+    criar_pdf_texto(pasta / "20200215_b.pdf", ERRATA_DPC_014)
+    linhas = catalogo.catalogar(pasta, {"edital 014-2020.pdf"}).linhas
+    edital = next(l for l in linhas if l.especie == "Edital")
+    assert edital.situacao.startswith("no_escopo: órgão DBF")
+    errata = _errata(linhas)
+    assert (errata.orgao, errata.situacao) == ("DPC", "fora_do_escopo: errata de Edital 014/2020: órgão DPC")
+    # o cabeçalho repetido na errata não vira um segundo edital
+    assert [l.especie for l in linhas] == ["Edital", "Errata"]
+
+
+def test_errata_de_portaria_de_outro_orgao_fica_fora(tmp_path: Path):
+    criar_pdf_texto(tmp_path / "20260425_a.pdf", "ERRATA\nNa Portaria SDS nº 2508, de 15/04/2026, onde se lê X\n")
+    errata = _errata(catalogo.catalogar(tmp_path / "20260425_a.pdf").linhas)
+    assert (errata.orgao, errata.situacao) == ("SDS", "fora_do_escopo: errata de Portaria 2508: órgão SDS")
+
+
+def test_errata_de_edital_da_dbf_com_o_cabecalho_repetido_segue_o_edital(tmp_path: Path):
+    pasta = tmp_path / "cadernos"
+    pasta.mkdir()
+    criar_pdf_texto(pasta / "20200201_a.pdf", EDITAL_DBF_014)
+    criar_pdf_texto(pasta / "20200214_b.pdf", "ERRATA\n\nEDITAL DBF Nº 014/2020\nOnde se lê: X\nLeia-se: Y\n")
+    linhas = catalogo.catalogar(pasta).linhas
+    assert [l.especie for l in linhas] == ["Edital", "Errata"]
+    errata = _errata(linhas)
+    assert (errata.orgao, errata.situacao) == ("DBF", "no_escopo: errata de Edital 014/2020 (ato no escopo nos cadernos lidos)")
+
+
 def test_nome_na_base():
     assert catalogo.nome_na_base("decreto", "58509", "2025") == "Decreto 58509.pdf"
     assert catalogo.nome_na_base("edital", "064", "2025") == "Edital 064-2025.pdf"

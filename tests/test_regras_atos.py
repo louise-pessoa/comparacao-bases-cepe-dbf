@@ -322,6 +322,70 @@ def test_edital_com_numero_em_linha_separada():
     assert a.numero == "4052.2025.0023.IASSEPE"
 
 
+# Cabeçalhos quebrados em duas ou três linhas, dos cadernos de setembro de 2010.
+DBM_2010 = (
+    "EDITAL DE CREDENCIAMENTO DE ESTÍMULO À ATIVIDADE PORTUÁRIA\nDBM Nº 054/2010\n"
+    "A Diretoria de Benefícios Fiscais e Relações com os Municípios – DBM, nos termos da Lei nº 13.942\n"
+)
+
+
+def test_edital_da_dbm_com_o_numero_na_linha_de_baixo():
+    a = _unico(DBM_2010, "Edital")
+    assert (a.numero, a.ano, a.orgao, a.sefaz, a.tipo) == ("054", "2010", "DBM", True, "CREDENCIAMENTO")
+    assert not any("sem número" in aviso for aviso in a.avisos)
+
+
+def test_edital_com_titulo_em_duas_linhas_e_numero_na_terceira():
+    texto = (
+        "EDITAL DE CREDENCIAMENTO DA SISTEMÁTICA DE\nTRIBUTAÇÃO RELATIVA A PRODUTOS FARMACÊUTICOS Nº\n"
+        "0004/2010\nA Diretoria de Planejamento e Controle da Ação Fiscal, nos termos\n"
+    )
+    a = _unico(texto, "Edital")
+    assert (a.numero, a.ano, a.orgao, a.tipo) == ("0004", "2010", None, "CREDENCIAMENTO")
+
+
+def test_edital_sem_de_que_comeca_pelo_tipo_nao_vira_orgao():
+    a = _unico("EDITAL CREDENCIAMENTO DO CRÉDITO PRESUMIDO\nAÇOS PLANOS Nº 001/2010\nA Diretoria\n", "Edital")
+    assert (a.numero, a.orgao, a.tipo) == ("001", None, "CREDENCIAMENTO")
+
+
+@pytest.mark.parametrize(
+    ("cabecalho", "orgao", "tipo"),
+    [
+        ("EDITAL DE ADITAMENTO DBM Nº 001/2010 - CREDENCIAMENTO\n", "DBM", None),
+        ("EDITAL DE INTIMAÇÃO TCESP Nº 001/2020\n", "TCESP", "INTIMACAO"),
+        # Tributo não é órgão: "ICD", "IPVA" e "ICMS" ficam no tipo.
+        ("EDITAL DE INTIMAÇÃO ICD Nº 4/2018\n", None, "INTIMACAO"),
+        ("EDITAL DE REVISÃO DE NOTIFICAÇÃO IPVA Nº 001/2020\n", None, None),
+        # Palavra comprida em maiúsculas não é sigla.
+        ("EDITAL DE CREDENCIAMENTO Nº 4/2010\n", None, "CREDENCIAMENTO"),
+    ],
+)
+def test_sigla_do_orgao_depois_do_tipo(cabecalho, orgao, tipo):
+    a = _unico(cabecalho, "Edital")
+    assert (a.orgao, a.tipo) == (orgao, tipo)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        # Sem título na primeira linha: o número é do processo, não do edital.
+        "EDITAL\nPROCESSO SEI Nº 2300000212.000933/2024-65\n A Presidente da Comissão\n",
+        "EDITAL DE NOTIFICAÇÃO\nPROCESSO SIGEPE Nº 0217330-7/2017 – Servidora\n",
+        # Corpo com minúsculas não entra no cabeçalho.
+        "EDITAL DE CONVOCAÇÃO\nO Secretário convoca os aprovados no processo nº 12/2010\n",
+    ],
+)
+def test_cabecalho_em_linhas_nao_pega_numero_de_outra_coisa(texto):
+    a = _unico(texto, "Edital")
+    assert a.numero is None and any("sem número" in aviso for aviso in a.avisos)
+
+
+def test_cabecalho_sem_numero_nao_inventa_sigla_com_a_ultima_palavra():
+    a = _unico("EDITAL DE CONVOCAÇÃO PRAZO\nA Secretaria convoca\n", "Edital")
+    assert a.orgao is None
+
+
 @pytest.mark.parametrize(
     ("texto", "tipo"),
     [
@@ -543,6 +607,51 @@ def test_errata_ato_referido_e_destino(trecho, rotulo, destino, numero, ano):
     a = _unico(trecho + "\nOnde se lê: X\n", "Errata")
     assert (a.ato_referido, a.destino, a.ref_numero, a.ref_ano) == (rotulo, destino, numero, ano)
     assert a.numero is None  # errata não tem número próprio
+
+
+@pytest.mark.parametrize(
+    ("trecho", "orgao"),
+    [
+        ("ERRATA Na Portaria SDS nº 2508, de 15/04/2026, onde se lê", "SDS"),
+        ("ERRATA Referente ao Edital DPC nº 014/2020, publicado em 29/01/2020", "DPC"),
+        # Sigla de 6 letras não é lida (com 6, "AÇOS PLANOS" viraria órgão): a errata fica a confirmar.
+        ("ERRATA Na PORTARIA FUNASE nº 671, datada de 29/09/2026 publicada", None),
+        ("ERRATA No art. 4º do Decreto nº 61.560, de 19 de outubro de 2026", None),
+        ("Errata ao Edital do Chamamento Público nº 010/2026, Processo nº 047", None),
+        ("ERRATA: EDITAL DE INTIMAÇÃO ICD Nº 4/2018– Processo", None),  # ICD é tributo
+    ],
+)
+def test_errata_le_o_orgao_do_ato_referido(trecho, orgao):
+    assert _unico(trecho + "\nOnde se lê: X\n", "Errata").ref_orgao == orgao
+
+
+def test_errata_que_repete_o_cabecalho_do_edital_nao_gera_um_edital_a_mais():
+    # 14/02/2020: "ERRATA" sozinha e, embaixo, o cabeçalho do edital corrigido.
+    texto = (
+        "Diretor\nERRATA\n \nEDITAL DBF Nº 016/2020\n"
+        "Onde se lê: “... termo final em 31.12.2021.”\nLeia-se: “... termo final em 31.01.2021.”\n"
+        "Recife, 13 de fevereiro de 2020.\nDiretor\n"
+    )
+    achados = identificar(texto)
+    assert [a.especie for a in achados] == ["Errata"]
+    errata = achados[0]
+    assert (errata.destino, errata.ref_numero, errata.ref_ano, errata.ref_orgao) == ("edital", "016", "2020", "DBF")
+    assert errata.fim == len(ra.limpar_texto(texto))  # o trecho vai até o fim do edital absorvido
+
+
+def test_errata_com_titulo_e_cabecalho_do_edital_de_outro_orgao():
+    # 15/02/2020: a errata de um edital da DPC.
+    texto = (
+        "ERRATA - EDITAL DE CREDENCIAMENTO NA SISTEMÁTICA DO ATACADO\nEDITAL DPC Nº 014/2020\n"
+        "Referente ao Edital DPC nº 014/2020, publicado em 29/01/2020.\nonde se lê: X\n"
+    )
+    (errata,) = identificar(texto)
+    assert (errata.especie, errata.ref_numero, errata.ref_orgao) == ("Errata", "014", "DPC")
+
+
+def test_edital_de_outro_numero_depois_da_errata_continua_sendo_edital():
+    texto = "ERRATA\nNo Edital DBF nº 016/2020, onde se lê X, leia-se Y.\nEDITAL DBF Nº 017/2020\nCREDENCIAMENTO\n"
+    assert [(a.especie, a.numero) for a in identificar(texto)] == [("Errata", None), ("Edital", "017")]
 
 
 def test_errata_com_o_ato_referido_em_outra_linha():

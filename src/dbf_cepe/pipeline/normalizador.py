@@ -410,7 +410,7 @@ def gerar_pdf_normalizado(
         raise ErroNormalizacao(
             f"{original.name} não pôde ser lido ({leitura.status.value}): {leitura.detalhe}"
         )
-    nome = nome_saida or ident.especie.nome_arquivo(ident.numero)
+    nome = nome_saida or ident.nome_padrao
     destino = pasta_saida / nome
     if simular:
         with tempfile.TemporaryDirectory() as pasta_temporaria:

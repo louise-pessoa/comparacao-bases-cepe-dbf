@@ -7,8 +7,8 @@ ser reescrita.
 
 As RegEx (cabeçalhos e tipos) NÃO ficam aqui: moram em `regras_atos.py`, a fonte única
 das regras de reconhecimento, que também serve o catálogo. Este arquivo as importa e
-acrescenta o que é do pipeline (modelo de decreto, nome de arquivo, escopo por programa,
-estrutura do texto). EDITAL e PORTARIA estão definidos, mas
+acrescenta o que é do pipeline (modelo de decreto, nome de arquivo, escopo por programa e
+por órgão, ano no nome, estrutura do texto). EDITAL e PORTARIA estão definidos, mas
 NÃO ativos: só entram em `ESPECIES_ATIVAS` por decisão da DBF.
 """
 
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from dbf_cepe.regras.programas import PROGRAMAS_DBF, PROGRAMAS_DE_CREDENCIAMENTO, Programa
@@ -32,6 +33,9 @@ from dbf_cepe.regras.regras_atos import (
     NOMES_OUTRAS_ESPECIES,  # noqa: F401 (reexportado: separador e identificador)
     ORGAOS_EDITAL_SEFAZ,
     ORGAOS_PORTARIA_SEFAZ,
+    cabecalhos_de_edital_em_linhas,
+    numero_e_ano_do_cabecalho,
+    orgao_do_cabecalho,
 )
 from dbf_cepe.regras.regras_atos import TIPOS_DECRETO as _REGRAS_TIPOS_DECRETO
 from dbf_cepe.regras.regras_atos import TIPOS_EDITAL as _REGRAS_TIPOS_EDITAL
@@ -105,6 +109,50 @@ class Especie:
     sufixo_republicacao: str = " (republicação)"
     sufixo_republicacao_n: str = " (republicação {n})"
     sufixo_conferir: str = " (conferir duplicata)"
+    # Órgão lido do cabeçalho casado por `cabecalho` (edital, portaria). None = a espécie
+    # não traz órgão no cabeçalho (decreto). Usado com `orgaos_do_escopo`.
+    orgao_do_cabecalho: Callable[[re.Match[str]], str | None] | None = None
+    # Cabeçalhos quebrados em linhas que `cabecalho` não pega (edital de 2010: "EDITAL DE
+    # CREDENCIAMENTO ..." / "DBM Nº 054/2010"). Recebe o texto e devolve os casamentos, no
+    # início de linha, com os mesmos grupos de `cabecalho`.
+    cabecalhos_em_linhas: Callable[[str], list[re.Match[str]]] | None = None
+    # A base da DBF guarda os atos desta espécie (a portaria não tem arquivo na base).
+    arquivada_na_base: bool = True
+
+    @property
+    def usa_ano(self) -> bool:
+        """O ano faz parte do nome do arquivo e, por isso, da identidade do ato ("Edital
+        064-2025.pdf"). No decreto, o número basta."""
+        return "{ano}" in self.padrao_arquivo
+
+    def ano_da_chave(self, ano: str | None) -> str | None:
+        """O ano que identifica o ato (nome do arquivo, registro de publicações): o próprio
+        ano se a espécie o usa; senão None, para não mudar a chave de quem não usa."""
+        return ano if self.usa_ano else None
+
+    def dados_do_cabecalho(self, cabecalho: re.Match[str]) -> tuple[str, str | None, str | None]:
+        """(número, ano, órgão) de um cabeçalho desta espécie."""
+        numero, ano = numero_e_ano_do_cabecalho(cabecalho)
+        orgao = self.orgao_do_cabecalho(cabecalho) if self.orgao_do_cabecalho else None
+        return numero, ano, orgao
+
+    def nome_do_ato(self, numero: str, ano: str | None) -> str | None:
+        """Nome padrão do arquivo do ato ('Decreto 60929.pdf', 'Edital 064-2025.pdf'), ou None
+        se a espécie usa o ano no nome e o cabeçalho não o trouxe (o ato vai para revisão)."""
+        if self.usa_ano and not ano:
+            return None
+        return self.nome_arquivo(numero, self.ano_da_chave(ano))
+
+    def rotulo(self, numero: str, ano: str | None) -> str:
+        """Nome do ato para o log: o nome do arquivo ou, sem o ano exigido, 'Edital 43 (sem ano)'."""
+        return self.nome_do_ato(numero, ano) or f"{self.nome} {numero} (sem ano)"
+
+    def nome_na_base(self, numero: str, ano: str | None = None) -> str | None:
+        """Nome do arquivo do ato na base da DBF, ou None se a espécie não é arquivada lá ou
+        se falta o ano que o nome exige."""
+        if not self.arquivada_na_base or not numero or (self.usa_ano and not ano):
+            return None
+        return self.nome_arquivo(numero, ano)
 
     def nome_arquivo(self, numero: str, ano: str | None = None) -> str:
         """Nome de salvamento e de comparação, ex.: 'Decreto 60929.pdf', 'Edital 064-2025.pdf'."""
@@ -220,6 +268,14 @@ DECRETO = Especie(
 # Edital (NÃO ATIVO)
 # ----------------------------------------------------------------------------
 
+def _orgao_do_edital(cabecalho: re.Match[str]) -> str | None:
+    return orgao_do_cabecalho(cabecalho, "Edital")
+
+
+def _orgao_da_portaria(cabecalho: re.Match[str]) -> str | None:
+    return orgao_do_cabecalho(cabecalho, "Portaria")
+
+
 # Reconhecimento de cabeçalho, número/ano, órgão e tipo a partir dos cadernos de 25/04,
 # 26/06, 15/07, 21/10 e 22/10/2026 (ver regras_atos.py). Fora de ESPECIES_ATIVAS:
 # falta a DBF definir o que fazer com o edital (nome do arquivo, escopo por programa,
@@ -227,7 +283,10 @@ DECRETO = Especie(
 #   - nome do arquivo: "Edital 064-2025.pdf" (número com os zeros e ano), como na base da DBF;
 #   - o credenciamento se liga ao programa pelo TEXTO do edital (`programas` abaixo, que
 #     inclui a Lei de Incentivo ao Esporte);
-#   - DBM foi informado como outro nome da DBF, mas não aparece em nenhum caderno.
+#   - DBM é outro nome da DBF: aparece nos editais de credenciamento do PEAP de setembro de 2010;
+#   - o tipo vem do título ("EDITAL DE CREDENCIAMENTO ..."), mas o identificador classifica o
+#     texto depois do cabeçalho: o edital com o tipo só no título sai sem tipo (revisão manual).
+#     Ano, órgão, escopo e cabeçalho em linhas já passam pelo pipeline (fase 2).
 EDITAL = Especie(
     nome="Edital",
     cabecalho=CABECALHO_EDITAL,
@@ -235,6 +294,8 @@ EDITAL = Especie(
     tipos=tuple(Tipo(nome, padrao, None, evidencia) for nome, padrao, evidencia in _REGRAS_TIPOS_EDITAL),
     programas=PROGRAMAS_DE_CREDENCIAMENTO,
     orgaos_do_escopo=ORGAOS_EDITAL_SEFAZ,
+    orgao_do_cabecalho=_orgao_do_edital,
+    cabecalhos_em_linhas=cabecalhos_de_edital_em_linhas,
 )
 
 # ----------------------------------------------------------------------------
@@ -249,14 +310,20 @@ PORTARIA = Especie(
     nome="Portaria",
     cabecalho=CABECALHO_PORTARIA,
     padrao_arquivo="{especie} {numero}.pdf",
+    # Decisão de 03/11/2026: a portaria da SF só entra se citar programa da DBF (a SF 76 só
+    # designa um servidor). Mesmo critério do catálogo.
+    programas=PROGRAMAS_DBF,
     orgaos_do_escopo=ORGAOS_PORTARIA_SEFAZ,
+    orgao_do_cabecalho=_orgao_da_portaria,
+    arquivada_na_base=False,
 )
 
 # ----------------------------------------------------------------------------
 # Registro
 # ----------------------------------------------------------------------------
 
-# Espécies tratadas nesta fase. EDITAL e PORTARIA já estão definidos acima, mas
+# Espécies tratadas nesta fase. O pipeline lê esta tupla na hora de cada chamada (separador,
+# identificador, cascata), não no import. EDITAL e PORTARIA já estão definidos acima, mas
 # só entram aqui por decisão da DBF (ver as pendências em cada um).
 ESPECIES_ATIVAS: tuple[Especie, ...] = (DECRETO,)
 

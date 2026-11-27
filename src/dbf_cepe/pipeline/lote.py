@@ -124,7 +124,7 @@ def processar_arquivo(
     if publicacao is not None:
         return _com_publicacao(pdf, cfg, estado, simular, ident, leitura.texto, publicacao)
 
-    nome = ident.especie.nome_arquivo(ident.numero)
+    nome = ident.nome_padrao
 
     # --- Etapa 3: duplicidade (PDF sem publicação: regra antiga) ------------
     # (o "visto no lote" vem antes: o primeiro já entrou em `estado.indice`)
@@ -181,14 +181,15 @@ def _com_publicacao(
                 log.info("%s | %s lido por OCR | diferença: %s", pdf.name, nome, trecho)
         return comparado.identico if comparado.lido else None
 
+    ano = ident.chave_ano
     plano = planejar(
-        especie, numero, publicacao, hash_texto, estado.registro, estado.nomes_na_base, identico
+        especie, numero, publicacao, hash_texto, estado.registro, estado.nomes_na_base, identico, ano=ano
     )
     for aviso in plano.avisos:
         log.warning("%s | AVISO: %s", pdf.name, aviso)
 
     def entrada(situacao: str, arquivo: str | None) -> Entrada:
-        return Entrada(especie.nome, numero, None, publicacao, hash_texto, arquivo, situacao)
+        return Entrada(especie.nome, numero, ano, publicacao, hash_texto, arquivo, situacao)
 
     if plano.acao is Acao.JA_REGISTRADA:
         return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, plano.motivo, simular)
@@ -200,7 +201,7 @@ def _com_publicacao(
         motivo = plano.motivo + (" (base lida por OCR, sem diferença)" if por_ocr else "")
         return _descartar(pdf, Destino.DESCARTADO_DUPLICADO, motivo, simular)
     if ident.tipo is None:
-        return _sem_tipo(pdf, cfg, especie.nome_arquivo(numero), ident, simular)
+        return _sem_tipo(pdf, cfg, ident.nome_padrao, ident, simular)
     if plano.acao is Acao.CONFERIR:
         return _conferir(pdf, cfg, estado, simular, ident, plano, entrada)
     return _normalizar_e_gravar(pdf, cfg, estado, simular, ident, plano.nome_final or "", plano.renomeacoes,
@@ -248,7 +249,7 @@ def _normalizar_e_gravar(
 ) -> Destino:
     especie, numero = ident.especie, ident.numero
     assert especie is not None and numero is not None and cfg.pasta_dbf is not None
-    nome_no_texto = especie.nome_arquivo(numero)
+    nome_no_texto = ident.nome_padrao
 
     # --- Etapa 4: normalização --------------------------------------------
     try:
@@ -276,7 +277,7 @@ def _normalizar_e_gravar(
             registro.operacao_em_andamento = {
                 "especie": especie.nome,
                 "numero": numero,
-                "ano": None,
+                "ano": ident.chave_ano,
                 "renomeacoes": [list(par) for par in renomeacoes],
                 "gravar": nome,
                 "nova_entrada": nova_entrada.para_dict(),
@@ -321,7 +322,7 @@ def _normalizar_e_gravar(
         estado.renomear(de, para)
         log.info("%s | renomeado na DBF: %s -> %s", pdf.name, de, para)
         if nova_entrada is not None:
-            registro.renomear(especie.nome, numero, None, de, para)
+            registro.renomear(especie.nome, numero, ident.chave_ano, de, para)
     estado.nomes_na_base.add(nome)
     if nova_entrada is not None:
         registro.adicionar(nova_entrada)

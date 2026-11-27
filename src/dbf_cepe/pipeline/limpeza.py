@@ -69,7 +69,7 @@ BASE_EM_IMAGEM = "BASE EM IMAGEM"
 JA_EXISTE = "já existe na DBF"  # no manifesto antigo, também a base em imagem
 # 2: o manifesto distingue BASE_EM_IMAGEM de JA_EXISTE (24/11/2026). Sem "versao": antes disso.
 VERSAO_DO_PROCESSAMENTO = 2
-MOTIVO_BASE_EM_IMAGEM = "Decreto {numero} com a base em imagem ou ilegível, não comparado (guardado para o OCR)"
+MOTIVO_BASE_EM_IMAGEM = "{ato} com a base em imagem ou ilegível, não comparado (guardado para o OCR)"
 
 
 class ErroLimpeza(Exception):
@@ -107,8 +107,9 @@ def registrar_processamento(
     paginas_digitalizadas: tuple[int, ...],
 ) -> bool:
     """Anota no manifesto da pasta do caderno que o `--separar --gravar` o processou até o
-    fim. `decretos_dbf`: [{"numero", "pagina", "situacao"}]. Caderno fora do manifesto
-    (não veio da captura) não é anotado e devolve False."""
+    fim. `decretos_dbf`: [{"numero", "pagina", "situacao"}], mais "especie" e "ano" quando o
+    ato não é decreto (a chave continua "decretos_dbf", para os manifestos já gravados). Caderno
+    fora do manifesto (não veio da captura) não é anotado e devolve False."""
     try:
         arquivos = captura.ler_manifesto(caderno.parent)
     except captura.ErroCaptura as erro:
@@ -184,30 +185,34 @@ def _motivos_do_registro(
     motivos = []
     for decreto in decretos_dbf:
         numero, pagina, situacao = decreto["numero"], decreto["pagina"], decreto["situacao"]
+        # Manifesto sem "especie": só havia decretos.
+        especie, ano = decreto.get("especie", DECRETO.nome), decreto.get("ano")
+        ato = f"{especie} {numero}" + (f"/{ano}" if ano else "")
         if situacao == REVISAO_MANUAL:
-            motivos.append(f"Decreto {numero} em revisão manual")
+            motivos.append(f"{ato} em revisão manual")
             continue
         if situacao == BASE_EM_IMAGEM:
-            motivos.append(MOTIVO_BASE_EM_IMAGEM.format(numero=numero))
+            motivos.append(MOTIVO_BASE_EM_IMAGEM.format(ato=ato))
             continue
         if situacao == JA_EXISTE and versao < VERSAO_DO_PROCESSAMENTO and base_em_imagem is not None:
             resposta = base_em_imagem(numero)
+            # Manifesto antigo (versão 1): só tem decretos.
             if resposta is None:
-                motivos.append(f"Decreto {numero}: base da DBF não consultada (manifesto antigo; não dá para saber "
+                motivos.append(f"{ato}: base da DBF não consultada (manifesto antigo; não dá para saber "
                                "se a base é imagem)")
             elif resposta:
-                motivos.append(MOTIVO_BASE_EM_IMAGEM.format(numero=numero) + " [manifesto antigo; conferido na base]")
+                motivos.append(MOTIVO_BASE_EM_IMAGEM.format(ato=ato) + " [manifesto antigo; conferido na base]")
             continue
         if situacao not in SITUACOES_PARA_PENDENTES:
             continue  # já existia na base ou no registro: nada a esperar do lote
         entradas = [
             e for e in registro.entradas
-            if e.numero == numero and e.publicacao.caderno == nome and e.publicacao.pagina == pagina
+            if e.do_ato(especie, numero, ano) and e.publicacao.caderno == nome and e.publicacao.pagina == pagina
         ]
         if not entradas:
-            motivos.append(f"Decreto {numero} não está no registro de publicações (o lote ainda não o processou)")
+            motivos.append(f"{ato} não está no registro de publicações (o lote ainda não o processou)")
         elif any(e.situacao == CONFERIR and not e.decisao for e in entradas):  # "mantida a base" fica CONFERIR
-            motivos.append(f"Decreto {numero} em conferir duplicata, sem decisão (rode --conferir)")
+            motivos.append(f"{ato} em conferir duplicata, sem decisão (rode --conferir)")
     return motivos
 
 

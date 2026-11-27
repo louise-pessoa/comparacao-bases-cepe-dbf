@@ -252,9 +252,13 @@ def programas_do_ato(
     return tuple(p for p in lista if p.padrao.search(cabecalho))
 
 
-def em_escopo(especie: Especie, programas_citados: tuple[Programa, ...]) -> bool:
+def em_escopo(especie: Especie, programas_citados: tuple[Programa, ...], orgao: str | None = None) -> bool:
     """Espécie sem lista de programas: todo ato entra. Com lista: só se o
-    cabeçalho citar algum programa dela."""
+    cabeçalho citar algum programa dela. Espécie que se divide por órgão
+    (`orgaos_do_escopo`: edital DBF/DBM, portaria SF): o órgão do cabeçalho também
+    precisa ser um deles; sem órgão no cabeçalho, fica fora (o relatório avisa)."""
+    if especie.orgaos_do_escopo is not None and (orgao or "").upper() not in especie.orgaos_do_escopo:
+        return False
     return especie.programas is None or bool(programas_citados)
 
 
