@@ -19,7 +19,7 @@ Um decreto é da DBF se a ementa ou os considerandos (do início até o `DECRETA
 - Cada programa é reconhecido pela sigla, pelo nome oficial, pela lei ou decreto de origem e pelo anexo do RICMS-PE. O
   "Anexo 33" só vale com o Decreto nº 44.650 ou o RICMS ao lado.
 - Termos genéricos soltos ("setor automotivo", "indústria naval") não marcam programa.
-- Programa citado só no corpo: o decreto fica fora do escopo, mas o log traz um `AVISO` para conferir.
+- Programa citado só no corpo: o decreto fica fora do escopo, mas o log traz um `[AVISO]` para conferir.
 - Os programas ainda não decididos (COOPERA, fios, tecidos e confecções, monofásica, Inovar-PE e FEEF) já têm padrão em
   `PROGRAMAS_OPCIONAIS`; para incluí-los, mova-os para `PROGRAMAS_DBF`.
 - Para o credenciamento por edital vale `PROGRAMAS_DE_CREDENCIAMENTO`: os programas da DBF mais a Lei de Incentivo ao
@@ -151,7 +151,7 @@ modelos, a divisão em parágrafos é idêntica à do Word.
 - O PDF gerado é relido: texto, número e tipo precisam bater, senão ele é descartado e o original vai para `dados/erros`
   com o motivo (por exemplo, um caractere que a fonte não tem).
 - O `--simular` também gera e confere o PDF, numa pasta temporária, sem gravar nada.
-- Pontos de atenção viram `AVISO` no log: ementa não encontrada, fecho ausente, citação sem aspas de fechamento, anexo.
+- Pontos de atenção viram `[AVISO]` no log: ementa não encontrada, fecho ausente, citação sem aspas de fechamento, anexo.
 - Um PDF normalizado que sobrou de uma execução anterior é substituído: é cópia derivada, não a base.
 
 **Limitação:** a estrutura é inferida do texto. Um erro de inferência (parágrafo não separado, ou separado a mais) só muda

@@ -48,6 +48,7 @@ from pathlib import Path
 
 from fpdf import FPDF
 
+from dbf_cepe import saida
 from dbf_cepe.regras.especies import Especie
 from dbf_cepe.leitura.identificador import (
     Identificacao,
@@ -418,5 +419,5 @@ def gerar_pdf_normalizado(
     else:
         documento = _gerar(leitura.texto, ident, destino, pasta_fontes)
     for aviso in documento.avisos:
-        log.warning("%s | AVISO (normalização): %s", nome, aviso)
+        saida.aviso(log, "normalização de %s: %s", nome, aviso)
     return destino

@@ -67,6 +67,8 @@ from urllib.parse import urlsplit
 
 import pymupdf
 
+from dbf_cepe import saida
+
 log = logging.getLogger("pipeline")
 
 HOSTS_PERMITIDOS = frozenset({"cepebr-prod.s3.amazonaws.com", "diariooficial.cepe.com.br"})
@@ -480,6 +482,7 @@ def baixar_cadernos(
                 destino = urlsplit(proxy)
                 log.info("Usando o proxy %s:%s", destino.hostname, destino.port or "(porta padrão)")
 
+    saida.bloco(log, f"CADERNOS ({len(dias)} dia(s) x {len(cadernos)} caderno(s) por dia)")
     resultados: list[ResultadoDownload] = []
     houve_requisicao = False
     sem_conexao_seguidos = 0
@@ -511,7 +514,12 @@ def baixar_cadernos(
                     sem_conexao_seguidos += 1
                 else:
                     sem_conexao_seguidos = 0
-            log.info("%s | %s | %s", nome, res.status.value, res.detalhe or caderno.url(dia))
+            nivel = (
+                logging.ERROR if res.status is StatusDownload.FALHA
+                else logging.WARNING if res.status is StatusDownload.SEM_CONEXAO
+                else logging.INFO
+            )
+            log.log(nivel, "%s | %s | %s", nome, res.status.value, res.detalhe or caderno.url(dia))
             resultados.append(res)
 
     if sem_conexao_seguidos >= LIMITE_SEM_CONEXAO:

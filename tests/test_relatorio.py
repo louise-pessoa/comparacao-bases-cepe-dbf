@@ -51,7 +51,7 @@ def test_relatorio_mostra_programa_tipo_e_situacao(cfg, caplog):
     with caplog.at_level(logging.INFO, logger="pipeline"):
         resumo = relatorio_dos_cadernos(cfg, TRECHO)
     texto = caplog.text
-    assert "10 ato(s) encontrado(s)" in texto
+    assert "---- Caderno 2026-06-26 (paginas 24 a 26).pdf (3 p., 10 ato(s)) ----" in texto
     assert "Decreto 60929.pdf | p. 1 | CONCESSAO | PRODEPE | já existe na DBF" in texto
     assert "Decreto 60928.pdf | p. 1 | CONCESSAO | PRODEPE | INÉDITO" in texto
     assert "Decreto 60930.pdf | p. 1-2 | tipo não reconhecido | - | fora do escopo da DBF" in texto
@@ -75,7 +75,7 @@ def test_relatorio_avisa_do_caderno_cortado(cfg, caplog):
     # A página 9 termina no meio do decreto 60905: sem fecho.
     with caplog.at_level(logging.WARNING, logger="pipeline"):
         resumo = relatorio_dos_cadernos(cfg, PAGINA_9)
-    assert "Decreto 60905.pdf | AVISO: fecho" in caplog.text
+    assert "Decreto 60905.pdf | fecho" in caplog.text
     assert resumo.avisos == 1
 
 
@@ -273,7 +273,7 @@ def test_cli_gravar_sem_dbf_sai_com_codigo_2(cfg, monkeypatch, capsys):
 def test_cli_separar_arquivo_invalido_sai_com_erro_2(cfg, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(modulo_main, "carregar_configuracao", lambda: cfg)
     assert main(["--separar", str(tmp_path / "nao_existe.pdf")]) == 2
-    assert "Erro:" in capsys.readouterr().err
+    assert "[ERRO]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -292,8 +292,8 @@ def test_cli_combinacoes_invalidas(argumentos):
 def test_decreto_reprovado_no_criterio_de_leitura_ganha_aviso(cfg, caplog):
     with caplog.at_level(logging.INFO, logger="pipeline"):
         relatorio_dos_cadernos(cfg, PAGINA_9)
-    assert "Decreto 60905.pdf | AVISO: reprovado no critério de leitura (sem fecho) em todos os níveis" in caplog.text
-    assert "Decreto 60903.pdf | AVISO: reprovado" not in caplog.text
+    assert "Decreto 60905.pdf | reprovado no critério de leitura (sem fecho) em todos os níveis" in caplog.text
+    assert "Decreto 60903.pdf | reprovado" not in caplog.text
 
 """Proteja o relatório da separação e seus avisos sem alterar arquivos indevidamente."""
 

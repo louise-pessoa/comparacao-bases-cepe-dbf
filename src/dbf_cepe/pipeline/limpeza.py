@@ -46,7 +46,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from dbf_cepe import captura
+from dbf_cepe import captura, saida
 from dbf_cepe.config import Configuracao
 from dbf_cepe.leitura.reader import StatusLeitura, ler_pdf
 from dbf_cepe.pipeline.duplicidade import PastaDbfIndisponivel, listar_nomes
@@ -113,7 +113,7 @@ def registrar_processamento(
     try:
         arquivos = captura.ler_manifesto(caderno.parent)
     except captura.ErroCaptura as erro:
-        log.warning("%s: processamento não anotado (%s)", caderno.name, erro)
+        log.warning("%s | processamento não anotado (%s)", caderno.name, erro)
         return False
     entrada = arquivos.get(caderno.name)
     if entrada is None:
@@ -287,7 +287,7 @@ def _apagar(pasta: Path, nomes: list[str], resultado: ResultadoLimpeza) -> None:
         except OSError as erro:
             del entrada["apagado_em"]
             captura.gravar_manifesto(pasta, arquivos)
-            log.error("%s: não foi possível apagar (%s)", nome, erro)
+            log.error("%s | não foi possível apagar (%s)", nome, erro)
             resultado.falhas.append(nome)
             continue
         resultado.apagados.append(nome)
@@ -308,14 +308,27 @@ def limpar(
     e tiver a mesma lista; senão levanta `ErroLimpeza` sem apagar nada. O lote histórico
     passa `exigir_simulacao=False`: mostra a lista no log e apaga em seguida."""
     pasta = Path(pasta)
+    with saida.rodada(log, "LIMPEZA DOS CADERNOS (SIMULAÇÃO)" if simular else "LIMPEZA DOS CADERNOS"):
+        return _limpar(cfg, pasta, mes, simular, exigir_simulacao, hoje)
+
+
+def _limpar(
+    cfg: Configuracao, pasta: Path, mes: date | None, simular: bool, exigir_simulacao: bool, hoje: date | None,
+) -> ResultadoLimpeza:
+    log.info("Pasta %s%s.", pasta, f", só o mês {mes:%Y-%m}" if mes else "")
+    if simular:
+        log.info("[SIMULAÇÃO: nada é apagado; a lista fica em %s]", NOME_SIMULACAO)
     avaliacoes = avaliar(cfg, pasta, mes, hoje)
     apagaveis = [a.caderno for a in avaliacoes if a.apagavel]
     resultado = ResultadoLimpeza(mantidos=[a for a in avaliacoes if not a.apagavel])
-    rotulo = "seria apagado" if simular else "apagar"
-    for nome in apagaveis:
-        log.info("%s | limpeza: %s", nome, rotulo)
+    saida.bloco(log, f"{'SERIAM APAGADOS' if simular else 'APAGAR'} ({len(apagaveis)})")
+    for nome in apagaveis or ["nenhum"]:
+        log.info("%s", nome)
+    saida.bloco(log, f"FICAM ({len(resultado.mantidos)})")
+    if not resultado.mantidos:
+        log.info("nenhum")
     for avaliacao in resultado.mantidos:
-        log.info("%s | limpeza: fica (%s)", avaliacao.caderno, "; ".join(avaliacao.motivos))
+        log.info("%s | %s", avaliacao.caderno, "; ".join(avaliacao.motivos))
     chave_mes = f"{mes:%Y-%m}" if mes else None
     if simular:
         (pasta / NOME_SIMULACAO).write_text(
@@ -323,6 +336,11 @@ def limpar(
             encoding="utf-8",
         )
         resultado.apagados = apagaveis
+        saida.fechar(log)
+        log.info(
+            "%d caderno(s) seriam apagados, %d ficam. Confira e rode de novo sem --simular para apagar.",
+            len(apagaveis), len(resultado.mantidos),
+        )
         return resultado
     if exigir_simulacao:
         simulacao = _ler_simulacao(pasta)
@@ -335,9 +353,10 @@ def limpar(
     _apagar(pasta, apagaveis, resultado)
     if exigir_simulacao:
         (pasta / NOME_SIMULACAO).unlink(missing_ok=True)
+    saida.fechar(log)
     log.info(
-        "Limpeza de %s: %d caderno(s) apagado(s), %d mantido(s)%s.",
-        pasta, len(resultado.apagados), len(resultado.mantidos),
+        "%d caderno(s) apagado(s), %d mantido(s)%s.",
+        len(resultado.apagados), len(resultado.mantidos),
         f", {len(resultado.falhas)} com falha" if resultado.falhas else "",
     )
     return resultado

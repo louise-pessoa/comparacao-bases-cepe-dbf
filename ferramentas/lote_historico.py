@@ -59,7 +59,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from pathlib import Path
 
-from dbf_cepe import captura
+from dbf_cepe import captura, saida
 from dbf_cepe.cli import _configurar_log, capturar
 from dbf_cepe.config import Configuracao, ErroConfiguracao, carregar_configuracao
 from dbf_cepe.pipeline import limpeza as limpeza_dos_cadernos
@@ -326,7 +326,8 @@ def descrever(juncao: Juncao, feito: bool) -> list[str]:
 
 def rodar_mes(cfg: Configuracao, mes: Mes, executar_de_verdade: bool, limpar: bool = True) -> Mes:
     pasta = pasta_do_mes(mes.nome)
-    log.info("===== %s (fonte %s) =====", mes.nome, mes.fonte)
+    saida.linha_em_branco(log)
+    log.info(saida.titulo(f"MÊS {mes.nome} (fonte {mes.fonte})", "="), extra={"estrutura": True, "chave": mes.nome})
 
     downloads = capturar(replace(cfg, pasta_cadernos=pasta), mes.inicio, mes.fim, False, mes.fonte)
     mes.cadernos_baixados = downloads[captura.StatusDownload.BAIXADO] + downloads[captura.StatusDownload.JA_BAIXADO]
@@ -404,11 +405,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             juncoes = reorganizar(mover=args.executar)
         except OSError as erro:
-            print(f"Erro: {erro}", file=sys.stderr)
+            saida.imprimir_erro(str(erro))
             return 2
+        print(saida.titulo("REORGANIZAR O HISTÓRICO" + ("" if args.executar else " (SIMULAÇÃO)")))
         for juncao in juncoes:
             for linha in descrever(juncao, args.executar):
-                print(linha, file=sys.stderr if juncao.conflitos else sys.stdout)
+                if juncao.conflitos:
+                    saida.imprimir_aviso(linha)
+                else:
+                    print(linha)
         if not juncoes:
             print(f"Nada a reorganizar em {PASTA_HISTORICO}.")
         elif not args.executar and any(not j.conflitos for j in juncoes):
@@ -435,38 +440,46 @@ def main(argv: list[str] | None = None) -> int:
                 "(python main.py) ou esvazie a pasta antes"
             )
     except (ErroDeUso, ErroConfiguracao) as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        saida.imprimir_erro(str(erro))
         return 2
-    modo = "GRAVANDO NA BASE" if args.executar else "SIMULAÇÃO (nada vai para a base)"
-    log.info("Lote histórico de %s a %s: %d mês(es), %s; base: %s",
-             lista[0].strftime("%Y-%m"), lista[-1].strftime("%Y-%m"), len(lista), modo, cfg.pasta_dbf)
     feitos: list[Mes] = []
+    titulo = "LOTE HISTÓRICO" + ("" if args.executar else " (SIMULAÇÃO)")
     try:
-        for inicio in lista:
-            mes = rodar_mes(cfg, Mes(inicio), args.executar, limpar=not args.manter_cadernos)
-            feitos.append(mes)
-            log.info("%s", resumo_do_mes(mes, args.executar))
-            if mes.parada:
-                break
+        with saida.rodada(log, titulo):
+            log.info("De %s a %s: %d mês(es), %s; base: %s.",
+                     lista[0].strftime("%Y-%m"), lista[-1].strftime("%Y-%m"), len(lista),
+                     "GRAVANDO NA BASE" if args.executar else "nada vai para a base", cfg.pasta_dbf)
+            for inicio in lista:
+                mes = rodar_mes(cfg, Mes(inicio), args.executar, limpar=not args.manter_cadernos)
+                feitos.append(mes)
+                saida.bloco(log, f"FIM DO MÊS {mes.nome}", chave=mes.nome)
+                log.log(logging.ERROR if mes.parada else logging.INFO, "%s", resumo_do_mes(mes, args.executar))
+                if mes.parada:
+                    break
+            _resumo_final(feitos, args.executar, args.manter_cadernos)
     except (ErroRegistro, ErroConfiguracao, captura.ErroCaptura, limpeza_dos_cadernos.ErroLimpeza) as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        saida.erro_fatal(log, str(erro))
         return 2
     except KeyboardInterrupt:
-        print("Interrompido (Ctrl+C). O mês em andamento pode ter PDFs em dados/pendentes.", file=sys.stderr)
+        saida.erro_fatal(log, "Interrompido (Ctrl+C). O mês em andamento pode ter PDFs em dados/pendentes.")
         return 130
-    print("\nResumo do lote histórico:")
+    return 1 if feitos and feitos[-1].parada else 0
+
+
+def _resumo_final(feitos: list[Mes], executado: bool, manter_cadernos: bool) -> None:
+    saida.fechar(log, "RESUMO DO LOTE HISTÓRICO")
     for mes in feitos:
-        print(f"  {resumo_do_mes(mes, args.executar)}")
+        log.log(logging.ERROR if mes.parada else logging.INFO, "%s", resumo_do_mes(mes, executado))
     conferir = sum((m.resumo_gravacao.situacoes["CONFERIR DUPLICATA"] if m.resumo_gravacao else 0) for m in feitos)
-    if conferir and args.executar:
-        print(f"\n{conferir} decreto(s) foram para 'conferir duplicata': rode python main.py --conferir")
-        if not args.manter_cadernos:
-            print("Os cadernos deles ficaram guardados; depois do --conferir, apague-os com "
-                  "python main.py --limpar-cadernos dados\\historico\\AAAA\\AAAA-MM --simular (e sem --simular).")
+    if conferir and executado:
+        saida.linha_em_branco(log)
+        log.warning("%d decreto(s) foram para 'conferir duplicata': rode python main.py --conferir", conferir)
+        if not manter_cadernos:
+            log.info("Os cadernos deles ficaram guardados; depois do --conferir, apague-os com "
+                     "python main.py --limpar-cadernos dados\\historico\\AAAA\\AAAA-MM --simular (e sem --simular).")
     if feitos and feitos[-1].parada:
-        print(f"\nParou em {feitos[-1].nome}. Resolva e rode de novo a partir de --de {feitos[-1].nome}.")
-        return 1
-    return 0
+        saida.linha_em_branco(log)
+        log.error("Parou em %s. Resolva e rode de novo a partir de --de %s.", feitos[-1].nome, feitos[-1].nome)
 
 
 if __name__ == "__main__":

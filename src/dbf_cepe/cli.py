@@ -64,6 +64,7 @@ from dbf_cepe.leitura.separador import ErroSeparacao
 from dbf_cepe.pipeline.lote import Destino, executar
 from dbf_cepe.pipeline.registro import ErroRegistro
 from dbf_cepe.pipeline.relatorio import relatorio_dos_cadernos
+from dbf_cepe import saida as formato
 
 log = logging.getLogger("pipeline")
 
@@ -76,49 +77,40 @@ def capturar(
     fonte: str = captura.FONTE_PADRAO,
 ) -> Counter[captura.StatusDownload]:
     """Etapa 1: baixa os cadernos do período e devolve a contagem por situação."""
-    modo = " [SIMULAÇÃO: sem rede e sem gravar nada]" if simular else ""
-    log.info(
-        "Captura iniciada%s: de %s a %s em %s (fonte: %s).",
-        modo, inicio, fim, cfg.pasta_cadernos, fonte,
-    )
-    cadernos = captura.FONTES[fonte]
-    if cfg.proxy_do_ambiente:
-        log.warning(
-            "A variável de ambiente HTTPS_PROXY (%s) vale mais que a linha HTTPS_PROXY do .env. "
-            "Se o endereço está velho, apague-a com Remove-Item Env:HTTPS_PROXY (PowerShell) "
-            "e rode de novo.",
-            cfg.proxy_do_ambiente,
+    with formato.rodada(log, "CAPTURA DOS CADERNOS"):
+        log.info("De %s a %s, fonte %s, em %s.", inicio, fim, fonte, cfg.pasta_cadernos)
+        if simular:
+            log.info("[SIMULAÇÃO: sem rede e sem gravar nada]")
+        cadernos = captura.FONTES[fonte]
+        if cfg.proxy_do_ambiente:
+            log.warning(
+                "A variável de ambiente HTTPS_PROXY (%s) vale mais que a linha HTTPS_PROXY do .env. "
+                "Se o endereço está velho, apague-a com Remove-Item Env:HTTPS_PROXY (PowerShell) "
+                "e rode de novo.",
+                cfg.proxy_do_ambiente,
+            )
+        endereco_proxy = cfg.proxy_https
+        if endereco_proxy == proxy.VALOR_AUTOMATICO:
+            # HTTPS_PROXY=auto: pergunta ao Windows uma vez por captura (a porta muda
+            # entre sessões). Na simulação não há rede, então nem se pergunta.
+            endereco_proxy = (
+                None if simular else proxy.resolver_proxy(endereco_proxy, cadernos[0].url(inicio))
+            )
+        resultados = captura.baixar_cadernos(
+            inicio, fim, cfg.pasta_cadernos, cadernos=cadernos, simular=simular,
+            proxy=endereco_proxy, ssl_estrito=cfg.ssl_estrito,
         )
-    endereco_proxy = cfg.proxy_https
-    if endereco_proxy == proxy.VALOR_AUTOMATICO:
-        # HTTPS_PROXY=auto: pergunta ao Windows uma vez por captura (a porta muda
-        # entre sessões). Na simulação não há rede, então nem se pergunta.
-        endereco_proxy = (
-            None if simular else proxy.resolver_proxy(endereco_proxy, cadernos[0].url(inicio))
-        )
-    resultados = captura.baixar_cadernos(
-        inicio, fim, cfg.pasta_cadernos, cadernos=cadernos, simular=simular,
-        proxy=endereco_proxy, ssl_estrito=cfg.ssl_estrito,
-    )
-    resumo: Counter[captura.StatusDownload] = Counter(r.status for r in resultados)
-    for status, quantidade in resumo.most_common():
-        log.info("  %3d  %s", quantidade, status.value)
-    if resumo[captura.StatusDownload.FALHA]:
-        log.warning("Há downloads com falha: rode de novo para tentar outra vez.")
+        resumo: Counter[captura.StatusDownload] = Counter(r.status for r in resultados)
+        formato.fechar(log)
+        for status, quantidade in resumo.most_common():
+            log.info("%5d  %s", quantidade, status.value)
+        if resumo[captura.StatusDownload.FALHA]:
+            log.warning("Há downloads com falha: rode de novo para tentar outra vez.")
     return resumo
 
 
 def _configurar_log(pasta_logs: Path) -> None:
-    pasta_logs.mkdir(parents=True, exist_ok=True)
-    formato = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    destinos = (
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(pasta_logs / "pipeline.log", encoding="utf-8"),
-    )
-    log.setLevel(logging.INFO)
-    for destino in destinos:
-        destino.setFormatter(formato)
-        log.addHandler(destino)
+    formato.configurar_log(log, pasta_logs)
 
 
 def _mes_iso(texto: str) -> date:
@@ -140,8 +132,7 @@ def _indice_para_o_catalogo() -> set[str] | None:
     try:
         return carregar_indice(carregar_configuracao().pasta_dbf)
     except (ErroConfiguracao, PastaDbfIndisponivel) as erro:
-        print(f"Aviso: base da DBF não consultada ({erro}); erratas sem outro sinal ficam a confirmar.",
-              file=sys.stderr)
+        formato.imprimir_aviso(f"base da DBF não consultada ({erro}); erratas sem outro sinal ficam a confirmar.")
         return None
 
 
@@ -154,10 +145,10 @@ def catalogar_cadernos(caminho: Path, saida: Path | None = None, com_base: bool 
     try:
         resultado = catalogo.catalogar(caminho, indice)
     except ErroSeparacao as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        formato.imprimir_erro(str(erro))
         return 2
     catalogo.gravar_csv(resultado.linhas, destino)
-    print(catalogo.resumo_em_texto(resultado, destino))
+    print(catalogo.resumo_em_texto(resultado, destino, formato.usa_cores(sys.stdout)))
     return 1 if resultado.cadernos_com_falha else 0
 
 
@@ -167,10 +158,18 @@ def verificar_ocr() -> int:
     try:
         cfg = carregar_configuracao()
     except ErroConfiguracao as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        formato.imprimir_erro(str(erro))
         return 2
     diagnostico = ocr.verificar(cfg.ocr)
-    print("\n".join(diagnostico.linhas))
+    print(formato.titulo("VERIFICAÇÃO DO OCR"))
+    cores = formato.usa_cores(sys.stdout)
+    for linha in diagnostico.linhas:
+        if linha.startswith("ERRO: "):
+            linha = formato.marcar(linha.removeprefix("ERRO: "), logging.ERROR, cores)
+        print(linha)
+    print()
+    print(formato.titulo("RESULTADO"))
+    print("Pronto para uso." if diagnostico.ok else formato.marcar("Falta algo: veja as linhas acima.", logging.ERROR, cores))
     return 0 if diagnostico.ok else 1
 
 
@@ -343,10 +342,10 @@ def main(argv: list[str] | None = None) -> int:
         ErroConfiguracao, PastaDbfIndisponivel, captura.ErroCaptura, ErroSeparacao, ErroRegistro,
         limpeza.ErroLimpeza,
     ) as erro:
-        print(f"Erro: {erro}", file=sys.stderr)
+        formato.erro_fatal(log, str(erro))
         return 2
     except KeyboardInterrupt:
-        print("Interrompido pelo usuário (Ctrl+C).", file=sys.stderr)
+        formato.erro_fatal(log, "Interrompido pelo usuário (Ctrl+C).")
         return 130
     return 0
 

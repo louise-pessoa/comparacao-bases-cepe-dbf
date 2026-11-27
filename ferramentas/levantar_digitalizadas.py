@@ -36,6 +36,7 @@ import pymupdf
 from dbf_cepe.leitura.criterio import da_dbf
 from dbf_cepe.leitura.reader import StatusLeitura, _ilegivel, _pagina_digitalizada, ler_pdf
 from dbf_cepe.leitura.separador import AtoSeparado, ErroSeparacao, data_do_caderno, separar_caderno
+from dbf_cepe.saida import imprimir_bloco_de_avisos, imprimir_erro, subtitulo, titulo
 
 PASTA_PADRAO = Path("dados/cadernos")
 # Cabeçalho de decreto no texto do OCR: no início da linha, em maiúsculas. Mais tolerante
@@ -266,40 +267,41 @@ def main(argv: list[str] | None = None) -> int:
         args.pastas = [] if args.base else [PASTA_PADRAO]
     faltando = [p for p in [*args.pastas, *([args.base] if args.base else [])] if not p.exists()]
     if faltando:
-        print(f"Não encontrado: {', '.join(map(str, faltando))}", file=sys.stderr)
+        imprimir_erro(f"Não encontrado: {', '.join(map(str, faltando))}")
         return 2
     leitor = None
     if args.ocr:
         try:
             leitor = _leitor_do_env()
         except Exception as erro:
-            print(f"Erro: {erro}", file=sys.stderr)
+            imprimir_erro(str(erro))
             return 2
     anos, falhas = levantar_cadernos(args.pastas, leitor, max(args.exemplos, 0))
     if not anos and not falhas and args.base is None:
-        print("Nenhum PDF encontrado.", file=sys.stderr)
+        imprimir_erro("Nenhum PDF encontrado.")
         return 2
     if anos:
+        print(titulo("PÁGINAS DIGITALIZADAS NOS CADERNOS"))
         print(tabela(anos, leitor is not None))
         for nome in sorted(anos):
             if anos[nome].exemplos[: args.exemplos]:
-                print(f"\n{nome}:")
+                print("\n" + subtitulo(f"{nome}: cadernos com páginas em imagem"))
                 for exemplo in anos[nome].exemplos[: args.exemplos]:
                     print(f"  {exemplo}")
     base = levantar_base(args.base) if args.base else None
     if base is not None:
-        print(f"\nBase da DBF ({args.base}): {base.total} PDFs")
+        print("\n" + titulo("BASE DA DBF"))
+        print(f"{args.base}: {base.total} PDFs")
         for situacao, quantidade in base.situacoes.most_common():
             print(f"  {quantidade:>6}  {situacao}")
-        print("\nPor faixa de número (só as faixas com PDF sem texto):")
+        print("\n" + subtitulo("POR FAIXA DE NÚMERO (só as faixas com PDF sem texto)"))
         print(tabela_da_base(base))
-        print()
+        print("\n" + subtitulo("PDFs SEM TEXTO"))
         for linha in base.imagem[: max(args.exemplos, 0) * 4]:
             print(f"  {linha}")
         if len(base.imagem) > args.exemplos * 4:
             print(f"  ... e mais {len(base.imagem) - args.exemplos * 4} (lista completa no --json)")
-    for falha in falhas:
-        print(f"AVISO: {falha}", file=sys.stderr)
+    imprimir_bloco_de_avisos(falhas)
     if args.json:
         dados: dict[str, object] = {"cadernos": {nome: a.__dict__ for nome, a in anos.items()}}
         if base is not None:

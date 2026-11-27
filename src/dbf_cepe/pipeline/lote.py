@@ -17,7 +17,6 @@ Duas passagens:
 from __future__ import annotations
 
 import logging
-import time
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
@@ -44,6 +43,7 @@ from dbf_cepe.pipeline.registro import (
     BASE_IMAGEM, CONFERIR, DUPLICATA, DUPLICATA_OCR, GRAVADO, Entrada, ErroRegistro, Registro,
 )
 from dbf_cepe.pipeline.republicacao import Acao, Plano, planejar
+from dbf_cepe import saida
 
 log = logging.getLogger("pipeline")
 
@@ -57,6 +57,14 @@ class Destino(Enum):
     ENVIADO_CONFERIR = "enviado para conferir duplicata (pasta local)"
     FALHA_AO_GRAVAR = "mantido na pasta temporária (falha ao gravar na DBF)"
     CONCLUIDO = "normalizado e armazenado na DBF"
+
+
+# Destinos que pedem uma ação de alguém saem como [AVISO]; a falha ao gravar, como [ERRO].
+_NIVEL = {
+    Destino.ENVIADO_ERROS: logging.WARNING,
+    Destino.ENVIADO_CONFERIR: logging.WARNING,
+    Destino.FALHA_AO_GRAVAR: logging.ERROR,
+}
 
 
 @dataclass
@@ -80,13 +88,14 @@ def _mover(
     pdf: Path, pasta: Path, destino: Destino, motivo: str, simular: bool
 ) -> Destino:
     novo = armazenamento.mover_sem_sobrescrever(pdf, pasta, simular)
-    log.info("%s | %s | %s | %s", pdf.name, destino.value, motivo, novo.name)
+    saida.linha_do_item(log, "%s | %s | %s | %s", pdf.name, destino.value, motivo, novo.name,
+                        nivel=_NIVEL.get(destino, logging.INFO))
     return destino
 
 
 def _descartar(pdf: Path, destino: Destino, motivo: str, simular: bool) -> Destino:
     armazenamento.descartar(pdf, simular)
-    log.info("%s | %s | %s", pdf.name, destino.value, motivo)
+    saida.linha_do_item(log, "%s | %s | %s", pdf.name, destino.value, motivo)
     return destino
 
 
@@ -178,7 +187,7 @@ def _com_publicacao(
         if comparado.por_ocr:
             lidos_por_ocr.add(nome)
             for trecho in comparado.trechos:
-                log.info("%s | %s lido por OCR | diferença: %s", pdf.name, nome, trecho)
+                saida.detalhe(log, "%s lido por OCR | diferença: %s", nome, trecho)
         return comparado.identico if comparado.lido else None
 
     ano = ident.chave_ano
@@ -186,7 +195,7 @@ def _com_publicacao(
         especie, numero, publicacao, hash_texto, estado.registro, estado.nomes_na_base, identico, ano=ano
     )
     for aviso in plano.avisos:
-        log.warning("%s | AVISO: %s", pdf.name, aviso)
+        saida.aviso(log, "%s", aviso)
 
     def entrada(situacao: str, arquivo: str | None) -> Entrada:
         return Entrada(especie.nome, numero, ano, publicacao, hash_texto, arquivo, situacao)
@@ -232,7 +241,8 @@ def _conferir(
     estado.registro.adicionar(entrada(CONFERIR, final.name))
     _salvar(estado.registro, simular)
     armazenamento.descartar(pdf, simular)
-    log.info("%s | %s | %s | %s", pdf.name, Destino.ENVIADO_CONFERIR.value, plano.motivo, final.name)
+    saida.linha_do_item(log, "%s | %s | %s | %s", pdf.name, Destino.ENVIADO_CONFERIR.value, plano.motivo,
+                        final.name, nivel=_NIVEL[Destino.ENVIADO_CONFERIR])
     return Destino.ENVIADO_CONFERIR
 
 
@@ -288,7 +298,8 @@ def _normalizar_e_gravar(
             )
     except RenomeacaoNaoDesfeita as erro:
         # O registro continua com a operação anotada: a próxima execução tenta desfazer.
-        log.error("%s | %s | %s: %s", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome, erro)
+        saida.linha_do_item(log, "%s | %s | %s: %s", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome, erro,
+                            nivel=logging.ERROR)
         return Destino.FALHA_AO_GRAVAR
     except ArquivoJaExiste:
         _encerrar_operacao(registro, simular)
@@ -296,7 +307,8 @@ def _normalizar_e_gravar(
         armazenamento.descartar_se_existir(pdf_gerado)
         if nova_entrada is not None:
             # Com publicação, o nome tomado não prova duplicata: o PDF fica para o próximo lote.
-            log.error("%s | %s | %s apareceu na DBF durante o lote", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome)
+            saida.linha_do_item(log, "%s | %s | %s apareceu na DBF durante o lote", pdf.name,
+                                Destino.FALHA_AO_GRAVAR.value, nome, nivel=logging.ERROR)
             return Destino.FALHA_AO_GRAVAR
         return _descartar(
             pdf, Destino.DESCARTADO_DUPLICADO, f"{nome} (surgiu na DBF durante o lote)", simular
@@ -314,13 +326,14 @@ def _normalizar_e_gravar(
         _encerrar_operacao(registro, simular)
         # Falha de E/S (drive indisponível, sem permissão...): o original fica em
         # pendentes e o próximo lote tenta de novo.
-        log.error("%s | %s | %s: %s", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome, erro)
+        saida.linha_do_item(log, "%s | %s | %s: %s", pdf.name, Destino.FALHA_AO_GRAVAR.value, nome, erro,
+                            nivel=logging.ERROR)
         return Destino.FALHA_AO_GRAVAR
 
     # Gravado: atualiza o que se sabe da base e o registro.
     for de, para in renomeacoes:
         estado.renomear(de, para)
-        log.info("%s | renomeado na DBF: %s -> %s", pdf.name, de, para)
+        saida.detalhe(log, "renomeado na DBF: %s -> %s", de, para)
         if nova_entrada is not None:
             registro.renomear(especie.nome, numero, ident.chave_ano, de, para)
     estado.nomes_na_base.add(nome)
@@ -330,7 +343,7 @@ def _normalizar_e_gravar(
         _salvar(registro, simular)
     tipo = ident.tipo.nome if ident.tipo else "-"
     extra = f"; {plano.motivo}" if plano is not None and plano.republicacao else ""
-    log.info("%s | %s | %s (%s)%s", pdf.name, Destino.CONCLUIDO.value, nome, tipo, extra)
+    saida.linha_do_item(log, "%s | %s | %s (%s)%s", pdf.name, Destino.CONCLUIDO.value, nome, tipo, extra)
     return Destino.CONCLUIDO
 
 
@@ -384,7 +397,15 @@ def executar(
     # ela que descarta arquivos.
     validar_configuracao(cfg)
 
-    inicio = time.perf_counter()
+    with saida.rodada(log, "LOTE (SIMULAÇÃO)" if simular else "LOTE"):
+        resumo = _executar(cfg, simular, permitir_pasta_vazia)
+    return resumo
+
+
+def _executar(cfg: Configuracao, simular: bool, permitir_pasta_vazia: bool) -> Counter[Destino]:
+    assert cfg.pasta_dbf is not None
+    if simular:
+        log.info("[SIMULAÇÃO: nada será movido ou apagado]")
     _anunciar_ocr(cfg)
     nomes_na_base = listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia)
     registro = Registro.carregar(cfg.registro)  # ilegível: ErroRegistro, nada é tocado
@@ -398,10 +419,8 @@ def executar(
                     armazenamento.recuperar_operacao(registro, cfg.pasta_dbf))
         nomes_na_base = listar_nomes(cfg.pasta_dbf, permitir_pasta_vazia)
     pdfs = ordenar_por_publicacao(listar_pdfs(cfg.pasta_temp))
-    modo = " [SIMULAÇÃO: nada será movido ou apagado]" if simular else ""
     log.info(
-        "Lote iniciado%s: %d PDF(s) em %s (%d com data de publicação); %d arquivo(s) na base da DBF.",
-        modo,
+        "%d PDF(s) em %s (%d com data de publicação); %d arquivo(s) na base da DBF.",
         len(pdfs),
         cfg.pasta_temp,
         sum(1 for _, publicacao in pdfs if publicacao),
@@ -410,23 +429,25 @@ def executar(
 
     resumo: Counter[Destino] = Counter()
     estado = EstadoDoLote(registro, set(nomes_na_base))
+    saida.bloco(log, f"PDFs EM PENDENTES ({len(pdfs)})")
     for pdf, publicacao in pdfs:
-        try:
-            destino = processar_arquivo(pdf, cfg, estado, simular, publicacao)
-        except ErroRegistro:
-            raise  # sem registro confiável, nada mais é gravado
-        except Exception as erro:  # uma falha não interrompe o restante do lote
-            log.exception("%s | falha inesperada: %s", pdf.name, erro)
+        with saida.item(pdf.name):
             try:
-                destino = _mover(
-                    pdf, cfg.pasta_erros, Destino.ENVIADO_ERROS, str(erro), simular
-                )
-            except Exception:
-                log.exception("%s | não foi possível isolar o arquivo", pdf.name)
-                continue
+                destino = processar_arquivo(pdf, cfg, estado, simular, publicacao)
+            except ErroRegistro:
+                raise  # sem registro confiável, nada mais é gravado
+            except Exception as erro:  # uma falha não interrompe o restante do lote
+                log.exception("%s | falha inesperada: %s", pdf.name, erro)
+                try:
+                    destino = _mover(
+                        pdf, cfg.pasta_erros, Destino.ENVIADO_ERROS, str(erro), simular
+                    )
+                except Exception:
+                    log.exception("%s | não foi possível isolar o arquivo", pdf.name)
+                    continue
         resumo[destino] += 1
 
-    log.info("Lote finalizado em %.2f s.", time.perf_counter() - inicio)
+    saida.fechar(log)
     for destino, quantidade in resumo.most_common():
-        log.info("  %3d  %s", quantidade, destino.value)
+        log.info("%5d  %s", quantidade, destino.value)
     return resumo
